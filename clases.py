@@ -8,6 +8,17 @@ from datetime import date, datetime, timedelta
 def agendar_clase(alumno_id, fecha, hora=None, origen="manual", google_event_id=None, notas=None):
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Verifica si ya existe una clase para ese alumno en esa fecha y hora
+    cursor.execute("""
+        SELECT id FROM clases 
+        WHERE alumno_id = ? AND fecha = ? AND hora = ?
+    """, (alumno_id, fecha, hora))
+    
+    if cursor.fetchone():
+        conn.close()
+        return  # Ya existe, no duplica
+    
     cursor.execute("""
         INSERT INTO clases (alumno_id, fecha, hora, estado, origen, google_event_id, notas)
         VALUES (?, ?, ?, 'agendada', ?, ?, ?)
@@ -15,17 +26,6 @@ def agendar_clase(alumno_id, fecha, hora=None, origen="manual", google_event_id=
     conn.commit()
     conn.close()
     print(f"Clase agendada para alumno {alumno_id} el {fecha}")
-
-# Marca una clase como dada.
-def marcar_clase_dada(clase_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE clases SET estado = 'dada' WHERE id = ?
-    """, (clase_id,))
-    conn.commit()
-    conn.close()
-    print(f"Clase {clase_id} marcada como dada.")
 
 # Cancela una clase aplicando la regla de las 24hs.
 # Devuelve el estado final para que el bot pueda avisar el resultado.
