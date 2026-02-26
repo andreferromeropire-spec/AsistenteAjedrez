@@ -6,7 +6,7 @@ import os
 
 from interprete import interpretar_mensaje
 from alumnos import buscar_alumno_por_nombre, agregar_alumno
-from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes
+from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes
 
 load_dotenv()
@@ -44,6 +44,26 @@ def ejecutar_accion(accion, datos):
             origen="manual"
         )
         return f"✅ Registré clase con {alumno['nombre']} el {fecha}."
+    
+    elif accion == "registrar_clases_multiple":
+        nombres = datos.get("nombres_alumnos", [])
+        fecha = datos.get("fecha", date.today().isoformat())
+        resultados = []
+        for nombre in nombres:
+            alumnos = buscar_alumno_por_nombre(nombre)
+            if not alumnos:
+                resultados.append(f"❌ No encontré a {nombre}")
+            else:
+                alumno = alumnos[0]
+                agendar_clase(
+                    alumno_id=alumno["id"],
+                    fecha=fecha,
+                    hora=datos.get("hora"),
+                    origen="manual"
+                )
+                resultados.append(f"✅ {alumno['nombre']}")
+        
+        return f"Clases registradas el {fecha}:\n" + "\n".join(resultados)
 
     elif accion == "quien_debe":
         deudores = quien_debe_este_mes()
@@ -93,10 +113,52 @@ def ejecutar_accion(accion, datos):
             mail=datos.get("mail")
         )
         return f"✅ Alumno {datos.get('nombre')} agregado correctamente."
+    
+    elif accion == "resumen_alumno":
+        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
+        if not alumnos:
+            return "No encontré ningún alumno con ese nombre."
+        alumno = alumnos[0]
+        hoy = date.today()
+        resumen = resumen_clases_alumno_mes(alumno["id"], hoy.month, hoy.year)
+        historial = historial_de_pagos_alumno(alumno["id"])
+        pago_este_mes = any(
+            p["fecha"].startswith(f"{hoy.year}-{hoy.month:02d}") 
+            for p in historial
+        )
+        respuesta = f"📊 Resumen de {alumno['nombre']} ({hoy.month}/{hoy.year}):\n"
+        respuesta += f"• Clases a cobrar: {resumen['a_cobrar']}\n"
+        respuesta += f"• Clases dadas: {resumen['dadas']}\n"
+        respuesta += f"• Crédito próximo mes: {resumen['credito_para_siguiente_mes']}\n"
+        respuesta += f"• Pagó este mes: {'✅ Sí' if pago_este_mes else '❌ No'}"
+        return respuesta
 
+    elif accion == "que_tengo_hoy":
+        from clases import proximas_clases_alumno
+        from alumnos import obtener_todos_los_alumnos
+        hoy = date.today().isoformat()
+        conn = __import__('database').get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT c.*, a.nombre 
+            FROM clases c
+            JOIN alumnos a ON c.alumno_id = a.id
+            WHERE c.fecha = ? AND c.estado = 'agendada'
+            ORDER BY c.hora ASC
+        """, (hoy,))
+        clases_hoy = cursor.fetchall()
+        conn.close()
+        if not clases_hoy:
+            return f"No tenés clases agendadas para hoy."
+        respuesta = f"📅 Clases de hoy ({hoy}):\n"
+        for clase in clases_hoy:
+            hora = f"a las {clase['hora']}" if clase['hora'] else "sin hora especificada"
+            respuesta += f"• {clase['nombre']} {hora}\n"
+        return respuesta
+    
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
-
+    
     else:
         return "No entendí esa acción."
 
