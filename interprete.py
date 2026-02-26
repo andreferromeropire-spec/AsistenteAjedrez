@@ -1,0 +1,76 @@
+import os
+import json
+from anthropic import Anthropic
+from dotenv import load_dotenv
+
+load_dotenv()  # Carga las variables del archivo .env
+
+cliente = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+# Esta es la función más importante del proyecto.
+# Recibe tu mensaje en lenguaje natural y devuelve
+# un diccionario con la acción a ejecutar y los datos necesarios.
+def interpretar_mensaje(mensaje):
+    
+    prompt = f"""Sos el asistente de Andrea, profesora de ajedrez argentina.
+Andrea te va a mandar mensajes por WhatsApp para gestionar su negocio.
+
+Tu trabajo es interpretar el mensaje y devolver SOLO un JSON con esta estructura:
+{{
+    "accion": "nombre_de_la_accion",
+    "datos": {{}}
+}}
+
+Las acciones posibles son:
+
+1. "registrar_pago" - cuando alguien pagó
+   datos necesarios: nombre_alumno, monto, moneda (Dólar/Pesos/Libra Esterlina), metodo (Wise/PayPal/Transferencia nacional), notas (opcional)
+
+2. "registrar_clase" - cuando se dio una clase
+   datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, si dice "hoy" usá la fecha de hoy), hora (opcional)
+
+3. "cancelar_clase" - cuando se cancela una clase
+   datos necesarios: nombre_alumno, fecha, cancelada_por (alumno/profesora)
+
+4. "quien_debe" - quiere saber quién no pagó este mes
+   datos necesarios: ninguno
+
+5. "cuanto_gane" - quiere saber el total cobrado
+   datos necesarios: mes (número), anio
+
+6. "resumen_alumno" - quiere ver el resumen de un alumno
+   datos necesarios: nombre_alumno
+
+7. "alumno_nuevo" - agregar un alumno nuevo
+   datos necesarios: nombre, pais, moneda, metodo_pago, modalidad, precio, whatsapp (opcional), mail (opcional)
+
+8. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+   datos necesarios: ninguno
+
+Fecha de hoy: {__import__('datetime').date.today().isoformat()}
+
+Devolvé SOLO el JSON, sin explicaciones ni texto adicional.
+
+Mensaje de Andrea: {mensaje}"""
+
+    respuesta = cliente.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    texto = respuesta.content[0].text.strip()
+    
+
+    texto = respuesta.content[0].text.strip()
+    # Limpia los bloques de código markdown que Claude a veces agrega
+    if texto.startswith("```"):
+        texto = texto.split("```")[1]
+        if texto.startswith("json"):
+            texto = texto[4:]
+    texto = texto.strip()
+    
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        return {"accion": "no_entiendo", "datos": {}}

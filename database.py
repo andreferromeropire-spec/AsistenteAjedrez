@@ -1,0 +1,74 @@
+import sqlite3
+
+# CONEXIÓN: Esta función abre (o crea) el archivo de base de datos.
+# Si chess_assistant.db no existe, SQLite lo crea automáticamente.
+def get_connection():
+    conn = sqlite3.connect("chess_assistant.db")
+    conn.row_factory = sqlite3.Row  # Permite acceder a columnas por nombre, no solo por índice
+    return conn
+
+# CREAR TABLAS: Esta función define la estructura de la base de datos.
+# El IF NOT EXISTS hace que sea seguro correrla varias veces sin borrar datos.
+def crear_tablas():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Tabla de alumnos: guarda la info fija de cada persona
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alumnos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            representante TEXT,
+            pais TEXT,
+            idioma TEXT,
+            contacto_preferido TEXT,
+            mail TEXT,
+            whatsapp TEXT,
+            horas_semanales REAL,
+            dia_habitual TEXT,
+            precio REAL,
+            moneda TEXT,
+            metodo_pago TEXT,
+            modalidad TEXT,
+            notas_recordatorio TEXT,
+            activo INTEGER DEFAULT 1
+        )
+    """)
+
+    # Tabla de pagos: cada pago queda registrado con fecha y monto
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pagos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            monto REAL,
+            moneda TEXT,
+            metodo TEXT,
+            notas TEXT,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
+        )
+    """)
+    # Tabla de clases: registra cada clase agendada, dada o cancelada
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            hora TEXT,
+            estado TEXT NOT NULL DEFAULT 'agendada',
+            origen TEXT DEFAULT 'manual',
+            google_event_id TEXT,
+            notas TEXT,
+            fecha_cancelacion TEXT,
+            cancelada_por TEXT,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+    print("Base de datos lista.")
+
+# Esto permite correr el archivo directamente para crear las tablas
+if __name__ == "__main__":
+    crear_tablas()
