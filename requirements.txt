@@ -3,3 +3,4 @@ anthropic
 python-dotenv
 flask
 twilio
+apscheduler
