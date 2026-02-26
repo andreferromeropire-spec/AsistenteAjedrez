@@ -53,7 +53,10 @@ Las acciones posibles son:
 10. "que_tengo_hoy" - quiere ver las clases agendadas para hoy
    datos necesarios: ninguno   
 
-11. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+11. "cuanto_debe_alumno" - quiere saber cuánto debe cobrarle a un alumno este mes
+    datos necesarios: nombre_alumno, mes (número, opcional), anio (opcional)   
+
+12. "no_entiendo" - si el mensaje no corresponde a ninguna acción
    datos necesarios: ninguno
 
 Fecha de hoy: {__import__('datetime').date.today().isoformat()}

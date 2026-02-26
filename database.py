@@ -64,6 +64,20 @@ def crear_tablas():
             FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
         )
     """)
+
+    # Tabla de promociones: cada fila es un rango de precio para un alumno
+    # Ejemplo: alumno 5, de 1 a 3 clases cobra $35, de 4 a 7 cobra $32, etc.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS promociones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            clases_desde INTEGER NOT NULL,
+            clases_hasta INTEGER NOT NULL,
+            precio_por_clase REAL NOT NULL,
+            moneda TEXT NOT NULL,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
+        )
+    """)
     
     conn.commit()
     conn.close()

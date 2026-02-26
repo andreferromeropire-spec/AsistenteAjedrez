@@ -1,3 +1,4 @@
+from promociones import resumen_cobro_alumno, clases_agendadas_mes
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
@@ -156,6 +157,57 @@ def ejecutar_accion(accion, datos):
             respuesta += f"• {clase['nombre']} {hora}\n"
         return respuesta
     
+    
+    elif accion == "cuanto_debe_alumno":
+        from promociones import resumen_cobro_representante
+        nombre = datos.get("nombre_alumno", "")
+        hoy = date.today()
+        mes = datos.get("mes", hoy.month)
+        anio = datos.get("anio", hoy.year)
+
+        # Primero busca como alumno directo
+        alumnos = buscar_alumno_por_nombre(nombre)
+        
+        if alumnos:
+            alumno = alumnos[0]
+            # Si tiene representante, calcula por representante
+            if alumno['representante'] and alumno['representante'] != '-':
+                resumen = resumen_cobro_representante(alumno['representante'], mes, anio)
+                if resumen:
+                    detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
+                    return (
+                        f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n"
+                        f"{detalle}\n"
+                        f"• Total clases: {resumen['total_clases']}\n"
+                        f"• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n"
+                        f"• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}"
+                    )
+            # Si no tiene representante, calcula solo para ese alumno
+            resumen = resumen_cobro_alumno(alumno['id'], mes, anio)
+            if resumen['monto_total'] is None:
+                return f"{alumno['nombre']} no tiene promoción cargada todavía."
+            return (
+                f"💰 Cobro de {resumen['alumno']} ({mes}/{anio}):\n"
+                f"• Clases agendadas: {resumen['clases_agendadas']}\n"
+                f"• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n"
+                f"• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}"
+            )
+
+        # Si no encontró como alumno, busca como representante
+        resumen = resumen_cobro_representante(nombre, mes, anio)
+        if resumen:
+            detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
+            return (
+                f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n"
+                f"{detalle}\n"
+                f"• Total clases: {resumen['total_clases']}\n"
+                f"• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n"
+                f"• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}"
+            )
+
+        return "No encontré ningún alumno ni representante con ese nombre."
+
+
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
     
