@@ -1,3 +1,4 @@
+from difflib import get_close_matches
 import sqlite3
 from database import get_connection
 
@@ -65,3 +66,56 @@ def agregar_alumno(nombre, representante=None, pais=None, idioma=None,
     conn.commit()
     conn.close()
     print(f"Alumno {nombre} agregado correctamente.")
+
+    from difflib import get_close_matches
+
+def buscar_alumno_con_sugerencia(nombre):
+    # Primero intenta la búsqueda normal
+    resultado = buscar_alumno_por_nombre(nombre)
+    if resultado:
+        return resultado, None  # Encontró, no hay sugerencia
+    
+    # Si no encontró, busca nombres parecidos
+    todos = obtener_todos_los_alumnos()
+    nombres = [a['nombre'] for a in todos]
+    sugerencias = get_close_matches(nombre, nombres, n=3, cutoff=0.5)
+    
+    if sugerencias:
+        # Busca el alumno que mejor coincide
+        mejor = buscar_alumno_por_nombre(sugerencias[0])
+        return mejor, sugerencias  # Devuelve el alumno y las sugerencias
+    
+    return [], None  # No encontró nada
+
+def buscar_alumno_con_sugerencia(nombre):
+    # Primero intenta la búsqueda normal por nombre
+    resultado = buscar_alumno_por_nombre(nombre)
+    if resultado:
+        return resultado, None
+
+    # Si no encontró, busca por representante
+    resultado = buscar_alumno_por_representante(nombre)
+    if resultado:
+        return resultado, None
+
+    # Si tampoco, busca nombres parecidos
+    todos = obtener_todos_los_alumnos()
+    nombres = [a['nombre'] for a in todos]
+    sugerencias = get_close_matches(nombre, nombres, n=3, cutoff=0.5)
+
+    if sugerencias:
+        mejor = buscar_alumno_por_nombre(sugerencias[0])
+        return mejor, sugerencias
+
+    return [], None
+
+def buscar_alumno_por_representante(nombre_representante):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM alumnos WHERE representante LIKE ? AND activo = 1",
+        (f"%{nombre_representante}%",)
+    )
+    alumnos = cursor.fetchall()
+    conn.close()
+    return alumnos

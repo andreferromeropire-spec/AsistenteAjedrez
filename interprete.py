@@ -63,12 +63,21 @@ Las acciones posibles son:
 12. "reprogramar_clase" - cuando una clase cambia de fecha u hora
     datos necesarios: nombre_alumno, fecha_original (YYYY-MM-DD), nueva_fecha (YYYY-MM-DD), nueva_hora (opcional)
 
-13. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+13. "aclaracion_alumno" - cuando Andrea aclara cuál alumno quiso decir respondiendo con un número o nombre
+    datos necesarios: numero_opcion (entero, si respondió con un número) o nombre_alumno (si escribió el nombre)
+
+14. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
 Si Andrea dice "ah quise decir el 31" o "la del viernes" sin mencionar al alumno,
 buscá en los mensajes anteriores de qué alumno se estaba hablando.
+
+Si el mensaje anterior del asistente listó alumnos numerados (1. Nombre, 2. Nombre)
+y Andrea responde con un número solo ("1", "2") o con un nombre,
+interpretá eso como "aclaracion_alumno".
+Para aclaracion_alumno: si respondió con número, devolvé numero_opcion como entero.
+Si respondió con nombre, devolvé nombre_alumno.
 
 Fecha de hoy: {__import__('datetime').date.today().isoformat()}
 

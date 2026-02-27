@@ -7,52 +7,102 @@ import os
 
 from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
-from alumnos import buscar_alumno_por_nombre, agregar_alumno
+from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
 from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes
 
 load_dotenv()
 app = Flask(__name__)
 
-# Guarda el historial de conversación por número de WhatsApp.
-# La clave es el número de teléfono, el valor es una lista de mensajes.
-# Se borra cuando se reinicia el servidor, lo cual está bien para nuestro uso.
 historiales = {}
-MAXIMO_MENSAJES_HISTORIAL = 10  # Guardamos los últimos 10 intercambios
+MAXIMO_MENSAJES_HISTORIAL = 10
 
-# EJECUTAR_ACCION: Recibe la acción interpretada y llama a la función correcta.
-# Es el puente entre lo que Claude entendió y lo que el sistema hace.
-def ejecutar_accion(accion, datos):
+# Cuando hay ambigüedad (ej: dos Henry), guardamos acá la acción pendiente
+# y la lista de candidatos, esperando que el usuario aclare cuál quiso decir.
+acciones_pendientes = {}
+
+
+def buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos):
+    # Si ya viene con ID directo, búsqueda exacta sin ambigüedad
+    if datos.get("alumno_id_directo"):
+        from alumnos import obtener_alumno_por_id
+        alumno = obtener_alumno_por_id(datos["alumno_id_directo"])
+        return alumno, None
     
-    if accion == "registrar_pago":
-        # Primero busca el alumno por nombre
-        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
-        if not alumnos:
-            return f"No encontré ningún alumno con ese nombre. ¿Lo escribiste bien?"
-        alumno = alumnos[0]
-        registrar_pago(
-            alumno_id=alumno["id"],
-            monto=datos.get("monto"),
-            moneda=datos.get("moneda"),
-            metodo=datos.get("metodo"),
-            notas=datos.get("notas")
-        )
-        return f"✅ Registré el pago de {alumno['nombre']}: {datos.get('monto')} {datos.get('moneda')} por {datos.get('metodo')}."
+
+    alumnos, sugerencias = buscar_alumno_con_sugerencia(nombre_buscado)
+
+    if not alumnos:
+        return None, f"No encontré ningún alumno con el nombre '{nombre_buscado}'. ¿Lo escribiste bien?"
+
+    if len(alumnos) > 1:
+        acciones_pendientes[numero] = {
+            "accion": accion,
+            "datos": datos,
+            "candidatos": [{k: a[k] for k in a.keys()} for a in alumnos]
+        }
+        lista = "\n".join([
+            f"{i+1}. {a['nombre']} (representante: {a['representante'] or 'sin representante'})"
+            for i, a in enumerate(alumnos)
+        ])
+        return None, f"Encontré más de un alumno con ese nombre:\n{lista}\n\n¿A cuál te referís? Respondé con el número o el nombre completo."
+
+    alumno = alumnos[0]
+    if sugerencias:
+        return alumno, f"⚠️ No encontré '{nombre_buscado}', usé {alumno['nombre']}."
+    return alumno, None
+
+
+def ejecutar_accion(accion, datos, numero):
+
+    if accion == "aclaracion_alumno": 
+        if numero not in acciones_pendientes:
+            return "No tenía ninguna acción pendiente. ¿Qué querés hacer?"
+
+        pendiente = acciones_pendientes[numero]
+        candidatos = pendiente["candidatos"]
+        numero_opcion = datos.get("numero_opcion")
+        nombre_aclaracion = datos.get("nombre_alumno", "")
+
+        alumno_elegido = None
+        if numero_opcion and 1 <= numero_opcion <= len(candidatos):
+            alumno_elegido = candidatos[numero_opcion - 1]
+        elif nombre_aclaracion:
+            for c in candidatos:
+                if nombre_aclaracion.lower() in c['nombre'].lower():
+                    alumno_elegido = c
+                    break
+
+        if not alumno_elegido:
+            lista = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(candidatos)])
+            return f"No entendí cuál elegiste. Los candidatos son:\n{lista}\n\nRespondé con el número."
+
+        del acciones_pendientes[numero]
+
+        nuevos_datos = pendiente["datos"].copy()
+        # Usamos el nombre completo exacto para que no haya ambigüedad
+        nuevos_datos["nombre_alumno"] = alumno_elegido["nombre"]
+        # Guardamos el id para búsqueda directa
+        nuevos_datos["alumno_id_directo"] = alumno_elegido["id"]
+        return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
+
+    elif accion == "registrar_pago":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+        registrar_pago(alumno_id=alumno["id"], monto=datos.get("monto"), moneda=datos.get("moneda"), metodo=datos.get("metodo"), notas=datos.get("notas"))
+        respuesta = f"✅ Registré el pago de {alumno['nombre']}: {datos.get('monto')} {datos.get('moneda')} por {datos.get('metodo')}."
+        return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "registrar_clase":
-        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
-        if not alumnos:
-            return f"No encontré ningún alumno con ese nombre."
-        alumno = alumnos[0]
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
         fecha = datos.get("fecha", date.today().isoformat())
-        agendar_clase(
-            alumno_id=alumno["id"],
-            fecha=fecha,
-            hora=datos.get("hora"),
-            origen="manual"
-        )
-        return f"✅ Registré clase con {alumno['nombre']} el {fecha}."
-    
+        agendar_clase(alumno_id=alumno["id"], fecha=fecha, hora=datos.get("hora"), origen="manual")
+        respuesta = f"✅ Registré clase con {alumno['nombre']} el {fecha}."
+        return (aviso + "\n" + respuesta) if aviso else respuesta
+
     elif accion == "registrar_clases_multiple":
         nombres = datos.get("nombres_alumnos", [])
         fecha = datos.get("fecha", date.today().isoformat())
@@ -63,14 +113,8 @@ def ejecutar_accion(accion, datos):
                 resultados.append(f"❌ No encontré a {nombre}")
             else:
                 alumno = alumnos[0]
-                agendar_clase(
-                    alumno_id=alumno["id"],
-                    fecha=fecha,
-                    hora=datos.get("hora"),
-                    origen="manual"
-                )
+                agendar_clase(alumno_id=alumno["id"], fecha=fecha, hora=datos.get("hora"), origen="manual")
                 resultados.append(f"✅ {alumno['nombre']}")
-        
         return f"Clases registradas el {fecha}:\n" + "\n".join(resultados)
 
     elif accion == "quien_debe":
@@ -91,11 +135,9 @@ def ejecutar_accion(accion, datos):
         return respuesta
 
     elif accion == "cancelar_clase":
-        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
-        if not alumnos:
-            return f"No encontré ningún alumno con ese nombre."
-        alumno = alumnos[0]
-        # Busca la clase más próxima del alumno para cancelar
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
         from clases import proximas_clases_alumno
         proximas = proximas_clases_alumno(alumno["id"])
         if not proximas:
@@ -107,49 +149,34 @@ def ejecutar_accion(accion, datos):
             "cancelada_sin_anticipacion": f"⚠️ Clase de {alumno['nombre']} cancelada. No avisó a tiempo, se cobra igual.",
             "cancelada_por_profesora": f"✅ Clase de {alumno['nombre']} cancelada por vos. No se cobra."
         }
-        return mensajes.get(resultado, "Clase cancelada.")
+        respuesta = mensajes.get(resultado, "Clase cancelada.")
+        return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "alumno_nuevo":
-        agregar_alumno(
-            nombre=datos.get("nombre"),
-            pais=datos.get("pais"),
-            moneda=datos.get("moneda"),
-            metodo_pago=datos.get("metodo_pago"),
-            modalidad=datos.get("modalidad"),
-            precio=datos.get("precio"),
-            whatsapp=datos.get("whatsapp"),
-            mail=datos.get("mail")
-        )
+        agregar_alumno(nombre=datos.get("nombre"), pais=datos.get("pais"), moneda=datos.get("moneda"), metodo_pago=datos.get("metodo_pago"), modalidad=datos.get("modalidad"), precio=datos.get("precio"), whatsapp=datos.get("whatsapp"), mail=datos.get("mail"))
         return f"✅ Alumno {datos.get('nombre')} agregado correctamente."
-    
+
     elif accion == "resumen_alumno":
-        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
-        if not alumnos:
-            return "No encontré ningún alumno con ese nombre."
-        alumno = alumnos[0]
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
         hoy = date.today()
         resumen = resumen_clases_alumno_mes(alumno["id"], hoy.month, hoy.year)
-        historial = historial_de_pagos_alumno(alumno["id"])
-        pago_este_mes = any(
-            p["fecha"].startswith(f"{hoy.year}-{hoy.month:02d}") 
-            for p in historial
-        )
+        historial_pagos = historial_de_pagos_alumno(alumno["id"])
+        pago_este_mes = any(p["fecha"].startswith(f"{hoy.year}-{hoy.month:02d}") for p in historial_pagos)
         respuesta = f"📊 Resumen de {alumno['nombre']} ({hoy.month}/{hoy.year}):\n"
         respuesta += f"• Clases a cobrar: {resumen['a_cobrar']}\n"
         respuesta += f"• Clases dadas: {resumen['dadas']}\n"
         respuesta += f"• Crédito próximo mes: {resumen['credito_para_siguiente_mes']}\n"
         respuesta += f"• Pagó este mes: {'✅ Sí' if pago_este_mes else '❌ No'}"
-        return respuesta
+        return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "que_tengo_hoy":
-        from clases import proximas_clases_alumno
-        from alumnos import obtener_todos_los_alumnos
         hoy = date.today().isoformat()
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT c.*, a.nombre 
-            FROM clases c
+            SELECT c.*, a.nombre FROM clases c
             JOIN alumnos a ON c.alumno_id = a.id
             WHERE c.fecha = ? AND c.estado = 'agendada'
             ORDER BY c.hora ASC
@@ -163,70 +190,18 @@ def ejecutar_accion(accion, datos):
             hora = f"a las {clase['hora']}" if clase['hora'] else "sin hora especificada"
             respuesta += f"• {clase['nombre']} {hora}\n"
         return respuesta
-    
-    
-    elif accion == "cuanto_debe_alumno":
-        from promociones import resumen_cobro_representante
-        nombre = datos.get("nombre_alumno", "")
-        hoy = date.today()
-        mes = datos.get("mes", hoy.month)
-        anio = datos.get("anio", hoy.year)
-
-        # Primero busca como alumno directo
-        alumnos = buscar_alumno_por_nombre(nombre)
-        
-        if alumnos:
-            alumno = alumnos[0]
-            # Si tiene representante, calcula por representante
-            if alumno['representante'] and alumno['representante'] != '-':
-                resumen = resumen_cobro_representante(alumno['representante'], mes, anio)
-                if resumen:
-                    detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
-                    return (
-                        f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n"
-                        f"{detalle}\n"
-                        f"• Total clases: {resumen['total_clases']}\n"
-                        f"• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n"
-                        f"• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}"
-                    )
-            # Si no tiene representante, calcula solo para ese alumno
-            resumen = resumen_cobro_alumno(alumno['id'], mes, anio)
-            if resumen['monto_total'] is None:
-                return f"{alumno['nombre']} no tiene promoción cargada todavía."
-            return (
-                f"💰 Cobro de {resumen['alumno']} ({mes}/{anio}):\n"
-                f"• Clases agendadas: {resumen['clases_agendadas']}\n"
-                f"• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n"
-                f"• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}"
-            )
-
-        # Si no encontró como alumno, busca como representante
-        resumen = resumen_cobro_representante(nombre, mes, anio)
-        if resumen:
-            detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
-            return (
-                f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n"
-                f"{detalle}\n"
-                f"• Total clases: {resumen['total_clases']}\n"
-                f"• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n"
-                f"• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}"
-            )
-
-        return "No encontré ningún alumno ni representante con ese nombre."
 
     elif accion == "clases_del_mes":
-        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
-        if not alumnos:
-            return "No encontré ningún alumno con ese nombre."
-        alumno = alumnos[0]
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
         hoy = date.today()
         mes = datos.get("mes", hoy.month)
         anio = datos.get("anio", hoy.year)
-    
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT fecha, hora, estado FROM clases
+            SELECT fecha, hora FROM clases
             WHERE alumno_id = ?
             AND strftime('%m', fecha) = ?
             AND strftime('%Y', fecha) = ?
@@ -235,55 +210,82 @@ def ejecutar_accion(accion, datos):
         """, (alumno["id"], f"{mes:02d}", str(anio)))
         clases = cursor.fetchall()
         conn.close()
-    
         if not clases:
             return f"{alumno['nombre']} no tiene clases agendadas en {mes}/{anio}."
-    
         respuesta = f"📅 Clases de {alumno['nombre']} en {mes}/{anio}:\n"
         for clase in clases:
             hora = f" a las {clase['hora']}" if clase['hora'] else ""
             respuesta += f"• {clase['fecha']}{hora}\n"
         respuesta += f"\nTotal: {len(clases)} clases"
-        return respuesta
+        return (aviso + "\n" + respuesta) if aviso else respuesta
+
+    elif accion == "cuanto_debe_alumno":
+        from promociones import resumen_cobro_representante
+        nombre = datos.get("nombre_alumno", "")
+        hoy = date.today()
+        mes = datos.get("mes", hoy.month)
+        anio = datos.get("anio", hoy.year)
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre, numero, accion, datos)
+        if alumno:
+            if alumno['representante'] and alumno['representante'] != '-':
+                resumen = resumen_cobro_representante(alumno['representante'], mes, anio)
+                if resumen:
+                    detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
+                    respuesta = (f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n{detalle}\n• Total clases: {resumen['total_clases']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
+                    return (aviso + "\n" + respuesta) if aviso else respuesta
+            resumen = resumen_cobro_alumno(alumno['id'], mes, anio)
+            if resumen['monto_total'] is None:
+                return f"{alumno['nombre']} no tiene promoción cargada todavía."
+            respuesta = (f"💰 Cobro de {resumen['alumno']} ({mes}/{anio}):\n• Clases agendadas: {resumen['clases_agendadas']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
+            return (aviso + "\n" + respuesta) if aviso else respuesta
+        resumen = resumen_cobro_representante(nombre, mes, anio)
+        if resumen:
+            detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
+            return (f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n{detalle}\n• Total clases: {resumen['total_clases']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
+        return aviso or f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
 
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
-    
+
     else:
         return "No entendí esa acción."
 
-# WEBHOOK: Este es el endpoint que Twilio llama cuando recibís un WhatsApp.
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     mensaje_entrante = request.form.get("Body", "").strip()
-    numero = request.form.get("From", "desconocido")  # Número de WhatsApp del que escribe
+    numero = request.form.get("From", "desconocido")
     respuesta_texto = ""
 
-    # Recupera el historial de este número, o arranca uno nuevo
     if numero not in historiales:
         historiales[numero] = []
     historial = historiales[numero]
 
+
     try:
-        interpretado = interpretar_mensaje(mensaje_entrante, historial)
-        accion = interpretado.get("accion", "no_entiendo")
-        datos = interpretado.get("datos", {})
-        respuesta_texto = ejecutar_accion(accion, datos)
+        # Si hay acción pendiente y el mensaje es un número, lo manejamos directo
+        # sin pasar por el intérprete para mayor confiabilidad
+        if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
+            accion = "aclaracion_alumno"
+            datos = {"numero_opcion": int(mensaje_entrante.strip())}
+        else:
+            interpretado = interpretar_mensaje(mensaje_entrante, historial)
+            accion = interpretado.get("accion", "no_entiendo")
+            datos = interpretado.get("datos", {})
+        respuesta_texto = ejecutar_accion(accion, datos, numero)
     except Exception as e:
         respuesta_texto = f"Ocurrió un error: {str(e)}"
 
-    # Agrega el mensaje de Andrea y la respuesta del bot al historial
     historial.append({"role": "user", "content": mensaje_entrante})
     historial.append({"role": "assistant", "content": respuesta_texto})
 
-    # Recorta el historial para no crecer infinitamente
-    # Multiplicamos por 2 porque cada intercambio tiene 2 mensajes (user + assistant)
     if len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
         historiales[numero] = historial[-(MAXIMO_MENSAJES_HISTORIAL * 2):]
 
     respuesta = MessagingResponse()
     respuesta.message(respuesta_texto)
     return str(respuesta)
+
 
 if __name__ == "__main__":
     scheduler = configurar_scheduler()
