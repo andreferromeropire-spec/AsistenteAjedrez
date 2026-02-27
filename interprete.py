@@ -10,9 +10,13 @@ cliente = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 # Esta es la función más importante del proyecto.
 # Recibe tu mensaje en lenguaje natural y devuelve
 # un diccionario con la acción a ejecutar y los datos necesarios.
-def interpretar_mensaje(mensaje):
-    
-    prompt = f"""Sos el asistente de Andrea, profesora de ajedrez argentina.
+def interpretar_mensaje(mensaje, historial=None):
+    # historial es una lista de dicts: [{"role": "user"/"assistant", "content": "..."}]
+    # Si no se pasa, arranca vacío (comportamiento anterior)
+    if historial is None:
+        historial = []
+
+    sistema = f"""Sos el asistente de Andrea, profesora de ajedrez argentina.
 Andrea te va a mandar mensajes por WhatsApp para gestionar su negocio.
 
 Tu trabajo es interpretar el mensaje y devolver SOLO un JSON con esta estructura:
@@ -33,7 +37,7 @@ Las acciones posibles son:
    datos necesarios: nombres_alumnos (lista), fecha (YYYY-MM-DD), hora (opcional)
 
 4. "cancelar_clase" - cuando se cancela una clase
-   datos necesarios: nombre_alumno, fecha, cancelada_por (alumno/profesora)
+   datos necesarios: nombre_alumno, fecha (YYYY-MM-DD), cancelada_por (alumno/profesora)
 
 5. "quien_debe" - quiere saber quién no pagó este mes
    datos necesarios: ninguno
@@ -47,28 +51,37 @@ Las acciones posibles son:
 8. "alumno_nuevo" - agregar un alumno nuevo
    datos necesarios: nombre, pais, moneda, metodo_pago, modalidad, precio, whatsapp (opcional), mail (opcional)
 
-9. "resumen_alumno" - quiere ver el resumen de un alumno este mes
-   datos necesarios: nombre_alumno
+9. "clases_del_mes" - quiere ver qué clases tiene agendadas un alumno en un mes
+   datos necesarios: nombre_alumno, mes (número, opcional), anio (opcional)
 
 10. "que_tengo_hoy" - quiere ver las clases agendadas para hoy
-   datos necesarios: ninguno   
+    datos necesarios: ninguno
 
 11. "cuanto_debe_alumno" - quiere saber cuánto debe cobrarle a un alumno este mes
-    datos necesarios: nombre_alumno, mes (número, opcional), anio (opcional)   
+    datos necesarios: nombre_alumno, mes (número, opcional), anio (opcional)
 
-12. "no_entiendo" - si el mensaje no corresponde a ninguna acción
-   datos necesarios: ninguno
+12. "reprogramar_clase" - cuando una clase cambia de fecha u hora
+    datos necesarios: nombre_alumno, fecha_original (YYYY-MM-DD), nueva_fecha (YYYY-MM-DD), nueva_hora (opcional)
+
+13. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+    datos necesarios: ninguno
+
+IMPORTANTE: Usá el historial de conversación para entender el contexto.
+Si Andrea dice "ah quise decir el 31" o "la del viernes" sin mencionar al alumno,
+buscá en los mensajes anteriores de qué alumno se estaba hablando.
 
 Fecha de hoy: {__import__('datetime').date.today().isoformat()}
 
-Devolvé SOLO el JSON, sin explicaciones ni texto adicional.
+Devolvé SOLO el JSON, sin explicaciones ni texto adicional."""
 
-Mensaje de Andrea: {mensaje}"""
+    # Armamos la lista de mensajes: historial + mensaje actual
+    mensajes = historial + [{"role": "user", "content": mensaje}]
 
     respuesta = cliente.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=500,
-        messages=[{"role": "user", "content": prompt}]
+        system=sistema,
+        messages=mensajes
     )
     
     texto = respuesta.content[0].text.strip()

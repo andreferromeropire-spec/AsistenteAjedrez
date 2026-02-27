@@ -14,6 +14,12 @@ from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes
 load_dotenv()
 app = Flask(__name__)
 
+# Guarda el historial de conversación por número de WhatsApp.
+# La clave es el número de teléfono, el valor es una lista de mensajes.
+# Se borra cuando se reinicia el servidor, lo cual está bien para nuestro uso.
+historiales = {}
+MAXIMO_MENSAJES_HISTORIAL = 10  # Guardamos los últimos 10 intercambios
+
 # EJECUTAR_ACCION: Recibe la acción interpretada y llama a la función correcta.
 # Es el puente entre lo que Claude entendió y lo que el sistema hace.
 def ejecutar_accion(accion, datos):
@@ -208,6 +214,37 @@ def ejecutar_accion(accion, datos):
 
         return "No encontré ningún alumno ni representante con ese nombre."
 
+    elif accion == "clases_del_mes":
+        alumnos = buscar_alumno_por_nombre(datos.get("nombre_alumno", ""))
+        if not alumnos:
+            return "No encontré ningún alumno con ese nombre."
+        alumno = alumnos[0]
+        hoy = date.today()
+        mes = datos.get("mes", hoy.month)
+        anio = datos.get("anio", hoy.year)
+    
+        conn = __import__('database').get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT fecha, hora, estado FROM clases
+            WHERE alumno_id = ?
+            AND strftime('%m', fecha) = ?
+            AND strftime('%Y', fecha) = ?
+            AND estado = 'agendada'
+            ORDER BY fecha ASC
+        """, (alumno["id"], f"{mes:02d}", str(anio)))
+        clases = cursor.fetchall()
+        conn.close()
+    
+        if not clases:
+            return f"{alumno['nombre']} no tiene clases agendadas en {mes}/{anio}."
+    
+        respuesta = f"📅 Clases de {alumno['nombre']} en {mes}/{anio}:\n"
+        for clase in clases:
+            hora = f" a las {clase['hora']}" if clase['hora'] else ""
+            respuesta += f"• {clase['fecha']}{hora}\n"
+        respuesta += f"\nTotal: {len(clases)} clases"
+        return respuesta
 
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
@@ -219,15 +256,30 @@ def ejecutar_accion(accion, datos):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     mensaje_entrante = request.form.get("Body", "").strip()
+    numero = request.form.get("From", "desconocido")  # Número de WhatsApp del que escribe
     respuesta_texto = ""
 
+    # Recupera el historial de este número, o arranca uno nuevo
+    if numero not in historiales:
+        historiales[numero] = []
+    historial = historiales[numero]
+
     try:
-        interpretado = interpretar_mensaje(mensaje_entrante)
+        interpretado = interpretar_mensaje(mensaje_entrante, historial)
         accion = interpretado.get("accion", "no_entiendo")
         datos = interpretado.get("datos", {})
         respuesta_texto = ejecutar_accion(accion, datos)
     except Exception as e:
         respuesta_texto = f"Ocurrió un error: {str(e)}"
+
+    # Agrega el mensaje de Andrea y la respuesta del bot al historial
+    historial.append({"role": "user", "content": mensaje_entrante})
+    historial.append({"role": "assistant", "content": respuesta_texto})
+
+    # Recorta el historial para no crecer infinitamente
+    # Multiplicamos por 2 porque cada intercambio tiene 2 mensajes (user + assistant)
+    if len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
+        historiales[numero] = historial[-(MAXIMO_MENSAJES_HISTORIAL * 2):]
 
     respuesta = MessagingResponse()
     respuesta.message(respuesta_texto)
