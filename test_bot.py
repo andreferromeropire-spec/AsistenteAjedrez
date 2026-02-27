@@ -25,3 +25,7 @@ while True:
 
     historial.append({"role": "user", "content": mensaje})
     historial.append({"role": "assistant", "content": respuesta})
+
+    # Reset si se resolvió una ambigüedad
+    if accion == "aclaracion_alumno" and NUMERO_TEST not in acciones_pendientes:
+        historial = []

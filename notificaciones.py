@@ -71,6 +71,7 @@ def alerta_paquetes():
             f"clases restantes en su paquete. ¡Hora de renovar!"
         )
 
+
 # CONFIGURAR_SCHEDULER: Define cuándo se ejecuta cada función automáticamente
 def configurar_scheduler():
     scheduler = BackgroundScheduler()
@@ -84,5 +85,10 @@ def configurar_scheduler():
     # Revisión de paquetes todos los lunes a las 9am
     scheduler.add_job(alerta_paquetes, 'cron', day_of_week='mon', hour=9, minute=0)
     
+    # Sincronización con Calendar dos veces por día
+    from sincronizacion import sincronizacion_diaria
+    scheduler.add_job(sincronizacion_diaria, 'cron', hour=8, minute=30)
+    scheduler.add_job(sincronizacion_diaria, 'cron', hour=20, minute=0)
+
     scheduler.start()
     return scheduler

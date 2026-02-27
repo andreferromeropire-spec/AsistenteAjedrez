@@ -9,8 +9,7 @@ from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
 from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno
-from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes
-
+from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
 load_dotenv()
 app = Flask(__name__)
 
@@ -152,6 +151,32 @@ def ejecutar_accion(accion, datos, numero):
         respuesta = mensajes.get(resultado, "Clase cancelada.")
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
+    elif accion == "reprogramar_clase":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+        fecha_original = datos.get("fecha_original")
+        nueva_fecha = datos.get("nueva_fecha")
+        nueva_hora = datos.get("nueva_hora")
+        if not fecha_original or not nueva_fecha:
+            return "Necesito la fecha original y la nueva fecha para reprogramar."
+        conn = __import__('database').get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id FROM clases
+            WHERE alumno_id = ? AND fecha = ? AND estado = 'agendada'
+        """, (alumno["id"], fecha_original))
+        clase = cursor.fetchone()
+        conn.close()
+        if not clase:
+            return f"No encontré una clase agendada de {alumno['nombre']} el {fecha_original}."
+        reprogramar_clase(clase["id"], nueva_fecha, nueva_hora)
+        respuesta = f"✅ Clase de {alumno['nombre']} reprogramada del {fecha_original} al {nueva_fecha}"
+        if nueva_hora:
+            respuesta += f" a las {nueva_hora}"
+        respuesta += "."
+        return (aviso + "\n" + respuesta) if aviso else respuesta
+    
     elif accion == "alumno_nuevo":
         agregar_alumno(nombre=datos.get("nombre"), pais=datos.get("pais"), moneda=datos.get("moneda"), metodo_pago=datos.get("metodo_pago"), modalidad=datos.get("modalidad"), precio=datos.get("precio"), whatsapp=datos.get("whatsapp"), mail=datos.get("mail"))
         return f"✅ Alumno {datos.get('nombre')} agregado correctamente."
@@ -272,15 +297,24 @@ def webhook():
             interpretado = interpretar_mensaje(mensaje_entrante, historial)
             accion = interpretado.get("accion", "no_entiendo")
             datos = interpretado.get("datos", {})
-        respuesta_texto = ejecutar_accion(accion, datos, numero)
+            # Si el intérprete creyó que era una aclaración pero no hay nada pendiente,
+            # lo tratamos como "no_entiendo" para evitar el mensaje de error confuso
+            if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
+                accion = "no_entiendo"
+                datos = {}
+                respuesta_texto = ejecutar_accion(accion, datos, numero)
     except Exception as e:
         respuesta_texto = f"Ocurrió un error: {str(e)}"
 
     historial.append({"role": "user", "content": mensaje_entrante})
     historial.append({"role": "assistant", "content": respuesta_texto})
 
-    if len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
-        historiales[numero] = historial[-(MAXIMO_MENSAJES_HISTORIAL * 2):]
+    # Limpiamos historial si hubo ambigüedad resuelta
+    if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
+        historiales[numero] = []
+    # También limpiamos si el historial tiene muchas menciones de un mismo alumno
+    elif len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
+        historiales[numero] = []  # Reset completo en lugar de truncar
 
     respuesta = MessagingResponse()
     respuesta.message(respuesta_texto)

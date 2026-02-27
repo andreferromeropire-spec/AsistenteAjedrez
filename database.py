@@ -79,6 +79,16 @@ def crear_tablas():
         )
     """)
     
+    # Tabla de eventos de Calendar a ignorar en sincronizaciones futuras
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS eventos_ignorados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            google_event_id TEXT NOT NULL UNIQUE,
+            titulo TEXT,
+            fecha_ignorado TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Base de datos lista.")

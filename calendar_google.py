@@ -48,6 +48,10 @@ def obtener_eventos(fecha_inicio, fecha_fin):
 # BUSCAR_ALUMNO_EN_EVENTO: Intenta identificar qué alumno
 # corresponde a un evento del calendario por el título
 def buscar_alumno_en_evento(titulo):
+    # Ignorar todo lo que venga después de " y " (suele ser el nombre de Andrea)
+    if " y " in titulo:
+        titulo = titulo.split(" y ")[0]
+    
     from alumnos import obtener_todos_los_alumnos
     alumnos_activos = obtener_todos_los_alumnos()
     titulo_min = titulo.lower()
