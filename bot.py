@@ -305,31 +305,46 @@ def ejecutar_accion(accion, datos, numero):
 
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
+
+        def formatear_promo(rangos):
+            if not rangos:
+                return "💰 Sin promo cargada\n"
+            texto = "💰 Promo:\n"
+            for r in rangos:
+                precio = int(r['precio_por_clase']) if r['precio_por_clase'] == int(r['precio_por_clase']) else r['precio_por_clase']
+                simbolo = simbolos.get(r['moneda'], r['moneda'])
+                texto += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {simbolo}{precio}/h\n"
+            return texto
 
         alumnos_rep = buscar_alumno_por_representante(datos.get("nombre_alumno", ""))
-        
+
         if alumnos_rep:
             hoy = date.today()
             nombre_mes = meses_es[hoy.month]
-            respuesta = f"👤 {datos.get('nombre_alumno')} es representante de:\n"
+            nombres = " y ".join([a['nombre'] for a in alumnos_rep])
+            respuesta = f"👤 {datos.get('nombre_alumno')} es representante de {nombres}\n\n"
+
+            a0 = alumnos_rep[0]
+            respuesta += f"• Representante: {datos.get('nombre_alumno')}\n"
+            respuesta += f"• País: {a0['pais'] or '—'}\n"
+            respuesta += f"• Idioma: {a0['idioma'] or '—'}\n"
+            respuesta += f"• WhatsApp: {a0['whatsapp'] or '—'}\n"
+            respuesta += f"• Mail: {a0['mail'] or '—'}\n"
+            respuesta += f"• Moneda: {a0['moneda'] or '—'}\n"
+            respuesta += f"• Método de pago: {a0['metodo_pago'] or '—'}\n"
+            respuesta += f"• Modalidad: {a0['modalidad'] or '—'}\n"
+            respuesta += f"• Alias: {a0['alias'] or '—'}\n"
+            respuesta += f"• Notas: {a0['notas_recordatorio'] or '—'}\n\n"
+
+            respuesta += formatear_promo(obtener_promo(a0["id"]))
+
             total_clases = 0
             for a in alumnos_rep:
-                respuesta += f"\n📋 {a['nombre']}:\n"
-                respuesta += f"• Moneda: {a['moneda'] or '—'}\n"
-                respuesta += f"• Método de pago: {a['metodo_pago'] or '—'}\n"
-                respuesta += f"• Modalidad: {a['modalidad'] or '—'}\n"
-
-                rangos = obtener_promo(a["id"])
-                if rangos:
-                    promo_str = ", ".join([f"{r['clases_desde']}–{r['clases_hasta']}cls: {r['precio_por_clase']} {r['moneda']}" for r in rangos])
-                    respuesta += f"• Promo: {promo_str}\n"
-                else:
-                    respuesta += f"• Promo: sin cargar\n"
-
                 proximas = proximas_clases_alumno(a["id"])
                 clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
                 dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
-                respuesta += f"• {nombre_mes}: {dias or 'sin clases'}\n"
+                respuesta += f"\n{a['nombre']}\nClases {nombre_mes}: {dias or 'sin clases'}\n"
                 total_clases += len(clases_mes)
 
             respuesta += f"\nTotal clases {nombre_mes}: {total_clases}"
@@ -351,15 +366,9 @@ def ejecutar_accion(accion, datos, numero):
         respuesta += f"• Método de pago: {alumno['metodo_pago'] or '—'}\n"
         respuesta += f"• Modalidad: {alumno['modalidad'] or '—'}\n"
         respuesta += f"• Alias: {alumno['alias'] or '—'}\n"
-        respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n"
+        respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n\n"
 
-        rangos = obtener_promo(alumno["id"])
-        if rangos:
-            respuesta += f"\n💰 Promo:\n"
-            for r in rangos:
-                respuesta += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {r['precio_por_clase']} {r['moneda']}/clase\n"
-        else:
-            respuesta += f"\n💰 Sin promo cargada\n"
+        respuesta += formatear_promo(obtener_promo(alumno["id"]))
 
         proximas = proximas_clases_alumno(alumno["id"])
         clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
@@ -369,7 +378,7 @@ def ejecutar_accion(accion, datos, numero):
         else:
             respuesta += f"\n📅 Sin clases este mes"
 
-        return (aviso + "\n" + respuesta) if aviso else respuesta   
+        return (aviso + "\n" + respuesta) if aviso else respuesta 
     
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
