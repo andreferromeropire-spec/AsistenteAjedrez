@@ -307,9 +307,10 @@ def webhook():
     historial = historiales[numero]
 
 
+    accion = "no_entiendo"
+    datos = {}
+    
     try:
-        # Si hay acción pendiente y el mensaje es un número, lo manejamos directo
-        # sin pasar por el intérprete para mayor confiabilidad
         if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
             accion = "aclaracion_alumno"
             datos = {"numero_opcion": int(mensaje_entrante.strip())}
@@ -317,12 +318,10 @@ def webhook():
             interpretado = interpretar_mensaje(mensaje_entrante, historial)
             accion = interpretado.get("accion", "no_entiendo")
             datos = interpretado.get("datos", {})
-            # Si el intérprete creyó que era una aclaración pero no hay nada pendiente,
-            # lo tratamos como "no_entiendo" para evitar el mensaje de error confuso
             if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
                 accion = "no_entiendo"
                 datos = {}
-                respuesta_texto = ejecutar_accion(accion, datos, numero)
+        respuesta_texto = ejecutar_accion(accion, datos, numero)
     except Exception as e:
         respuesta_texto = f"Ocurrió un error: {str(e)}"
 
