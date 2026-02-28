@@ -48,30 +48,36 @@ def obtener_eventos(fecha_inicio, fecha_fin):
 # BUSCAR_ALUMNO_EN_EVENTO: Intenta identificar qué alumno
 # corresponde a un evento del calendario por el título
 def buscar_alumno_en_evento(titulo):
-    # Ignorar todo lo que venga después de " y " (suele ser el nombre de Andrea)
-    if " y " in titulo:
+    # Ignorar todo lo que venga después de " and " o " y " (suele ser el nombre de Andrea)
+    if " and " in titulo.lower():
+        titulo = titulo.lower().split(" and ")[0]
+    elif " y " in titulo:
         titulo = titulo.split(" y ")[0]
-    
-    from alumnos import obtener_todos_los_alumnos
+
     alumnos_activos = obtener_todos_los_alumnos()
     titulo_min = titulo.lower()
 
+    # Primero pasada: buscar nombre completo exacto
     for alumno in alumnos_activos:
-        # Extraemos nombres y limpiamos posibles espacios extras
         nombre = alumno['nombre'].lower().strip()
-        representante = (alumno['representante'] or "").lower().strip()
-        
-        # 1. ¿El nombre del alumno está en el título? (Ej: "George" en "Morgan (George y David)")
         if nombre in titulo_min:
             return alumno
-            
-        # 2. ¿El nombre del representante está en el título? (Ej: "Morgan" en "Morgan Kids")
-        if representante and representante in titulo_min:
+
+    # Segunda pasada: buscar por representante o alias
+    for alumno in alumnos_activos:
+        rep_valor = alumno['representante'] or ""
+        representante = "" if rep_valor.strip() == "-" else rep_valor.lower().strip()
+        alias = (alumno['alias'] or "").lower().strip()
+        
+        if representante and len(representante) >= 3 and representante in titulo_min:
             return alumno
-            
-        # 3. Caso especial para "Lucia de Elizalde" si en la DB solo dice "Lucia"
-        # Esto busca si alguna palabra del nombre del alumno está en el título
-        if any(palabra in titulo_min for palabra in nombre.split() if len(palabra) > 2):
+        if alias and len(alias) >= 3 and alias in titulo_min:
+            return alumno
+
+    # Tercera pasada: buscar por palabra suelta (menos preciso)
+    for alumno in alumnos_activos:
+        nombre = alumno['nombre'].lower().strip()
+        if any(palabra in titulo_min for palabra in nombre.split() if len(palabra) > 3):
             return alumno
 
     return None

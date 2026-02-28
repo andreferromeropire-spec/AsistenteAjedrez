@@ -89,6 +89,11 @@ def crear_tablas():
         )
     """)
 
+    try:
+        cursor.execute("ALTER TABLE alumnos ADD COLUMN alias TEXT")
+    except:
+        pass  # Ya existe, ignorar
+
     conn.commit()
     conn.close()
     print("Base de datos lista.")

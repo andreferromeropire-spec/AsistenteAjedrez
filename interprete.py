@@ -48,9 +48,11 @@ Las acciones posibles son:
 7. "resumen_alumno" - quiere ver el resumen de un alumno
    datos necesarios: nombre_alumno
 
-8. "alumno_nuevo" - agregar un alumno nuevo
-   datos necesarios: nombre, pais, moneda, metodo_pago, modalidad, precio, whatsapp (opcional), mail (opcional)
-
+8. 8. "alumno_nuevo" - agregar un alumno nuevo
+   datos necesarios: nombre, pais, moneda, metodo_pago, modalidad, representante (opcional),
+   promo (lista de rangos: [{{"desde": 1, "hasta": 3, "precio": 28}}, ...])
+   Ejemplo de promo: [{{"desde": 1, "hasta": 3, "precio": 28}}, {{"desde": 4, "hasta": 5, "precio": 26}}, {{"desde": 6, "hasta": 10, "precio": 25}}]
+   
 9. "clases_del_mes" - quiere ver qué clases tiene agendadas un alumno en un mes
    datos necesarios: nombre_alumno, mes (número, opcional), anio (opcional)
 

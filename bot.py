@@ -1,4 +1,4 @@
-from promociones import resumen_cobro_alumno, clases_agendadas_mes
+from promociones import calcular_monto, agregar_promo, resumen_cobro_alumno, clases_agendadas_mes
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
@@ -178,8 +178,28 @@ def ejecutar_accion(accion, datos, numero):
         return (aviso + "\n" + respuesta) if aviso else respuesta
     
     elif accion == "alumno_nuevo":
-        agregar_alumno(nombre=datos.get("nombre"), pais=datos.get("pais"), moneda=datos.get("moneda"), metodo_pago=datos.get("metodo_pago"), modalidad=datos.get("modalidad"), precio=datos.get("precio"), whatsapp=datos.get("whatsapp"), mail=datos.get("mail"))
-        return f"✅ Alumno {datos.get('nombre')} agregado correctamente."
+        nuevo = agregar_alumno(
+            nombre=datos.get("nombre"),
+            pais=datos.get("pais"),
+            moneda=datos.get("moneda"),
+            metodo_pago=datos.get("metodo_pago"),
+            modalidad=datos.get("modalidad"),
+            representante=datos.get("representante")
+        )
+        # Cargar promo si viene en los datos
+        from database import get_connection
+        conn = get_connection()
+        alumno = conn.execute(
+            "SELECT id FROM alumnos WHERE nombre = ? ORDER BY id DESC LIMIT 1",
+            (datos.get("nombre"),)
+        ).fetchone()
+        conn.close()
+    
+        promo = datos.get("promo", [])
+        for rango in promo:
+            agregar_promo(alumno["id"], rango["desde"], rango["hasta"], rango["precio"], datos.get("moneda"))
+        
+        return f"✅ Alumno {datos.get('nombre')} agregado con {len(promo)} rangos de promo."
 
     elif accion == "resumen_alumno":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)

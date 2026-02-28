@@ -8,6 +8,8 @@ from notificaciones import enviar_mensaje
 # Busca eventos nuevos, cancelados y modificados para el mes indicado.
 def detectar_cambios(mes, anio):
     # 1. Definir rango del mes
+    
+    
     if mes == 12:
         proximo_mes, proximo_anio = 1, anio + 1
     else:

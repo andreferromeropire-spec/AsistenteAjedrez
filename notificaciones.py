@@ -71,9 +71,50 @@ def alerta_paquetes():
             f"clases restantes en su paquete. ¡Hora de renovar!"
         )
 
+def resumen_cobros_mensuales():
+    from promociones import resumen_cobro_alumno, resumen_cobro_representante
+    from alumnos import obtener_todos_los_alumnos
+    from datetime import date
+    
+    hoy = date.today()
+    # mes actual
+    mes, anio = hoy.month, hoy.year
+    
+    alumnos = obtener_todos_los_alumnos()
+    
+    # Agrupamos por representante para no repetir
+    procesados = set()
+    texto = f"💰 Resumen de cobros - {mes}/{anio}:\n\n"
+    
+    for alumno in alumnos:
+        rep = alumno['representante']
+        
+        # Si tiene representante, calculamos por representante
+        if rep and rep != '-' and rep not in procesados:
+            procesados.add(rep)
+            resumen = resumen_cobro_representante(rep, mes, anio)
+            if resumen and resumen['monto_total']:
+                detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
+                texto += f"👤 {rep}\n{detalle}\n"
+                texto += f"  Total: {resumen['total_clases']} clases × {resumen['precio_por_clase']} = {resumen['monto_total']} {resumen['moneda']}\n\n"
+        
+        # Si no tiene representante
+        elif not rep or rep == '-':
+            if alumno['id'] not in procesados:
+                procesados.add(alumno['id'])
+                resumen = resumen_cobro_alumno(alumno['id'], mes, anio)
+                if resumen and resumen['monto_total']:
+                    texto += f"👤 {alumno['nombre']}\n"
+                    texto += f"  • {resumen['clases_agendadas']} clases × {resumen['precio_por_clase']} = {resumen['monto_total']} {resumen['moneda']}\n\n"
+    
+    enviar_mensaje(texto)
+
 
 # CONFIGURAR_SCHEDULER: Define cuándo se ejecuta cada función automáticamente
 def configurar_scheduler():
+
+    # Resumen de cobros el día 1 de cada mes a las 9am
+    scheduler.add_job(resumen_cobros_mensuales, 'cron', day=1, hour=9, minute=0)
     scheduler = BackgroundScheduler()
     
     # Resumen diario a las 8am
