@@ -68,11 +68,18 @@ Las acciones posibles son:
 13. "aclaracion_alumno" - cuando Andrea aclara cuál alumno quiso decir respondiendo con un número o nombre
     datos necesarios: numero_opcion (entero, si respondió con un número) o nombre_alumno (si escribió el nombre)
 
-14. "ver_alumno" - quiere ver los datos de un alumno o de un representante
+14. "ver_alumno" - quiere ver los datos de un alumno o representante
     datos necesarios: nombre_alumno
     Ejemplos: "mostrame los datos de Grace", "ver Charlie", "info de Kerem"
+
+15. "actualizar_dato_alumno" - quiere cambiar un dato de un alumno
+    datos necesarios: nombre_alumno, campo, nuevo_valor
+    Campos posibles: nombre, representante, pais, idioma, contacto_preferido, mail, whatsapp,
+    horas_semanales, dia_habitual, precio, moneda, metodo_pago, modalidad, notas_recordatorio, alias
+    Ejemplos: "cambiá el nombre de Grace a Grace Smith", "actualizá el representante de Charlie a Charlie Hettinger", "ponele alias noam a Nouham"
+
     
-15. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+16. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
