@@ -112,9 +112,6 @@ def resumen_cobros_mensuales():
 
 # CONFIGURAR_SCHEDULER: Define cuándo se ejecuta cada función automáticamente
 def configurar_scheduler():
-
-    # Resumen de cobros el día 1 de cada mes a las 9am
-    scheduler.add_job(resumen_cobros_mensuales, 'cron', day=1, hour=9, minute=0)
     scheduler = BackgroundScheduler()
     
     # Resumen diario a las 8am
@@ -122,6 +119,9 @@ def configurar_scheduler():
     
     # Recordatorio de pagos el día 1 de cada mes a las 9am
     scheduler.add_job(recordatorio_pagos_mensuales, 'cron', day=1, hour=9, minute=0)
+
+    # Resumen de cobros el día 1 de cada mes a las 9am
+    scheduler.add_job(resumen_cobros_mensuales, 'cron', day=1, hour=9, minute=0)
     
     # Revisión de paquetes todos los lunes a las 9am
     scheduler.add_job(alerta_paquetes, 'cron', day_of_week='mon', hour=9, minute=0)
