@@ -283,12 +283,16 @@ def ejecutar_accion(accion, datos, numero):
                 return f"{alumno['nombre']} no tiene promoción cargada todavía."
             respuesta = (f"💰 Cobro de {resumen['alumno']} ({mes}/{anio}):\n• Clases agendadas: {resumen['clases_agendadas']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
             return (aviso + "\n" + respuesta) if aviso else respuesta
-        resumen = resumen_cobro_representante(nombre, mes, anio)
-        if resumen:
-            detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
-            return (f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n{detalle}\n• Total clases: {resumen['total_clases']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
-        return aviso or f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
-
+        else:
+            try:
+                resumen = resumen_cobro_representante(nombre, mes, anio)
+                if resumen:
+                    detalle = "\n".join([f"  • {d}" for d in resumen['alumnos']])
+                    return (f"💰 Cobro para {resumen['representante']} ({mes}/{anio}):\n{detalle}\n• Total clases: {resumen['total_clases']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
+            except:
+                pass
+            return f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
+    
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
 
