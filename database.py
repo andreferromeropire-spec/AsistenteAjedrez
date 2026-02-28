@@ -7,6 +7,8 @@ import os
 DB_PATH = os.environ.get("DB_PATH", "chess_assistant.db")
 
 def get_connection():
+    # Crea la carpeta si no existe
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True) if os.path.dirname(DB_PATH) else None
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -105,3 +107,4 @@ def crear_tablas():
 # Esto permite correr el archivo directamente para crear las tablas
 if __name__ == "__main__":
     crear_tablas()
+    print("Tablas creadas.")
