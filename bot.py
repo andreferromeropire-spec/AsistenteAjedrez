@@ -296,6 +296,66 @@ def ejecutar_accion(accion, datos, numero):
             except:
                 pass
             return f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
+        
+    elif accion == "ver_alumno":
+        from clases import proximas_clases_alumno
+        from promociones import obtener_promo
+        from datetime import date
+
+        # Primero intentamos buscar por representante
+        from alumnos import buscar_alumno_por_representante
+        alumnos_rep = buscar_alumno_por_representante(datos.get("nombre_alumno", ""))
+        
+        if alumnos_rep:
+            # Es un representante → vista agrupada
+            hoy = date.today()
+            respuesta = f"👤 {datos.get('nombre_alumno')} es representante de:\n\n"
+            total_clases = 0
+            for a in alumnos_rep:
+                proximas = proximas_clases_alumno(a["id"])
+                clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
+                dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
+                respuesta += f"📚 {a['nombre']}: {dias or 'sin clases'}\n"
+                total_clases += len(clases_mes)
+            respuesta += f"\nTotal clases: {total_clases}"
+            return respuesta
+
+        # No es representante → buscar como alumno normal
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+
+        hoy = date.today()
+        respuesta = f"📋 {alumno['nombre']}:\n"
+        respuesta += f"• Representante: {alumno['representante'] or '—'}\n"
+        respuesta += f"• País: {alumno['pais'] or '—'}\n"
+        respuesta += f"• Idioma: {alumno['idioma'] or '—'}\n"
+        respuesta += f"• WhatsApp: {alumno['whatsapp'] or '—'}\n"
+        respuesta += f"• Mail: {alumno['mail'] or '—'}\n"
+        respuesta += f"• Moneda: {alumno['moneda'] or '—'}\n"
+        respuesta += f"• Método de pago: {alumno['metodo_pago'] or '—'}\n"
+        respuesta += f"• Modalidad: {alumno['modalidad'] or '—'}\n"
+        respuesta += f"• Alias: {alumno['alias'] or '—'}\n"
+        respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n"
+
+        rangos = obtener_promo(alumno["id"])
+        if rangos:
+            respuesta += f"\n💰 Promo:\n"
+            for r in rangos:
+                respuesta += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {r['precio_por_clase']} {r['moneda']}/clase\n"
+        else:
+            respuesta += f"\n💰 Sin promo cargada\n"
+
+        proximas = proximas_clases_alumno(alumno["id"])
+        clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
+        if clases_mes:
+            dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
+            mes_nombre = hoy.strftime("%B")
+            respuesta += f"\n📅 {mes_nombre}: {dias}"
+        else:
+            respuesta += f"\n📅 Sin clases este mes"
+
+        return (aviso + "\n" + respuesta) if aviso else respuesta    
     
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"

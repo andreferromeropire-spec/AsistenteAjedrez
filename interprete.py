@@ -68,7 +68,11 @@ Las acciones posibles son:
 13. "aclaracion_alumno" - cuando Andrea aclara cuál alumno quiso decir respondiendo con un número o nombre
     datos necesarios: numero_opcion (entero, si respondió con un número) o nombre_alumno (si escribió el nombre)
 
-14. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+14. "ver_alumno" - quiere ver los datos de un alumno o de un representante
+    datos necesarios: nombre_alumno
+    Ejemplos: "mostrame los datos de Grace", "ver Charlie", "info de Kerem"
+    
+15. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
