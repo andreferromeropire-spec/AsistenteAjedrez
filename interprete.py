@@ -78,8 +78,11 @@ Las acciones posibles son:
     horas_semanales, dia_habitual, precio, moneda, metodo_pago, modalidad, notas_recordatorio, alias
     Ejemplos: "cambiá el nombre de Grace a Grace Smith", "actualizá el representante de Charlie a Charlie Hettinger", "ponele alias noam a Nouham"
 
+16. "borrar_alumno" - quiere borrar o desactivar un alumno
+    datos necesarios: nombre_alumno
+    Ejemplos: "borrá a Grace", "eliminá a Charlie Hettinger", "quitá a Lucas"
     
-16. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+17. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.

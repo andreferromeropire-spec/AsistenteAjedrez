@@ -113,3 +113,21 @@ def actualizar_representante(nombre_actual, campo, nuevo_valor):
     )
     conn.commit()
     conn.close()
+
+def desactivar_alumno(alumno_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE alumnos SET activo = 0 WHERE id = ?", (alumno_id,))
+    conn.commit()
+    conn.close()
+
+def borrar_alumno_definitivo(alumno_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Borramos también sus clases y pagos para no dejar datos huérfanos
+    cursor.execute("DELETE FROM clases WHERE alumno_id = ?", (alumno_id,))
+    cursor.execute("DELETE FROM pagos WHERE alumno_id = ?", (alumno_id,))
+    cursor.execute("DELETE FROM promociones WHERE alumno_id = ?", (alumno_id,))
+    cursor.execute("DELETE FROM alumnos WHERE id = ?", (alumno_id,))
+    conn.commit()
+    conn.close()

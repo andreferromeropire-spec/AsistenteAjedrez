@@ -57,7 +57,6 @@ def buscar_en_todo(nombre_buscado):
     from alumnos import buscar_alumno_por_nombre, buscar_alumno_por_representante
     candidatos = []
 
-    # Buscar como alumno
     alumnos = buscar_alumno_por_nombre(nombre_buscado)
     for a in alumnos:
         candidatos.append({
@@ -67,7 +66,6 @@ def buscar_en_todo(nombre_buscado):
             "detalle": "alumno"
         })
 
-    # Buscar como representante — agrupamos por nombre exacto
     como_rep = buscar_alumno_por_representante(nombre_buscado)
     if como_rep:
         grupos = {}
@@ -98,7 +96,6 @@ def ejecutar_accion(accion, datos, numero):
         numero_opcion = datos.get("numero_opcion")
         nombre_aclaracion = datos.get("nombre_alumno", "")
 
-        # Manejo de candidatos_custom (para actualizar_dato_alumno)
         if "candidatos_custom" in pendiente:
             candidatos = pendiente["candidatos_custom"]
             elegido = None
@@ -117,7 +114,6 @@ def ejecutar_accion(accion, datos, numero):
             nuevos_datos["candidato_elegido"] = elegido
             return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
-        # Manejo normal de candidatos de alumnos
         candidatos = pendiente["candidatos"]
         alumno_elegido = None
         if numero_opcion and 1 <= numero_opcion <= len(candidatos):
@@ -443,7 +439,6 @@ def ejecutar_accion(accion, datos, numero):
         if campo not in campos_permitidos:
             return f"No puedo editar el campo '{campo}'."
 
-        # Si viene con candidato ya elegido (después de desambiguación)
         if datos.get("candidato_elegido"):
             candidato = datos["candidato_elegido"]
             if candidato["tipo"] == "alumno":
@@ -458,11 +453,10 @@ def ejecutar_accion(accion, datos, numero):
                 respuesta += f"• Método de pago: {alumno_actualizado['metodo_pago'] or '—'}\n"
                 respuesta += f"• Modalidad: {alumno_actualizado['modalidad'] or '—'}"
                 return respuesta
-            else:  # representante
+            else:
                 actualizar_representante(candidato["nombre"], campo, nuevo_valor)
                 return f"✅ Representante {candidato['nombre']} actualizado: {campo} = {nuevo_valor}\n(Aplicado a alumnos: {', '.join(candidato['alumnos'])})"
 
-        # Buscar en alumnos y representantes
         candidatos = buscar_en_todo(nombre)
 
         if not candidatos:
@@ -472,7 +466,6 @@ def ejecutar_accion(accion, datos, numero):
             datos["candidato_elegido"] = candidatos[0]
             return ejecutar_accion(accion, datos, numero)
 
-        # Más de uno — guardar pendiente y preguntar
         acciones_pendientes[numero] = {
             "accion": accion,
             "datos": datos,
@@ -480,6 +473,47 @@ def ejecutar_accion(accion, datos, numero):
         }
         lista = "\n".join([f"{i+1}. {c['nombre']} — {c['detalle']}" for i, c in enumerate(candidatos)])
         return f"Encontré más de uno:\n{lista}\n\n¿A cuál te referís? Respondé con el número."
+
+    elif accion == "borrar_alumno":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+
+        acciones_pendientes[numero] = {
+            "accion": "confirmar_borrado",
+            "datos": {"alumno_id": alumno["id"], "nombre": alumno["nombre"]}
+        }
+        return (f"⚠️ Estás por borrar a {alumno['nombre']} "
+                f"(representante: {alumno['representante'] or 'sin representante'}).\n\n"
+                f"¿Cómo querés borrarlo?\n"
+                f"1. Inactivo (se puede reactivar después)\n"
+                f"2. Borrado definitivo\n"
+                f"3. Cancelar")
+
+    elif accion == "confirmar_borrado":
+        if numero not in acciones_pendientes:
+            return "No tenía ningún borrado pendiente."
+
+        pendiente = acciones_pendientes[numero]
+        alumno_id = pendiente["datos"]["alumno_id"]
+        nombre = pendiente["datos"]["nombre"]
+        opcion = datos.get("numero_opcion")
+
+        if opcion == 1:
+            from alumnos import desactivar_alumno
+            desactivar_alumno(alumno_id)
+            del acciones_pendientes[numero]
+            return f"✅ {nombre} marcado como inactivo. Podés reactivarlo cuando quieras."
+        elif opcion == 2:
+            from alumnos import borrar_alumno_definitivo
+            borrar_alumno_definitivo(alumno_id)
+            del acciones_pendientes[numero]
+            return f"🗑️ {nombre} borrado definitivamente junto con sus clases, pagos y promo."
+        elif opcion == 3:
+            del acciones_pendientes[numero]
+            return "Cancelado, no se borró nada."
+        else:
+            return "Respondé con 1 (inactivo), 2 (borrado definitivo) o 3 (cancelar)."
 
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
@@ -503,8 +537,13 @@ def webhook():
 
     try:
         if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
-            accion = "aclaracion_alumno"
-            datos = {"numero_opcion": int(mensaje_entrante.strip())}
+            pendiente = acciones_pendientes[numero]
+            if pendiente.get("accion") == "confirmar_borrado":
+                accion = "confirmar_borrado"
+                datos = {"numero_opcion": int(mensaje_entrante.strip())}
+            else:
+                accion = "aclaracion_alumno"
+                datos = {"numero_opcion": int(mensaje_entrante.strip())}
         else:
             interpretado = interpretar_mensaje(mensaje_entrante, historial)
             accion = interpretado.get("accion", "no_entiendo")
@@ -520,6 +559,8 @@ def webhook():
     historial.append({"role": "assistant", "content": respuesta_texto})
 
     if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
+        historiales[numero] = []
+    elif accion not in ["no_entiendo"] and numero not in acciones_pendientes:
         historiales[numero] = []
     elif len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
         historiales[numero] = []
