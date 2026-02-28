@@ -52,6 +52,42 @@ def buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos):
     return alumno, None
 
 
+def buscar_en_todo(nombre_buscado):
+    """Busca en alumnos Y en representantes, devuelve lista de candidatos."""
+    from alumnos import buscar_alumno_por_nombre, buscar_alumno_por_representante
+    candidatos = []
+
+    # Buscar como alumno
+    alumnos = buscar_alumno_por_nombre(nombre_buscado)
+    for a in alumnos:
+        candidatos.append({
+            "tipo": "alumno",
+            "nombre": a['nombre'],
+            "id": a['id'],
+            "detalle": "alumno"
+        })
+
+    # Buscar como representante — agrupamos por nombre exacto
+    como_rep = buscar_alumno_por_representante(nombre_buscado)
+    if como_rep:
+        grupos = {}
+        for a in como_rep:
+            rep = a['representante']
+            if rep not in grupos:
+                grupos[rep] = []
+            grupos[rep].append(a['nombre'])
+
+        for rep_nombre, alumnos_rep in grupos.items():
+            candidatos.append({
+                "tipo": "representante",
+                "nombre": rep_nombre,
+                "alumnos": alumnos_rep,
+                "detalle": f"representante de {' y '.join(alumnos_rep)}"
+            })
+
+    return candidatos
+
+
 def ejecutar_accion(accion, datos, numero):
 
     if accion == "aclaracion_alumno":
@@ -59,10 +95,30 @@ def ejecutar_accion(accion, datos, numero):
             return "No tenía ninguna acción pendiente. ¿Qué querés hacer?"
 
         pendiente = acciones_pendientes[numero]
-        candidatos = pendiente["candidatos"]
         numero_opcion = datos.get("numero_opcion")
         nombre_aclaracion = datos.get("nombre_alumno", "")
 
+        # Manejo de candidatos_custom (para actualizar_dato_alumno)
+        if "candidatos_custom" in pendiente:
+            candidatos = pendiente["candidatos_custom"]
+            elegido = None
+            if numero_opcion and 1 <= numero_opcion <= len(candidatos):
+                elegido = candidatos[numero_opcion - 1]
+            elif nombre_aclaracion:
+                for c in candidatos:
+                    if nombre_aclaracion.lower() in c['nombre'].lower():
+                        elegido = c
+                        break
+            if not elegido:
+                lista = "\n".join([f"{i+1}. {c['nombre']} — {c['detalle']}" for i, c in enumerate(candidatos)])
+                return f"No entendí cuál elegiste:\n{lista}\n\nRespondé con el número."
+            del acciones_pendientes[numero]
+            nuevos_datos = pendiente["datos"].copy()
+            nuevos_datos["candidato_elegido"] = elegido
+            return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
+
+        # Manejo normal de candidatos de alumnos
+        candidatos = pendiente["candidatos"]
         alumno_elegido = None
         if numero_opcion and 1 <= numero_opcion <= len(candidatos):
             alumno_elegido = candidatos[numero_opcion - 1]
@@ -77,7 +133,6 @@ def ejecutar_accion(accion, datos, numero):
             return f"No entendí cuál elegiste. Los candidatos son:\n{lista}\n\nRespondé con el número."
 
         del acciones_pendientes[numero]
-
         nuevos_datos = pendiente["datos"].copy()
         nuevos_datos["nombre_alumno"] = alumno_elegido["nombre"]
         nuevos_datos["alumno_id_directo"] = alumno_elegido["id"]
@@ -176,7 +231,7 @@ def ejecutar_accion(accion, datos, numero):
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "alumno_nuevo":
-        nuevo = agregar_alumno(
+        agregar_alumno(
             nombre=datos.get("nombre"),
             pais=datos.get("pais"),
             moneda=datos.get("moneda"),
@@ -373,11 +428,12 @@ def ejecutar_accion(accion, datos, numero):
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "actualizar_dato_alumno":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
+        from alumnos import actualizar_alumno, obtener_alumno_por_id, actualizar_representante
+
+        nombre = datos.get("nombre_alumno", "")
         campo = datos.get("campo")
         nuevo_valor = datos.get("nuevo_valor")
+
         if not campo or nuevo_valor is None:
             return "Necesito saber qué campo cambiar y el nuevo valor."
 
@@ -387,23 +443,43 @@ def ejecutar_accion(accion, datos, numero):
         if campo not in campos_permitidos:
             return f"No puedo editar el campo '{campo}'."
 
-        from alumnos import actualizar_alumno, obtener_alumno_por_id
-        actualizar_alumno(alumno["id"], campo, nuevo_valor)
-        alumno_actualizado = obtener_alumno_por_id(alumno["id"])
+        # Si viene con candidato ya elegido (después de desambiguación)
+        if datos.get("candidato_elegido"):
+            candidato = datos["candidato_elegido"]
+            if candidato["tipo"] == "alumno":
+                alumno = obtener_alumno_por_id(candidato["id"])
+                actualizar_alumno(alumno["id"], campo, nuevo_valor)
+                alumno_actualizado = obtener_alumno_por_id(alumno["id"])
+                respuesta = f"✅ {candidato['nombre']} actualizado: {campo} = {nuevo_valor}\n\n"
+                respuesta += f"• Representante: {alumno_actualizado['representante'] or '—'}\n"
+                respuesta += f"• WhatsApp: {alumno_actualizado['whatsapp'] or '—'}\n"
+                respuesta += f"• Mail: {alumno_actualizado['mail'] or '—'}\n"
+                respuesta += f"• Moneda: {alumno_actualizado['moneda'] or '—'}\n"
+                respuesta += f"• Método de pago: {alumno_actualizado['metodo_pago'] or '—'}\n"
+                respuesta += f"• Modalidad: {alumno_actualizado['modalidad'] or '—'}"
+                return respuesta
+            else:  # representante
+                actualizar_representante(candidato["nombre"], campo, nuevo_valor)
+                return f"✅ Representante {candidato['nombre']} actualizado: {campo} = {nuevo_valor}\n(Aplicado a alumnos: {', '.join(candidato['alumnos'])})"
 
-        respuesta = f"✅ {alumno['nombre']} actualizado: {campo} = {nuevo_valor}\n\n"
-        respuesta += f"📋 Datos actuales:\n"
-        respuesta += f"• Representante: {alumno_actualizado['representante'] or '—'}\n"
-        respuesta += f"• País: {alumno_actualizado['pais'] or '—'}\n"
-        respuesta += f"• Idioma: {alumno_actualizado['idioma'] or '—'}\n"
-        respuesta += f"• WhatsApp: {alumno_actualizado['whatsapp'] or '—'}\n"
-        respuesta += f"• Mail: {alumno_actualizado['mail'] or '—'}\n"
-        respuesta += f"• Moneda: {alumno_actualizado['moneda'] or '—'}\n"
-        respuesta += f"• Método de pago: {alumno_actualizado['metodo_pago'] or '—'}\n"
-        respuesta += f"• Modalidad: {alumno_actualizado['modalidad'] or '—'}\n"
-        respuesta += f"• Alias: {alumno_actualizado['alias'] or '—'}\n"
-        respuesta += f"• Notas: {alumno_actualizado['notas_recordatorio'] or '—'}"
-        return (aviso + "\n" + respuesta) if aviso else respuesta
+        # Buscar en alumnos y representantes
+        candidatos = buscar_en_todo(nombre)
+
+        if not candidatos:
+            return f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
+
+        if len(candidatos) == 1:
+            datos["candidato_elegido"] = candidatos[0]
+            return ejecutar_accion(accion, datos, numero)
+
+        # Más de uno — guardar pendiente y preguntar
+        acciones_pendientes[numero] = {
+            "accion": accion,
+            "datos": datos,
+            "candidatos_custom": candidatos
+        }
+        lista = "\n".join([f"{i+1}. {c['nombre']} — {c['detalle']}" for i, c in enumerate(candidatos)])
+        return f"Encontré más de uno:\n{lista}\n\n¿A cuál te referís? Respondé con el número."
 
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"

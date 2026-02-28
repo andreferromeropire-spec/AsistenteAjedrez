@@ -67,28 +67,9 @@ def agregar_alumno(nombre, representante=None, pais=None, idioma=None,
     conn.close()
     print(f"Alumno {nombre} agregado correctamente.")
 
-    from difflib import get_close_matches
-
+# Busca por nombre exacto o parcial, con sugerencia si no encuentra
 def buscar_alumno_con_sugerencia(nombre):
-    # Primero intenta la búsqueda normal
-    resultado = buscar_alumno_por_nombre(nombre)
-    if resultado:
-        return resultado, None  # Encontró, no hay sugerencia
-    
-    # Si no encontró, busca nombres parecidos
-    todos = obtener_todos_los_alumnos()
-    nombres = [a['nombre'] for a in todos]
-    sugerencias = get_close_matches(nombre, nombres, n=3, cutoff=0.5)
-    
-    if sugerencias:
-        # Busca el alumno que mejor coincide
-        mejor = buscar_alumno_por_nombre(sugerencias[0])
-        return mejor, sugerencias  # Devuelve el alumno y las sugerencias
-    
-    return [], None  # No encontró nada
-
-def buscar_alumno_con_sugerencia(nombre):
-    # Primero intenta la búsqueda normal por nombre
+    # Primero intenta por nombre
     resultado = buscar_alumno_por_nombre(nombre)
     if resultado:
         return resultado, None
@@ -98,7 +79,7 @@ def buscar_alumno_con_sugerencia(nombre):
     if resultado:
         return resultado, None
 
-    # Si tampoco, busca nombres parecidos
+    # Si tampoco, busca nombres parecidos con difflib
     todos = obtener_todos_los_alumnos()
     nombres = [a['nombre'] for a in todos]
     sugerencias = get_close_matches(nombre, nombres, n=3, cutoff=0.5)
@@ -109,6 +90,7 @@ def buscar_alumno_con_sugerencia(nombre):
 
     return [], None
 
+# Busca alumnos por el nombre de su representante
 def buscar_alumno_por_representante(nombre_representante):
     conn = get_connection()
     cursor = conn.cursor()
@@ -119,3 +101,15 @@ def buscar_alumno_por_representante(nombre_representante):
     alumnos = cursor.fetchall()
     conn.close()
     return alumnos
+
+# Actualiza un campo en todos los alumnos de un representante
+# Si campo es 'representante', cambia el nombre en todos sus alumnos a la vez
+def actualizar_representante(nombre_actual, campo, nuevo_valor):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"UPDATE alumnos SET {campo} = ? WHERE representante = ?",
+        (nuevo_valor, nombre_actual)
+    )
+    conn.commit()
+    conn.close()
