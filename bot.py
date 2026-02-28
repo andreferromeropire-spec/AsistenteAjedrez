@@ -407,6 +407,10 @@ def webhook():
             datos = {"numero_opcion": int(mensaje_entrante.strip())}
         else:
             interpretado = interpretar_mensaje(mensaje_entrante, historial)
+            interpretado = interpretar_mensaje(mensaje_entrante, historial)
+            print(f"DEBUG: {interpretado}")  # ← agregá esta línea
+            accion = interpretado.get("accion", "no_entiendo")
+            datos = interpretado.get("datos", {})
             accion = interpretado.get("accion", "no_entiendo")
             datos = interpretado.get("datos", {})
             if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
