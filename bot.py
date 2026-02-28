@@ -300,32 +300,47 @@ def ejecutar_accion(accion, datos, numero):
     elif accion == "ver_alumno":
         from clases import proximas_clases_alumno
         from promociones import obtener_promo
+        from alumnos import buscar_alumno_por_representante
         from datetime import date
 
-        # Primero intentamos buscar por representante
-        from alumnos import buscar_alumno_por_representante
+        meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+                    7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+
         alumnos_rep = buscar_alumno_por_representante(datos.get("nombre_alumno", ""))
         
         if alumnos_rep:
-            # Es un representante → vista agrupada
             hoy = date.today()
-            respuesta = f"👤 {datos.get('nombre_alumno')} es representante de:\n\n"
+            nombre_mes = meses_es[hoy.month]
+            respuesta = f"👤 {datos.get('nombre_alumno')} es representante de:\n"
             total_clases = 0
             for a in alumnos_rep:
+                respuesta += f"\n📋 {a['nombre']}:\n"
+                respuesta += f"• Moneda: {a['moneda'] or '—'}\n"
+                respuesta += f"• Método de pago: {a['metodo_pago'] or '—'}\n"
+                respuesta += f"• Modalidad: {a['modalidad'] or '—'}\n"
+
+                rangos = obtener_promo(a["id"])
+                if rangos:
+                    promo_str = ", ".join([f"{r['clases_desde']}–{r['clases_hasta']}cls: {r['precio_por_clase']} {r['moneda']}" for r in rangos])
+                    respuesta += f"• Promo: {promo_str}\n"
+                else:
+                    respuesta += f"• Promo: sin cargar\n"
+
                 proximas = proximas_clases_alumno(a["id"])
                 clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
                 dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
-                respuesta += f"📚 {a['nombre']}: {dias or 'sin clases'}\n"
+                respuesta += f"• {nombre_mes}: {dias or 'sin clases'}\n"
                 total_clases += len(clases_mes)
-            respuesta += f"\nTotal clases: {total_clases}"
+
+            respuesta += f"\nTotal clases {nombre_mes}: {total_clases}"
             return respuesta
 
-        # No es representante → buscar como alumno normal
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
             return aviso
 
         hoy = date.today()
+        nombre_mes = meses_es[hoy.month]
         respuesta = f"📋 {alumno['nombre']}:\n"
         respuesta += f"• Representante: {alumno['representante'] or '—'}\n"
         respuesta += f"• País: {alumno['pais'] or '—'}\n"
@@ -350,12 +365,11 @@ def ejecutar_accion(accion, datos, numero):
         clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
         if clases_mes:
             dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
-            mes_nombre = hoy.strftime("%B")
-            respuesta += f"\n📅 {mes_nombre}: {dias}"
+            respuesta += f"\n📅 {nombre_mes}: {dias}"
         else:
             respuesta += f"\n📅 Sin clases este mes"
 
-        return (aviso + "\n" + respuesta) if aviso else respuesta    
+        return (aviso + "\n" + respuesta) if aviso else respuesta   
     
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
