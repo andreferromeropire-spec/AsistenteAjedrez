@@ -20,18 +20,14 @@ app = Flask(__name__)
 historiales = {}
 MAXIMO_MENSAJES_HISTORIAL = 10
 
-# Cuando hay ambigüedad (ej: dos Henry), guardamos acá la acción pendiente
-# y la lista de candidatos, esperando que el usuario aclare cuál quiso decir.
 acciones_pendientes = {}
 
 
 def buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos):
-    # Si ya viene con ID directo, búsqueda exacta sin ambigüedad
     if datos.get("alumno_id_directo"):
         from alumnos import obtener_alumno_por_id
         alumno = obtener_alumno_por_id(datos["alumno_id_directo"])
         return alumno, None
-    
 
     alumnos, sugerencias = buscar_alumno_con_sugerencia(nombre_buscado)
 
@@ -58,7 +54,7 @@ def buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos):
 
 def ejecutar_accion(accion, datos, numero):
 
-    if accion == "aclaracion_alumno": 
+    if accion == "aclaracion_alumno":
         if numero not in acciones_pendientes:
             return "No tenía ninguna acción pendiente. ¿Qué querés hacer?"
 
@@ -83,9 +79,7 @@ def ejecutar_accion(accion, datos, numero):
         del acciones_pendientes[numero]
 
         nuevos_datos = pendiente["datos"].copy()
-        # Usamos el nombre completo exacto para que no haya ambigüedad
         nuevos_datos["nombre_alumno"] = alumno_elegido["nombre"]
-        # Guardamos el id para búsqueda directa
         nuevos_datos["alumno_id_directo"] = alumno_elegido["id"]
         return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
@@ -180,7 +174,7 @@ def ejecutar_accion(accion, datos, numero):
             respuesta += f" a las {nueva_hora}"
         respuesta += "."
         return (aviso + "\n" + respuesta) if aviso else respuesta
-    
+
     elif accion == "alumno_nuevo":
         nuevo = agregar_alumno(
             nombre=datos.get("nombre"),
@@ -190,7 +184,6 @@ def ejecutar_accion(accion, datos, numero):
             modalidad=datos.get("modalidad"),
             representante=datos.get("representante")
         )
-        # Cargar promo si viene en los datos
         from database import get_connection
         conn = get_connection()
         alumno = conn.execute(
@@ -198,11 +191,11 @@ def ejecutar_accion(accion, datos, numero):
             (datos.get("nombre"),)
         ).fetchone()
         conn.close()
-    
+
         promo = datos.get("promo", [])
         for rango in promo:
             agregar_promo(alumno["id"], rango["desde"], rango["hasta"], rango["precio"], datos.get("moneda"))
-        
+
         return f"✅ Alumno {datos.get('nombre')} agregado con {len(promo)} rangos de promo."
 
     elif accion == "resumen_alumno":
@@ -296,12 +289,11 @@ def ejecutar_accion(accion, datos, numero):
             except:
                 pass
             return f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
-        
+
     elif accion == "ver_alumno":
         from clases import proximas_clases_alumno
         from promociones import obtener_promo
         from alumnos import buscar_alumno_por_representante
-        from datetime import date
 
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
@@ -378,8 +370,41 @@ def ejecutar_accion(accion, datos, numero):
         else:
             respuesta += f"\n📅 Sin clases este mes"
 
-        return (aviso + "\n" + respuesta) if aviso else respuesta 
-    
+        return (aviso + "\n" + respuesta) if aviso else respuesta
+
+    elif accion == "actualizar_dato_alumno":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+        campo = datos.get("campo")
+        nuevo_valor = datos.get("nuevo_valor")
+        if not campo or nuevo_valor is None:
+            return "Necesito saber qué campo cambiar y el nuevo valor."
+
+        campos_permitidos = ["nombre", "representante", "pais", "idioma", "contacto_preferido",
+                             "mail", "whatsapp", "horas_semanales", "dia_habitual", "precio",
+                             "moneda", "metodo_pago", "modalidad", "notas_recordatorio", "alias"]
+        if campo not in campos_permitidos:
+            return f"No puedo editar el campo '{campo}'."
+
+        from alumnos import actualizar_alumno, obtener_alumno_por_id
+        actualizar_alumno(alumno["id"], campo, nuevo_valor)
+        alumno_actualizado = obtener_alumno_por_id(alumno["id"])
+
+        respuesta = f"✅ {alumno['nombre']} actualizado: {campo} = {nuevo_valor}\n\n"
+        respuesta += f"📋 Datos actuales:\n"
+        respuesta += f"• Representante: {alumno_actualizado['representante'] or '—'}\n"
+        respuesta += f"• País: {alumno_actualizado['pais'] or '—'}\n"
+        respuesta += f"• Idioma: {alumno_actualizado['idioma'] or '—'}\n"
+        respuesta += f"• WhatsApp: {alumno_actualizado['whatsapp'] or '—'}\n"
+        respuesta += f"• Mail: {alumno_actualizado['mail'] or '—'}\n"
+        respuesta += f"• Moneda: {alumno_actualizado['moneda'] or '—'}\n"
+        respuesta += f"• Método de pago: {alumno_actualizado['metodo_pago'] or '—'}\n"
+        respuesta += f"• Modalidad: {alumno_actualizado['modalidad'] or '—'}\n"
+        respuesta += f"• Alias: {alumno_actualizado['alias'] or '—'}\n"
+        respuesta += f"• Notas: {alumno_actualizado['notas_recordatorio'] or '—'}"
+        return (aviso + "\n" + respuesta) if aviso else respuesta
+
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
 
@@ -397,20 +422,15 @@ def webhook():
         historiales[numero] = []
     historial = historiales[numero]
 
-
     accion = "no_entiendo"
     datos = {}
-    
+
     try:
         if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
             accion = "aclaracion_alumno"
             datos = {"numero_opcion": int(mensaje_entrante.strip())}
         else:
             interpretado = interpretar_mensaje(mensaje_entrante, historial)
-            interpretado = interpretar_mensaje(mensaje_entrante, historial)
-            print(f"DEBUG: {interpretado}")  # ← agregá esta línea
-            accion = interpretado.get("accion", "no_entiendo")
-            datos = interpretado.get("datos", {})
             accion = interpretado.get("accion", "no_entiendo")
             datos = interpretado.get("datos", {})
             if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
@@ -423,12 +443,10 @@ def webhook():
     historial.append({"role": "user", "content": mensaje_entrante})
     historial.append({"role": "assistant", "content": respuesta_texto})
 
-    # Limpiamos historial si hubo ambigüedad resuelta
     if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
         historiales[numero] = []
-    # También limpiamos si el historial tiene muchas menciones de un mismo alumno
     elif len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
-        historiales[numero] = []  # Reset completo en lugar de truncar
+        historiales[numero] = []
 
     respuesta = MessagingResponse()
     respuesta.message(respuesta_texto)
