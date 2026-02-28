@@ -2,17 +2,13 @@ import sqlite3
 
 # CONEXIÓN: Esta función abre (o crea) el archivo de base de datos.
 # Si chess_assistant.db no existe, SQLite lo crea automáticamente.
-def get_connection():
-    
-     
-    import os
-    DB_PATH = os.environ.get("DB_PATH", "chess_assistant.db")
+import os
 
-    def get_connection():
-        conn = sqlite3.connect(DB_PATH)
-    #**Qué hace esto:** busca una variable de entorno llamada `DB_PATH`. Si existe (en Railway), usa esa ruta. Si no existe (en tu compu), usa el archivo local como siempre.
-    
-    conn.row_factory = sqlite3.Row  # Permite acceder a columnas por nombre, no solo por índice
+DB_PATH = os.environ.get("DB_PATH", "chess_assistant.db")
+
+def get_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     return conn
 
 # CREAR TABLAS: Esta función define la estructura de la base de datos.
