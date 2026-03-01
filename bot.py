@@ -227,6 +227,12 @@ def ejecutar_accion(accion, datos, numero):
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "alumno_nuevo":
+        existentes = buscar_alumno_por_nombre(datos.get("nombre", ""))
+        exactos = [a for a in existentes if a['nombre'].lower() == datos.get("nombre", "").lower()]
+        if exactos:
+            return (f"⚠️ Ya existe un alumno llamado '{exactos[0]['nombre']}'. "
+                    f"Por favor ingresá el apellido o cambiá el nombre del actual con "
+                    f"'actualizá el nombre de {exactos[0]['nombre']} a [nombre completo]'.")
         agregar_alumno(
             nombre=datos.get("nombre"),
             pais=datos.get("pais"),
@@ -344,7 +350,7 @@ def ejecutar_accion(accion, datos, numero):
     elif accion == "ver_alumno":
         from clases import proximas_clases_alumno
         from promociones import obtener_promo
-        from alumnos import buscar_alumno_por_representante
+        from alumnos import buscar_alumno_por_representante, obtener_alumno_por_id
 
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
@@ -360,16 +366,13 @@ def ejecutar_accion(accion, datos, numero):
                 texto += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {simbolo}{precio}/h\n"
             return texto
 
-        alumnos_rep = buscar_alumno_por_representante(datos.get("nombre_alumno", ""))
-
-        if alumnos_rep:
-            hoy = date.today()
+        def mostrar_representante(nombre_rep, hoy):
             nombre_mes = meses_es[hoy.month]
+            alumnos_rep = buscar_alumno_por_representante(nombre_rep)
             nombres = " y ".join([a['nombre'] for a in alumnos_rep])
-            respuesta = f"👤 {datos.get('nombre_alumno')} es representante de {nombres}\n\n"
-
+            respuesta = f"👤 {nombre_rep} es representante de {nombres}\n\n"
             a0 = alumnos_rep[0]
-            respuesta += f"• Representante: {datos.get('nombre_alumno')}\n"
+            respuesta += f"• Representante: {nombre_rep}\n"
             respuesta += f"• País: {a0['pais'] or '—'}\n"
             respuesta += f"• Idioma: {a0['idioma'] or '—'}\n"
             respuesta += f"• WhatsApp: {a0['whatsapp'] or '—'}\n"
@@ -379,9 +382,7 @@ def ejecutar_accion(accion, datos, numero):
             respuesta += f"• Modalidad: {a0['modalidad'] or '—'}\n"
             respuesta += f"• Alias: {a0['alias'] or '—'}\n"
             respuesta += f"• Notas: {a0['notas_recordatorio'] or '—'}\n\n"
-
             respuesta += formatear_promo(obtener_promo(a0["id"]))
-
             total_clases = 0
             for a in alumnos_rep:
                 proximas = proximas_clases_alumno(a["id"])
@@ -389,39 +390,63 @@ def ejecutar_accion(accion, datos, numero):
                 dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
                 respuesta += f"\n{a['nombre']}\nClases {nombre_mes}: {dias or 'sin clases'}\n"
                 total_clases += len(clases_mes)
-
             respuesta += f"\nTotal clases {nombre_mes}: {total_clases}"
             return respuesta
 
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
+        def mostrar_alumno(alumno, hoy):
+            nombre_mes = meses_es[hoy.month]
+            respuesta = f"📋 {alumno['nombre']}:\n"
+            respuesta += f"• Representante: {alumno['representante'] or '—'}\n"
+            respuesta += f"• País: {alumno['pais'] or '—'}\n"
+            respuesta += f"• Idioma: {alumno['idioma'] or '—'}\n"
+            respuesta += f"• WhatsApp: {alumno['whatsapp'] or '—'}\n"
+            respuesta += f"• Mail: {alumno['mail'] or '—'}\n"
+            respuesta += f"• Moneda: {alumno['moneda'] or '—'}\n"
+            respuesta += f"• Método de pago: {alumno['metodo_pago'] or '—'}\n"
+            respuesta += f"• Modalidad: {alumno['modalidad'] or '—'}\n"
+            respuesta += f"• Alias: {alumno['alias'] or '—'}\n"
+            respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n\n"
+            respuesta += formatear_promo(obtener_promo(alumno["id"]))
+            proximas = proximas_clases_alumno(alumno["id"])
+            clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
+            if clases_mes:
+                dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
+                respuesta += f"\n📅 {nombre_mes}: {dias}"
+            else:
+                respuesta += f"\n📅 Sin clases este mes"
+            return respuesta
 
         hoy = date.today()
-        nombre_mes = meses_es[hoy.month]
-        respuesta = f"📋 {alumno['nombre']}:\n"
-        respuesta += f"• Representante: {alumno['representante'] or '—'}\n"
-        respuesta += f"• País: {alumno['pais'] or '—'}\n"
-        respuesta += f"• Idioma: {alumno['idioma'] or '—'}\n"
-        respuesta += f"• WhatsApp: {alumno['whatsapp'] or '—'}\n"
-        respuesta += f"• Mail: {alumno['mail'] or '—'}\n"
-        respuesta += f"• Moneda: {alumno['moneda'] or '—'}\n"
-        respuesta += f"• Método de pago: {alumno['metodo_pago'] or '—'}\n"
-        respuesta += f"• Modalidad: {alumno['modalidad'] or '—'}\n"
-        respuesta += f"• Alias: {alumno['alias'] or '—'}\n"
-        respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n\n"
+        nombre_buscado = datos.get("nombre_alumno", "")
 
-        respuesta += formatear_promo(obtener_promo(alumno["id"]))
+        if datos.get("candidato_elegido"):
+            candidato = datos["candidato_elegido"]
+            if candidato["tipo"] == "representante":
+                return mostrar_representante(candidato["nombre"], hoy)
+            else:
+                alumno = obtener_alumno_por_id(candidato["id"])
+                return mostrar_alumno(alumno, hoy)
 
-        proximas = proximas_clases_alumno(alumno["id"])
-        clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
-        if clases_mes:
-            dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
-            respuesta += f"\n📅 {nombre_mes}: {dias}"
-        else:
-            respuesta += f"\n📅 Sin clases este mes"
+        candidatos = buscar_en_todo(nombre_buscado)
 
-        return (aviso + "\n" + respuesta) if aviso else respuesta
+        if not candidatos:
+            return f"No encontré ningún alumno ni representante con el nombre '{nombre_buscado}'."
+
+        if len(candidatos) == 1:
+            c = candidatos[0]
+            if c["tipo"] == "representante":
+                return mostrar_representante(c["nombre"], hoy)
+            else:
+                alumno = obtener_alumno_por_id(c["id"])
+                return mostrar_alumno(alumno, hoy)
+
+        acciones_pendientes[numero] = {
+            "accion": accion,
+            "datos": datos,
+            "candidatos_custom": candidatos
+        }
+        lista = "\n".join([f"{i+1}. {c['nombre']} — {c['detalle']}" for i, c in enumerate(candidatos)])
+        return f"Encontré más de uno:\n{lista}\n\n¿A cuál te referís? Respondé con el número."
 
     elif accion == "actualizar_dato_alumno":
         from alumnos import actualizar_alumno, obtener_alumno_por_id, actualizar_representante
@@ -475,46 +500,96 @@ def ejecutar_accion(accion, datos, numero):
         return f"Encontré más de uno:\n{lista}\n\n¿A cuál te referís? Respondé con el número."
 
     elif accion == "borrar_alumno":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
+        nombre_buscado = datos.get("nombre_alumno", "")
+
+        if datos.get("candidato_elegido"):
+            candidato = datos["candidato_elegido"]
+            if candidato["tipo"] == "representante":
+                from alumnos import buscar_alumno_por_representante
+                alumnos_rep = buscar_alumno_por_representante(candidato["nombre"])
+                nombres = " y ".join([a['nombre'] for a in alumnos_rep])
+                ids = [a['id'] for a in alumnos_rep]
+                acciones_pendientes[numero] = {
+                    "accion": "confirmar_borrado",
+                    "datos": {"alumno_ids": ids, "nombre": candidato["nombre"], "nombres_alumnos": nombres}
+                }
+                return (f"⚠️ {candidato['nombre']} es representante de {nombres}.\n"
+                        f"Borrar a {candidato['nombre']} implica borrar a todas sus alumnas.\n\n"
+                        f"¿Cómo querés borrarlo?\n"
+                        f"1. Inactivo (se pueden reactivar después)\n"
+                        f"2. Borrado definitivo\n"
+                        f"3. Cancelar")
+            else:
+                from alumnos import obtener_alumno_por_id
+                alumno = obtener_alumno_por_id(candidato["id"])
+                acciones_pendientes[numero] = {
+                    "accion": "confirmar_borrado",
+                    "datos": {"alumno_ids": [alumno["id"]], "nombre": alumno["nombre"]}
+                }
+                return (f"⚠️ Estás por borrar a {alumno['nombre']} "
+                        f"(representante: {alumno['representante'] or 'sin representante'}).\n\n"
+                        f"¿Cómo querés borrarlo?\n"
+                        f"1. Inactivo (se puede reactivar después)\n"
+                        f"2. Borrado definitivo\n"
+                        f"3. Cancelar")
+
+        candidatos = buscar_en_todo(nombre_buscado)
+
+        if not candidatos:
+            return f"No encontré ningún alumno ni representante con el nombre '{nombre_buscado}'."
+
+        if len(candidatos) == 1:
+            datos["candidato_elegido"] = candidatos[0]
+            return ejecutar_accion(accion, datos, numero)
 
         acciones_pendientes[numero] = {
-            "accion": "confirmar_borrado",
-            "datos": {"alumno_id": alumno["id"], "nombre": alumno["nombre"]}
+            "accion": accion,
+            "datos": datos,
+            "candidatos_custom": candidatos
         }
-        return (f"⚠️ Estás por borrar a {alumno['nombre']} "
-                f"(representante: {alumno['representante'] or 'sin representante'}).\n\n"
-                f"¿Cómo querés borrarlo?\n"
-                f"1. Inactivo (se puede reactivar después)\n"
-                f"2. Borrado definitivo\n"
-                f"3. Cancelar")
+        lista = "\n".join([f"{i+1}. {c['nombre']} — {c['detalle']}" for i, c in enumerate(candidatos)])
+        return f"Encontré más de uno:\n{lista}\n\n¿A cuál te referís? Respondé con el número."
 
     elif accion == "confirmar_borrado":
         if numero not in acciones_pendientes:
             return "No tenía ningún borrado pendiente."
 
         pendiente = acciones_pendientes[numero]
-        alumno_id = pendiente["datos"]["alumno_id"]
+        ids = pendiente["datos"].get("alumno_ids", [pendiente["datos"].get("alumno_id")])
         nombre = pendiente["datos"]["nombre"]
         opcion = datos.get("numero_opcion")
 
         if opcion == 1:
             from alumnos import desactivar_alumno
-            desactivar_alumno(alumno_id)
+            for aid in ids:
+                desactivar_alumno(aid)
             del acciones_pendientes[numero]
             return f"✅ {nombre} marcado como inactivo. Podés reactivarlo cuando quieras."
         elif opcion == 2:
             from alumnos import borrar_alumno_definitivo
-            borrar_alumno_definitivo(alumno_id)
+            for aid in ids:
+                borrar_alumno_definitivo(aid)
             del acciones_pendientes[numero]
-            return f"🗑️ {nombre} borrado definitivamente junto con sus clases, pagos y promo."
+            return f"🗑️ {nombre} borrado definitivamente."
         elif opcion == 3:
             del acciones_pendientes[numero]
             return "Cancelado, no se borró nada."
         else:
             return "Respondé con 1 (inactivo), 2 (borrado definitivo) o 3 (cancelar)."
 
+    elif accion == "actualizar_promo":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+        rangos = datos.get("promo", [])
+        moneda = datos.get("moneda", alumno["moneda"])
+        if not rangos:
+            return "Necesito los rangos de la promo. Ejemplo: '1-3 clases $28, 4-5 clases $26'"
+        from promociones import reemplazar_promo
+        reemplazar_promo(alumno["id"], rangos, moneda)
+        detalle = ", ".join([f"{r['desde']}-{r['hasta']} clases ${r['precio']}" for r in rangos])
+        return f"✅ Promo de {alumno['nombre']} actualizada: {detalle}"
+    
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
 

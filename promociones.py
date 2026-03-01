@@ -120,3 +120,15 @@ def resumen_cobro_representante(nombre_representante, mes, anio):
         "mes": mes,
         "anio": anio
     }
+
+def reemplazar_promo(alumno_id, nuevos_rangos, moneda):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM promociones WHERE alumno_id = ?", (alumno_id,))
+    for rango in nuevos_rangos:
+        cursor.execute("""
+            INSERT INTO promociones (alumno_id, clases_desde, clases_hasta, precio_por_clase, moneda)
+            VALUES (?, ?, ?, ?, ?)
+        """, (alumno_id, rango["desde"], rango["hasta"], rango["precio"], moneda))
+    conn.commit()
+    conn.close()

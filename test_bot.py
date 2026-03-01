@@ -11,10 +11,14 @@ while True:
     if mensaje.lower() == "salir":
         break
 
-    # Misma lógica que el webhook
     if NUMERO_TEST in acciones_pendientes and mensaje.isdigit():
-        accion = "aclaracion_alumno"
-        datos = {"numero_opcion": int(mensaje)}
+        pendiente = acciones_pendientes[NUMERO_TEST]
+        if pendiente.get("accion") == "confirmar_borrado":
+            accion = "confirmar_borrado"
+            datos = {"numero_opcion": int(mensaje)}
+        else:
+            accion = "aclaracion_alumno"
+            datos = {"numero_opcion": int(mensaje)}
     else:
         interpretado = interpretar_mensaje(mensaje, historial)
         accion = interpretado.get("accion", "no_entiendo")
@@ -26,6 +30,5 @@ while True:
     historial.append({"role": "user", "content": mensaje})
     historial.append({"role": "assistant", "content": respuesta})
 
-    # Reset si se resolvió una ambigüedad
     if accion == "aclaracion_alumno" and NUMERO_TEST not in acciones_pendientes:
         historial = []

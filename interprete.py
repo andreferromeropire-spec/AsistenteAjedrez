@@ -48,10 +48,11 @@ Las acciones posibles son:
 7. "resumen_alumno" - quiere ver el resumen de un alumno
    datos necesarios: nombre_alumno
 
-8. 8. "alumno_nuevo" - agregar un alumno nuevo
+8. "alumno_nuevo" - agregar un alumno nuevo
    datos necesarios: nombre, pais, moneda, metodo_pago, modalidad, representante (opcional),
-   promo (lista de rangos: [{{"desde": 1, "hasta": 3, "precio": 28}}, ...])
-   Ejemplo de promo: [{{"desde": 1, "hasta": 3, "precio": 28}}, {{"desde": 4, "hasta": 5, "precio": 26}}, {{"desde": 6, "hasta": 10, "precio": 25}}]
+    promo (lista de rangos: [{{"desde": 1, "hasta": 3, "precio": 28}}, ...])  
+    Ejemplos: "agregar alumno Juan", "agregar a María", "alumno nuevo: Pedro",
+             "agregar tomás", "nuevo alumno lucia", "agrega a roberto"
    
 9. "clases_del_mes" - quiere ver qué clases tiene agendadas un alumno en un mes
    datos necesarios: nombre_alumno, mes (número, opcional), anio (opcional)
@@ -78,11 +79,20 @@ Las acciones posibles son:
     horas_semanales, dia_habitual, precio, moneda, metodo_pago, modalidad, notas_recordatorio, alias
     Ejemplos: "cambiá el nombre de Grace a Grace Smith", "actualizá el representante de Charlie a Charlie Hettinger", "ponele alias noam a Nouham"
 
-16. "borrar_alumno" - quiere borrar o desactivar un alumno
+16. "borrar_alumno" - quiere eliminar o dar de baja a un alumno o a un representante con sus alumnos
     datos necesarios: nombre_alumno
-    Ejemplos: "borrá a Grace", "eliminá a Charlie Hettinger", "quitá a Lucas"
-    
-17. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+    Ejemplos: "borrá a Grace", "eliminá a Charlie", "quitá el registro de Lucas", 
+              "dar de baja a Henry", "borrá a Charlie Hettinger con sus alumnos",
+              "eliminá al representante Jeremy"
+
+17. "actualizar_promo" - agregar o cambiar la promo de un alumno
+    datos necesarios: nombre_alumno, moneda, promo (lista de rangos igual que alumno_nuevo)
+    Ejemplos: "cambiá la promo de Juan: 1-5 clases $30, 6-10 clases $28",
+              "agregá promo a Isabella: 1-3 clases £16, 4-5 clases £15",
+              "actualizá los precios de Grace: 1-3 clases $28, 4-7 clases $25"
+
+
+18. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
@@ -99,8 +109,8 @@ Fecha de hoy: {__import__('datetime').date.today().isoformat()}
 
 Devolvé SOLO el JSON, sin explicaciones ni texto adicional."""
 
-    # Armamos la lista de mensajes: historial + mensaje actual
-    mensajes = historial + [{"role": "user", "content": mensaje}]
+    # Armamos la lista de mensajes:  mensaje actual
+    mensajes = [{"role": "user", "content": mensaje}]
 
     respuesta = cliente.messages.create(
         model="claude-haiku-4-5-20251001",
