@@ -12,7 +12,7 @@ cliente_twilio = Client(
     os.getenv("TWILIO_AUTH_TOKEN")
 )
 
-NUMERO_TWILIO = "whatsapp:+14155238886"  # Número del sandbox de Twilio
+NUMERO_TWILIO = "whatsapp:+12282207339"  # Número de Twilio
 MI_NUMERO = os.getenv("MI_NUMERO")
 
 # ENVIAR_MENSAJE: Función base que manda cualquier mensaje a tu WhatsApp
