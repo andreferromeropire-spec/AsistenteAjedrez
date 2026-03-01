@@ -52,6 +52,7 @@ def agregar_alumno(nombre, representante=None, pais=None, idioma=None,
                    horas_semanales=None, dia_habitual=None, precio=None,
                    moneda=None, metodo_pago=None, modalidad=None,
                    notas_recordatorio=None):
+    nombre = nombre.strip().title() if nombre else nombre
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""

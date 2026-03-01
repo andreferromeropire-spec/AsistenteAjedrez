@@ -620,6 +620,8 @@ def webhook():
                 accion = "aclaracion_alumno"
                 datos = {"numero_opcion": int(mensaje_entrante.strip())}
         else:
+            if numero in acciones_pendientes and not mensaje_entrante.strip().isdigit():
+                del acciones_pendientes[numero]  # Cancela la acción pendiente si mandás texto
             interpretado = interpretar_mensaje(mensaje_entrante, historial)
             accion = interpretado.get("accion", "no_entiendo")
             datos = interpretado.get("datos", {})
