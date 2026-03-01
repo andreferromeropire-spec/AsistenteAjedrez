@@ -15,18 +15,28 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 # La primera vez abre el navegador para que autorices.
 # Después guarda el token en token.json para no pedir permiso de nuevo.
 def autenticar():
+    import json
     creds = None
-    if os.path.exists('token.json'):
+    
+    # Primero intenta leer el token desde variable de entorno (producción en Railway)
+    token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+    if token_json:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    # Si no, intenta leer desde archivo local (desarrollo)
+    elif os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            # Si estamos en Railway, actualizamos la variable (no se puede, pero al menos no falla)
         else:
+            # Solo funciona en local — en Railway el token tiene que estar válido
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
+        if not os.environ.get("GOOGLE_TOKEN_JSON"):
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
     
     return build('calendar', 'v3', credentials=creds)
 
