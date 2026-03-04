@@ -9,7 +9,11 @@ from clases import agendar_clase, cancelar_clase
 from alumnos import obtener_todos_los_alumnos
 
 # Permisos que necesitamos: solo lectura del calendario
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+SCOPES = [
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/spreadsheets.readonly',
+    'https://www.googleapis.com/auth/drive.readonly'
+]
 
 # AUTENTICAR: Conecta con Google Calendar.
 # La primera vez abre el navegador para que autorices.
