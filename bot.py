@@ -646,6 +646,17 @@ def webhook():
     respuesta.message(respuesta_texto)
     return str(respuesta)
 
+@app.route("/diagnostico", methods=["GET"])
+def diagnostico():
+    from database import get_connection
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as total FROM alumnos")
+    alumnos = cursor.fetchone()['total']
+    cursor.execute("SELECT COUNT(*) as total FROM clases")
+    clases = cursor.fetchone()['total']
+    conn.close()
+    return f"Alumnos: {alumnos}, Clases: {clases}"
 
 if __name__ == "__main__":
     scheduler = configurar_scheduler()
