@@ -17,27 +17,43 @@ SHEET_ID = "1LpfRUAPy-05h7IpRuZdR9iWqs_joW5xASJUQXt2GPX4"
 def autenticar_sheets():
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    
+    import json
+
     SCOPES_COMPLETOS = [
         'https://www.googleapis.com/auth/calendar.readonly',
         'https://www.googleapis.com/auth/spreadsheets.readonly',
         'https://www.googleapis.com/auth/drive.readonly'
     ]
-    
+
     creds = None
-    if os.path.exists('token.json'):
+
+    # Intentar leer token desde variable de entorno o archivo
+    token_data = os.environ.get("GOOGLE_TOKEN")
+    if token_data:
+        creds = Credentials.from_authorized_user_info(json.loads(token_data), SCOPES_COMPLETOS)
+    elif os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES_COMPLETOS)
-    
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES_COMPLETOS)
+            # Solo funciona localmente
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            creds_data = os.environ.get("GOOGLE_CREDENTIALS")
+            if creds_data:
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    f.write(creds_data)
+                    temp_path = f.name
+                flow = InstalledAppFlow.from_client_secrets_file(temp_path, SCOPES_COMPLETOS)
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES_COMPLETOS)
             creds = flow.run_local_server(port=0)
+
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
-    
+
     cliente = gspread.authorize(creds)
     return cliente
 
