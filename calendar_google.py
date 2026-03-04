@@ -19,7 +19,7 @@ def autenticar():
     creds = None
     
     # Primero intenta leer el token desde variable de entorno (producción en Railway)
-    token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+    token_json = os.environ.get("GOOGLE_TOKEN")
     if token_json:
         creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
     # Si no, intenta leer desde archivo local (desarrollo)
@@ -34,7 +34,7 @@ def autenticar():
             # Solo funciona en local — en Railway el token tiene que estar válido
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-        if not os.environ.get("GOOGLE_TOKEN_JSON"):
+        if not os.environ.get("GOOGLE_TOKEN"):
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
     

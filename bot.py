@@ -670,6 +670,14 @@ def sincronizar_alumnos_endpoint():
     sincronizar_alumnos_desde_sheets()
     return "Alumnos sincronizados desde Google Sheets"
 
+@app.route("/sincronizar_calendario")
+def sincronizar_calendario_endpoint():
+    from calendar_google import sincronizar_mes
+    from datetime import date
+    hoy = date.today()
+    resultado = sincronizar_mes(hoy.month, hoy.year)
+    return f"✅ {resultado['clases_registradas']} clases registradas. No identificadas: {resultado['no_identificadas']}"
+
 if __name__ == "__main__":
     scheduler = configurar_scheduler()
     port = int(os.environ.get("PORT", 5000))
