@@ -658,6 +658,18 @@ def diagnostico():
     conn.close()
     return f"Alumnos: {alumnos}, Clases: {clases}"
 
+@app.route("/setup", methods=["GET"])
+def setup():
+    from database import crear_tablas
+    crear_tablas()
+    return "Tablas creadas"
+
+@app.route("/sincronizar_alumnos", methods=["GET"])
+def sincronizar_alumnos_endpoint():
+    from sincronizar_sheets import sincronizar_alumnos_desde_sheets
+    sincronizar_alumnos_desde_sheets()
+    return "Alumnos sincronizados desde Google Sheets"
+
 if __name__ == "__main__":
     scheduler = configurar_scheduler()
     port = int(os.environ.get("PORT", 5000))
