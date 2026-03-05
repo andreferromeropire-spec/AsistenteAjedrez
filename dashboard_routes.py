@@ -96,18 +96,18 @@ def api_resumen():
             WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
             GROUP BY estado
         """, (f"{mes:02d}", str(anio))).fetchall()
-        clases_dict = {r[0]: r[1] for r in clases}
+        clases_dict = {r[0]: r[1] for r in clases if r[0] is not None}
         pagos = conn.execute("""
             SELECT moneda, SUM(monto) as total FROM pagos
             WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
             GROUP BY moneda
         """, (f"{mes:02d}", str(anio))).fetchall()
-        pagos_dict = {r[0]: r[1] for r in pagos}
+        pagos_dict = {r[0]: r[1] for r in pagos if r[0] is not None}
         conn.close()
         return jsonify({
             'total_alumnos': total_alumnos,
             'clases_agendadas': clases_dict.get('agendada', 0),
-            'clases_canceladas': sum(v for k, v in clases_dict.items() if 'cancelada' in k),
+            'clases_canceladas': sum(v for k, v in clases_dict.items() if k and 'cancelada' in k),
             'pagos': pagos_dict
         })
     except Exception as e:
