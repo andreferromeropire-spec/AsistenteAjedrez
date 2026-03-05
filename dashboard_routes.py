@@ -34,13 +34,17 @@ def login_required(f):
 
 @dashboard_bp.route('/dashboard/login', methods=['GET', 'POST'])
 def login():
+    from flask import Response
     error = None
     if request.method == 'POST':
         if request.form.get('password') == DASHBOARD_PASSWORD:
             session['dashboard_logged_in'] = True
             return redirect('/dashboard')
         error = "Contraseña incorrecta"
-    return render_template_string(LOGIN_HTML, error=error)
+    # Build login HTML with error manually - no Jinja2 needed
+    error_html = f'<p class="error">{error}</p>' if error else ''
+    login_page = LOGIN_HTML.replace('%%ERROR%%', error_html)
+    return Response(login_page, mimetype='text/html')
 
 
 @dashboard_bp.route('/dashboard/logout')
@@ -55,7 +59,8 @@ def logout():
 @dashboard_bp.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template_string(DASHBOARD_HTML)
+    from flask import Response
+    return Response(DASHBOARD_HTML, mimetype='text/html')
 
 
 # ─────────────────────────────────────────────
@@ -344,7 +349,7 @@ LOGIN_HTML = '''<!DOCTYPE html>
   <form method="POST">
     <label for="password">Contraseña</label>
     <input type="password" id="password" name="password" placeholder="••••••••" autofocus>
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    %%ERROR%%
     <button type="submit">Ingresar</button>
   </form>
 </div>
@@ -785,7 +790,6 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 </main>
 
 <script>
-{% raw %}
 // ════════════════════════════════════════════
 // TEMA
 // ════════════════════════════════════════════
@@ -1073,7 +1077,6 @@ function filtrarTabla(tablaId, texto) {
 // ════════════════════════════════════════════
 cargarTodo();
 setInterval(cargarTodo, 60000);
-{% endraw %}
 </script>
 </body>
 </html>'''
