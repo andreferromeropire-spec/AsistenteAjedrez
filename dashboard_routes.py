@@ -86,29 +86,32 @@ def api_chat():
 @dashboard_bp.route('/dashboard/api/resumen')
 @login_required
 def api_resumen():
-    mes = int(request.args.get('mes', date.today().month))
-    anio = int(request.args.get('anio', date.today().year))
-    conn = get_connection()
-    total_alumnos = conn.execute("SELECT COUNT(*) FROM alumnos WHERE activo=1").fetchone()[0]
-    clases = conn.execute("""
-        SELECT estado, COUNT(*) as n FROM clases
-        WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
-        GROUP BY estado
-    """, (f"{mes:02d}", str(anio))).fetchall()
-    clases_dict = {r['estado']: r['n'] for r in clases}
-    pagos = conn.execute("""
-        SELECT moneda, SUM(monto) as total FROM pagos
-        WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
-        GROUP BY moneda
-    """, (f"{mes:02d}", str(anio))).fetchall()
-    pagos_dict = {r['moneda']: r['total'] for r in pagos}
-    conn.close()
-    return jsonify({
-        'total_alumnos': total_alumnos,
-        'clases_agendadas': clases_dict.get('agendada', 0),
-        'clases_canceladas': sum(v for k, v in clases_dict.items() if 'cancelada' in k),
-        'pagos': pagos_dict
-    })
+    try:
+        mes = int(request.args.get('mes', date.today().month))
+        anio = int(request.args.get('anio', date.today().year))
+        conn = get_connection()
+        total_alumnos = conn.execute("SELECT COUNT(*) FROM alumnos WHERE activo=1").fetchone()[0]
+        clases = conn.execute("""
+            SELECT estado, COUNT(*) as n FROM clases
+            WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
+            GROUP BY estado
+        """, (f"{mes:02d}", str(anio))).fetchall()
+        clases_dict = {r[0]: r[1] for r in clases}
+        pagos = conn.execute("""
+            SELECT moneda, SUM(monto) as total FROM pagos
+            WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
+            GROUP BY moneda
+        """, (f"{mes:02d}", str(anio))).fetchall()
+        pagos_dict = {r[0]: r[1] for r in pagos}
+        conn.close()
+        return jsonify({
+            'total_alumnos': total_alumnos,
+            'clases_agendadas': clases_dict.get('agendada', 0),
+            'clases_canceladas': sum(v for k, v in clases_dict.items() if 'cancelada' in k),
+            'pagos': pagos_dict
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'total_alumnos': 0, 'clases_agendadas': 0, 'clases_canceladas': 0, 'pagos': {}}), 200
 
 
 @dashboard_bp.route('/dashboard/api/alumnos')
