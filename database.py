@@ -100,6 +100,13 @@ def crear_tablas():
     except:
         pass  # Ya existe, ignorar
 
+    # pago_id en clases: guarda con qué pago se pagó esa clase
+    # Permite saber qué clases están pagas y cuáles no
+    try:
+        cursor.execute("ALTER TABLE clases ADD COLUMN pago_id INTEGER")
+    except:
+        pass  # Ya existe, ignorar
+
     conn.commit()
     conn.close()
     print("Base de datos lista.")

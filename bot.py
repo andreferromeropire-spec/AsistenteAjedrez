@@ -5,24 +5,17 @@ from dotenv import load_dotenv
 from datetime import date
 import os
 
-
 from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
 from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
-from dashboard_routes import dashboard_bp
-
-
 
 from database import crear_tablas
 crear_tablas()
 
 load_dotenv()
 app = Flask(__name__)
-
-app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-local")
-app.register_blueprint(dashboard_bp)
 
 historiales = {}
 MAXIMO_MENSAJES_HISTORIAL = 10
@@ -145,8 +138,145 @@ def ejecutar_accion(accion, datos, numero):
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
             return aviso
-        registrar_pago(alumno_id=alumno["id"], monto=datos.get("monto"), moneda=datos.get("moneda"), metodo=datos.get("metodo"), notas=datos.get("notas"))
-        respuesta = f"✅ Registré el pago de {alumno['nombre']}: {datos.get('monto')} {datos.get('moneda')} por {datos.get('metodo')}."
+
+        hoy = date.today()
+
+        # Si viene marcado como "confirmado", significa que el usuario
+        # ya vio la advertencia de diferencia de monto y decidió guardarlo igual
+        if datos.get("confirmado"):
+            pago_id = registrar_pago(
+                alumno_id=alumno["id"],
+                monto=datos["monto"],
+                moneda=datos["moneda"],
+                metodo=datos["metodo"],
+                notas=datos.get("notas")
+            )
+            # Marcar las clases como pagadas
+            clases_ids = datos.get("clases_ids", [])
+            if clases_ids:
+                conn = __import__('database').get_connection()
+                for clase_id in clases_ids:
+                    conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, clase_id))
+                conn.commit()
+                conn.close()
+            fechas = datos.get("fechas_clases", [])
+            detalle_fechas = ", ".join([f.split("-")[2] for f in fechas]) if fechas else "—"
+            respuesta = (f"✅ Registré el pago de {alumno['nombre']}: "
+                        f"{datos['monto']} {datos['moneda']} por {datos['metodo']}.\n"
+                        f"Clases marcadas como pagas: {detalle_fechas}")
+            return (aviso + "\n" + respuesta) if aviso else respuesta
+
+        # ── Determinar la moneda y método: usar los del alumno si no se especificaron ──
+        moneda = datos.get("moneda") or alumno.get("moneda") or "Dólar"
+        metodo = datos.get("metodo") or alumno.get("metodo_pago") or "Wise"
+
+        # ── Determinar qué clases aplican ──
+        cantidad_clases = datos.get("cantidad_clases")
+        todas_del_mes = datos.get("todas_del_mes", False)
+        mes_pago = datos.get("mes", hoy.month)
+        anio_pago = datos.get("anio", hoy.year)
+
+        conn = __import__('database').get_connection()
+        cursor = conn.cursor()
+
+        if cantidad_clases:
+            # Busca las N clases más próximas agendadas (sin pago registrado aún)
+            cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                ORDER BY fecha ASC
+                LIMIT ?
+            """, (alumno["id"], cantidad_clases))
+        else:
+            # "todas del mes" o pago mensual sin especificar: toma todas las del mes
+            cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                AND strftime('%m', fecha) = ?
+                AND strftime('%Y', fecha) = ?
+                ORDER BY fecha ASC
+            """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
+
+        clases = cursor.fetchall()
+        conn.close()
+
+        if not clases:
+            respuesta = f"No encontré clases agendadas sin pago para {alumno['nombre']}."
+            return (aviso + "\n" + respuesta) if aviso else respuesta
+
+        clases_ids = [c["id"] for c in clases]
+        fechas_clases = [c["fecha"] for c in clases]
+        n_clases = len(clases)
+
+        # ── Calcular monto esperado según la promo del alumno ──
+        from promociones import calcular_monto as calc_monto
+        monto_esperado, precio_unitario, moneda_promo = calc_monto(alumno["id"], n_clases)
+
+        # La moneda de la promo tiene prioridad sobre la inferida
+        if moneda_promo:
+            moneda = moneda_promo
+
+        # ── Comparar con el monto que dijo el usuario (si lo especificó) ──
+        monto_pagado = datos.get("monto")
+
+        if monto_pagado is not None and monto_esperado is not None:
+            diferencia = abs(float(monto_pagado) - float(monto_esperado))
+            if diferencia > 0.01:
+                # Hay diferencia: guardar los datos en pendiente y preguntar
+                acciones_pendientes[numero] = {
+                    "accion": "registrar_pago",
+                    "datos": {
+                        **datos,
+                        "confirmado": True,
+                        "monto": monto_pagado,
+                        "moneda": moneda,
+                        "metodo": metodo,
+                        "clases_ids": clases_ids,
+                        "fechas_clases": fechas_clases,
+                        "nombre_alumno": alumno["nombre"],
+                        "alumno_id_directo": alumno["id"]
+                    }
+                }
+                fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
+                return (
+                    f"⚠️ {alumno['nombre']} tiene {n_clases} clases "
+                    f"(días {fechas_str}) → debería ser {monto_esperado} {moneda} "
+                    f"({precio_unitario}/clase), pero registraste {monto_pagado} {moneda}.\n\n"
+                    f"¿Guardamos ${monto_pagado} igual? Respondé 1 para confirmar o 2 para reingresar."
+                )
+
+        # ── Si no hay diferencia o no se especificó monto: usar el calculado ──
+        monto_final = monto_pagado if monto_pagado is not None else monto_esperado
+
+        if monto_final is None:
+            # El alumno no tiene promo cargada y tampoco dijo el monto
+            respuesta = (f"{alumno['nombre']} tiene {n_clases} clases agendadas pero "
+                        f"no tiene promo cargada y no especificaste el monto. "
+                        f"¿Cuánto pagó?")
+            return (aviso + "\n" + respuesta) if aviso else respuesta
+
+        # ── Registrar el pago ──
+        pago_id = registrar_pago(
+            alumno_id=alumno["id"],
+            monto=monto_final,
+            moneda=moneda,
+            metodo=metodo,
+            notas=datos.get("notas")
+        )
+
+        # ── Marcar cada clase como pagada ──
+        conn = __import__('database').get_connection()
+        for clase_id in clases_ids:
+            conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, clase_id))
+        conn.commit()
+        conn.close()
+
+        fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
+        respuesta = (f"✅ Registré el pago de {alumno['nombre']}:\n"
+                    f"• {n_clases} clases (días {fechas_str})\n"
+                    f"• {monto_final} {moneda} por {metodo}")
+        if precio_unitario:
+            respuesta += f"\n• {precio_unitario}/clase"
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "registrar_clase":
@@ -623,6 +753,26 @@ def webhook():
             if pendiente.get("accion") == "confirmar_borrado":
                 accion = "confirmar_borrado"
                 datos = {"numero_opcion": int(mensaje_entrante.strip())}
+            elif pendiente.get("accion") == "registrar_pago" and pendiente["datos"].get("confirmado"):
+                # El usuario está respondiendo a la advertencia de diferencia de monto
+                opcion = int(mensaje_entrante.strip())
+                if opcion == 1:
+                    # Confirma: ejecuta el pago con los datos guardados
+                    accion = "registrar_pago"
+                    datos = pendiente["datos"]
+                    del acciones_pendientes[numero]
+                elif opcion == 2:
+                    # Quiere reingresar: cancela y le pide que lo mande de nuevo
+                    del acciones_pendientes[numero]
+                    respuesta_texto = "Cancelado. Mandame el pago de nuevo con el monto correcto."
+                    respuesta = MessagingResponse()
+                    respuesta.message(respuesta_texto)
+                    return str(respuesta)
+                else:
+                    respuesta_texto = "Respondé 1 para confirmar o 2 para reingresar el monto."
+                    respuesta = MessagingResponse()
+                    respuesta.message(respuesta_texto)
+                    return str(respuesta)
             else:
                 accion = "aclaracion_alumno"
                 datos = {"numero_opcion": int(mensaje_entrante.strip())}

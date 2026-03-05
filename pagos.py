@@ -16,8 +16,10 @@ def registrar_pago(alumno_id, monto, moneda, metodo, notas=None):
         VALUES (?, ?, ?, ?, ?, ?)
     """, (alumno_id, hoy, monto, moneda, metodo, notas))
     conn.commit()
+    pago_id = cursor.lastrowid  # ID del pago recién insertado
     conn.close()
     print(f"Pago registrado: alumno {alumno_id} - {monto} {moneda} via {metodo}")
+    return pago_id  # Lo devolvemos para poder vincular las clases
 
 # Devuelve todos los pagos de un mes y año específico.
 # mes y año son números: mes=2, anio=2026 para febrero 2026
