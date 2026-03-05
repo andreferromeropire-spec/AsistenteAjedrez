@@ -5,17 +5,24 @@ from dotenv import load_dotenv
 from datetime import date
 import os
 
+
 from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
 from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
+from dashboard_routes import dashboard_bp
+
+
 
 from database import crear_tablas
 crear_tablas()
 
 load_dotenv()
 app = Flask(__name__)
+
+app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-local")
+app.register_blueprint(dashboard_bp)
 
 historiales = {}
 MAXIMO_MENSAJES_HISTORIAL = 10
