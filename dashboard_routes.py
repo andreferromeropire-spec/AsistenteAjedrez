@@ -785,6 +785,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 </main>
 
 <script>
+{% raw %}
 // ════════════════════════════════════════════
 // TEMA
 // ════════════════════════════════════════════
@@ -895,7 +896,7 @@ async function enviarMensaje() {
 // API HELPERS
 // ════════════════════════════════════════════
 async function api(ruta) {
-  const res = await fetch(`/dashboard/api/${ruta}&mes=${mes}&anio=${anio}`);
+  const res = await fetch(`/dashboard/api/${ruta}?mes=${mes}&anio=${anio}`);
   return res.json();
 }
 
@@ -925,7 +926,7 @@ function cargarTodo() {
 }
 
 async function cargarResumen() {
-  const d = await api('resumen?x=1');
+  const d = await api('resumen');
   document.getElementById('m-alumnos').textContent = d.total_alumnos;
   document.getElementById('m-clases').textContent = d.clases_agendadas;
   document.getElementById('m-canceladas').textContent = d.clases_canceladas;
@@ -936,7 +937,7 @@ async function cargarResumen() {
 
 async function cargarClases() {
   const estadoFiltro = document.getElementById('filtro-estado').value;
-  let datos = await api('clases?x=1');
+  let datos = await api('clases');
   if (estadoFiltro) datos = datos.filter(c => c.estado.includes(estadoFiltro));
   const html = datos.length ? datos.map(c => `<tr>
     <td>${c.fecha}</td><td>${c.hora||'—'}</td>
@@ -949,7 +950,7 @@ async function cargarClases() {
 }
 
 async function cargarPagos() {
-  const datos = await api('pagos?x=1');
+  const datos = await api('pagos');
   const monedas = {};
   const html = datos.length ? datos.map(p => {
     monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
@@ -970,7 +971,7 @@ async function cargarPagos() {
 }
 
 async function cargarDeudores() {
-  const datos = await api('deudores?x=1');
+  const datos = await api('deudores');
   const porCobrar = {};
   const html = datos.length ? datos.map(d => {
     if(d.total&&d.moneda) porCobrar[d.moneda]=(porCobrar[d.moneda]||0)+d.total;
@@ -990,7 +991,7 @@ async function cargarDeudores() {
 }
 
 async function cargarAlumnos() {
-  const datos = await api('alumnos?x=1');
+  const datos = await api('alumnos');
   const html = datos.map(a => `<tr>
     <td><strong>${a.nombre}</strong></td>
     <td>${a.representante||'—'}</td>
@@ -1005,8 +1006,8 @@ async function cargarAlumnos() {
 }
 
 async function cargarGraficos() {
-  const datos = await api('grafico_clases?x=1');
-  const clases = await api('clases?x=1');
+  const datos = await api('grafico_clases');
+  const clases = await api('clases');
 
   const isDark = ['dark','navy'].includes(document.documentElement.getAttribute('data-theme'));
   const tickColor = isDark ? '#7a6f62' : '#9a8a78';
@@ -1072,6 +1073,7 @@ function filtrarTabla(tablaId, texto) {
 // ════════════════════════════════════════════
 cargarTodo();
 setInterval(cargarTodo, 60000);
+{% endraw %}
 </script>
 </body>
 </html>'''
