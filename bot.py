@@ -8,9 +8,8 @@ import os
 from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
-from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno
+from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno, historial_reciente_alumno, borrar_pago
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
-from dashboard_routes import dashboard_bp
 
 from database import crear_tablas
 crear_tablas()
@@ -18,6 +17,8 @@ crear_tablas()
 load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-2026")
+
+from dashboard_routes import dashboard_bp
 app.register_blueprint(dashboard_bp)
 
 historiales = {}
@@ -170,15 +171,15 @@ def ejecutar_accion(accion, datos, numero):
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
         # ── Determinar la moneda y método: usar los del alumno si no se especificaron ──
-        moneda = datos.get("moneda") or alumno.get("moneda") or "Dólar"
-        metodo = datos.get("metodo") or alumno.get("metodo_pago") or "Wise"
+        moneda = datos.get("moneda") or alumno["moneda"] or "Dólar"
+        metodo = datos.get("metodo") or alumno["metodo_pago"] or "Wise"
 
         # ── Determinar qué clases aplican ──
         cantidad_clases = datos.get("cantidad_clases")
         todas_del_mes = datos.get("todas_del_mes", False)
         mes_pago = datos.get("mes", hoy.month)
         anio_pago = datos.get("anio", hoy.year)
-        modalidad = (alumno.get("modalidad") or "").strip()
+        modalidad = (alumno["modalidad"] or "").strip()
 
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
@@ -762,6 +763,74 @@ def ejecutar_accion(accion, datos, numero):
         detalle = ", ".join([f"{r['desde']}-{r['hasta']} clases ${r['precio']}" for r in rangos])
         return f"✅ Promo de {alumno['nombre']} actualizada: {detalle}"
     
+    elif accion == "borrar_pago":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+
+        # Si viene con pago_id elegido y confirmación, ejecutamos el borrado
+        if datos.get("pago_id_a_borrar") and datos.get("confirmado"):
+            pago_id = datos["pago_id_a_borrar"]
+            ok, resultado = borrar_pago(pago_id)
+            del acciones_pendientes[numero]
+            if ok:
+                n = resultado  # cantidad de clases desmarcadas
+                msg = f"🗑️ Pago borrado."
+                if n > 0:
+                    msg += f" {n} clase{'s' if n > 1 else ''} quedaron marcadas como no pagas."
+                return msg
+            else:
+                return f"❌ {resultado}"
+
+        # Si viene con pago_id elegido pero sin confirmar, pedimos confirmación
+        if datos.get("pago_id_a_borrar"):
+            pago_elegido = datos.get("detalle_pago_elegido", {})
+            fecha = pago_elegido.get("fecha", "—")
+            monto = pago_elegido.get("monto", "—")
+            moneda = pago_elegido.get("moneda", "—")
+            metodo = pago_elegido.get("metodo", "—")
+            acciones_pendientes[numero] = {
+                "accion": "borrar_pago",
+                "datos": {
+                    **datos,
+                    "confirmado": True,
+                    "nombre_alumno": alumno["nombre"],
+                    "alumno_id_directo": alumno["id"]
+                }
+            }
+            return (
+                f"⚠️ ¿Confirmás que querés borrar este pago de {alumno['nombre']}?\n"
+                f"• Fecha: {fecha}\n"
+                f"• Monto: {monto} {moneda}\n"
+                f"• Método: {metodo}\n\n"
+                f"Respondé 1 para confirmar o 2 para cancelar."
+            )
+
+        # Primera vez: mostrar el historial de pagos para que elija
+        pagos = historial_reciente_alumno(alumno["id"], limite=5)
+        if not pagos:
+            return f"{alumno['nombre']} no tiene pagos registrados."
+
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
+        lista = []
+        for i, p in enumerate(pagos):
+            sim = simbolos.get(p["moneda"], "")
+            notas = f" ({p['notas']})" if p["notas"] else ""
+            lista.append(f"{i+1}. {p['fecha']} — {sim}{p['monto']} {p['moneda']} por {p['metodo']}{notas}")
+
+        # Guardamos los pagos en pendiente para cuando elija el número
+        acciones_pendientes[numero] = {
+            "accion": "borrar_pago",
+            "datos": {
+                "nombre_alumno": alumno["nombre"],
+                "alumno_id_directo": alumno["id"]
+            },
+            "pagos_candidatos": [dict(p) for p in pagos]
+        }
+        texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
+        texto += "\n\n¿Cuál querés borrar? Respondé con el número."
+        return (aviso + "\n" + texto) if aviso else texto
+
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
 
@@ -785,19 +854,19 @@ def webhook():
     try:
         if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
             pendiente = acciones_pendientes[numero]
+            opcion = int(mensaje_entrante.strip())
+
             if pendiente.get("accion") == "confirmar_borrado":
                 accion = "confirmar_borrado"
-                datos = {"numero_opcion": int(mensaje_entrante.strip())}
+                datos = {"numero_opcion": opcion}
+
             elif pendiente.get("accion") == "registrar_pago" and pendiente["datos"].get("confirmado"):
-                # El usuario está respondiendo a la advertencia de diferencia de monto
-                opcion = int(mensaje_entrante.strip())
+                # Confirmación de diferencia de monto
                 if opcion == 1:
-                    # Confirma: ejecuta el pago con los datos guardados
                     accion = "registrar_pago"
                     datos = pendiente["datos"]
                     del acciones_pendientes[numero]
                 elif opcion == 2:
-                    # Quiere reingresar: cancela y le pide que lo mande de nuevo
                     del acciones_pendientes[numero]
                     respuesta_texto = "Cancelado. Mandame el pago de nuevo con el monto correcto."
                     respuesta = MessagingResponse()
@@ -808,9 +877,51 @@ def webhook():
                     respuesta = MessagingResponse()
                     respuesta.message(respuesta_texto)
                     return str(respuesta)
+
+            elif pendiente.get("accion") == "borrar_pago":
+                if "pagos_candidatos" in pendiente:
+                    # El usuario está eligiendo qué pago borrar de la lista
+                    candidatos = pendiente["pagos_candidatos"]
+                    if 1 <= opcion <= len(candidatos):
+                        elegido = candidatos[opcion - 1]
+                        accion = "borrar_pago"
+                        datos = {
+                            **pendiente["datos"],
+                            "pago_id_a_borrar": elegido["id"],
+                            "detalle_pago_elegido": elegido
+                        }
+                        # Actualizamos pendiente para la siguiente confirmación
+                        acciones_pendientes[numero] = {
+                            "accion": "borrar_pago",
+                            "datos": datos
+                        }
+                    else:
+                        respuesta_texto = f"Elegí un número entre 1 y {len(candidatos)}."
+                        respuesta = MessagingResponse()
+                        respuesta.message(respuesta_texto)
+                        return str(respuesta)
+                elif pendiente["datos"].get("confirmado"):
+                    # El usuario está confirmando o cancelando el borrado
+                    if opcion == 1:
+                        accion = "borrar_pago"
+                        datos = pendiente["datos"]
+                    elif opcion == 2:
+                        del acciones_pendientes[numero]
+                        respuesta_texto = "Cancelado, no se borró nada."
+                        respuesta = MessagingResponse()
+                        respuesta.message(respuesta_texto)
+                        return str(respuesta)
+                    else:
+                        respuesta_texto = "Respondé 1 para confirmar o 2 para cancelar."
+                        respuesta = MessagingResponse()
+                        respuesta.message(respuesta_texto)
+                        return str(respuesta)
+                else:
+                    accion = "aclaracion_alumno"
+                    datos = {"numero_opcion": opcion}
             else:
                 accion = "aclaracion_alumno"
-                datos = {"numero_opcion": int(mensaje_entrante.strip())}
+                datos = {"numero_opcion": opcion}
         else:
             if numero in acciones_pendientes and not mensaje_entrante.strip().isdigit():
                 del acciones_pendientes[numero]  # Cancela la acción pendiente si mandás texto
