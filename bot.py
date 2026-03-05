@@ -175,20 +175,52 @@ def ejecutar_accion(accion, datos, numero):
         todas_del_mes = datos.get("todas_del_mes", False)
         mes_pago = datos.get("mes", hoy.month)
         anio_pago = datos.get("anio", hoy.year)
+        modalidad = (alumno.get("modalidad") or "").strip()
 
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
 
         if cantidad_clases:
-            # Busca las N clases más próximas agendadas (sin pago registrado aún)
+            # Dijo explícitamente cuántas clases: toma esas N más próximas
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
                 ORDER BY fecha ASC
                 LIMIT ?
             """, (alumno["id"], cantidad_clases))
+
+        elif todas_del_mes or modalidad == "Mensual":
+            # Dijo "todas del mes" O el alumno paga mensual: toma todas las del mes
+            cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                AND strftime('%m', fecha) = ?
+                AND strftime('%Y', fecha) = ?
+                ORDER BY fecha ASC
+            """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
+
+        elif modalidad == "Semanal":
+            # Paga por clase suelta: toma 1 sola clase
+            # Prioriza clases ya dadas sin pagar; si no, la próxima agendada
+            cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND pago_id IS NULL
+                AND (estado = 'agendada' OR estado = 'dada')
+                ORDER BY fecha ASC
+                LIMIT 1
+            """, (alumno["id"],))
+
+        elif "10" in modalidad or "paquete" in modalidad.lower():
+            # Paga cada 10 clases: toma las 10 próximas sin pagar
+            cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                ORDER BY fecha ASC
+                LIMIT 10
+            """, (alumno["id"],))
+
         else:
-            # "todas del mes" o pago mensual sin especificar: toma todas las del mes
+            # Modalidad desconocida o vacía: toma todas las del mes actual como fallback
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
