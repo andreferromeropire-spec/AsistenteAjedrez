@@ -16,10 +16,8 @@ def registrar_pago(alumno_id, monto, moneda, metodo, notas=None):
         VALUES (?, ?, ?, ?, ?, ?)
     """, (alumno_id, hoy, monto, moneda, metodo, notas))
     conn.commit()
-    pago_id = cursor.lastrowid  # ID del pago recién insertado
     conn.close()
     print(f"Pago registrado: alumno {alumno_id} - {monto} {moneda} via {metodo}")
-    return pago_id  # Lo devolvemos para poder vincular las clases
 
 # Devuelve todos los pagos de un mes y año específico.
 # mes y año son números: mes=2, anio=2026 para febrero 2026
@@ -79,6 +77,49 @@ def historial_de_pagos_alumno(alumno_id):
     pagos = cursor.fetchall()
     conn.close()
     return pagos
+
+# Devuelve los últimos N pagos de un alumno con detalle suficiente
+# para que el bot pueda mostrarlos numerados y el usuario elija cuál borrar
+def historial_reciente_alumno(alumno_id, limite=5):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, fecha, monto, moneda, metodo, notas
+        FROM pagos
+        WHERE alumno_id = ?
+        ORDER BY fecha DESC, id DESC
+        LIMIT ?
+    """, (alumno_id, limite))
+    pagos = cursor.fetchall()
+    conn.close()
+    return pagos
+
+# Borra un pago y desmarca las clases que estaban vinculadas a él.
+# "Desmarcar" significa poner pago_id = NULL para que queden listas
+# para ser pagadas de nuevo, como si ese pago nunca hubiera existido.
+def borrar_pago(pago_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Primero verificamos que el pago existe
+    cursor.execute("SELECT * FROM pagos WHERE id = ?", (pago_id,))
+    pago = cursor.fetchone()
+    if not pago:
+        conn.close()
+        return False, "No encontré ese pago."
+
+    # Desvinculamos las clases que tenían este pago_id
+    cursor.execute("""
+        UPDATE clases SET pago_id = NULL
+        WHERE pago_id = ?
+    """, (pago_id,))
+    clases_desvinculadas = cursor.rowcount  # cuántas clases se desmarcaron
+
+    # Borramos el pago
+    cursor.execute("DELETE FROM pagos WHERE id = ?", (pago_id,))
+    conn.commit()
+    conn.close()
+    return True, clases_desvinculadas
 
 # Suma el total cobrado en un mes, agrupado por moneda
 # Devuelve algo como: {"Dólar": 350, "Pesos": 54000}
