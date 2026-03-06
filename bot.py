@@ -375,7 +375,11 @@ def ejecutar_accion(accion, datos, numero):
 
         monto_pagado = datos.get("monto")
 
-        if monto_pagado is not None and monto_esperado is not None:
+        # Solo comparar montos si la moneda es la misma que la promo
+        moneda_pago_raw = datos.get("moneda")  # lo que dijo el usuario (puede ser None)
+        monedas_distintas = moneda_pago_raw and moneda_promo and moneda_pago_raw != moneda_promo
+
+        if monto_pagado is not None and monto_esperado is not None and not monedas_distintas:
             diferencia = abs(float(monto_pagado) - float(monto_esperado))
             if diferencia > 0.01:
                 fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
@@ -1133,18 +1137,6 @@ def sincronizar_calendario_endpoint():
     hoy = date.today()
     resultado = sincronizar_mes(hoy.month, hoy.year)
     return f"✅ {resultado['clases_registradas']} clases registradas. No identificadas: {resultado['no_identificadas']}"
-
-#Temporal
-
-@app.route("/limpiar_henry", methods=["GET"])
-def limpiar_henry():
-    from database import get_connection
-    conn = get_connection()
-    r = conn.execute("DELETE FROM clases WHERE alumno_id=4 AND strftime('%m',fecha)='03' AND strftime('%Y',fecha)='2026'")
-    conn.commit()
-    print('Borradas:', r.rowcount)
-    conn.close()
-    return f"Borradas: {r.rowcount} clases de Henry Chen en marzo"
 
 if __name__ == "__main__":
     scheduler = configurar_scheduler()

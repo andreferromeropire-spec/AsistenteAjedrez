@@ -29,6 +29,11 @@ Las acciones posibles son:
 
 1. "registrar_pago" - cuando alguien pagó
    datos necesarios: nombre_alumno, monto, moneda (Dólar/Pesos/Libra Esterlina), metodo (Wise/PayPal/Transferencia nacional), notas (opcional)
+   Para la moneda, convertí siempre al nombre interno:
+   - "pesos", "ARS", "pesos argentinos", "$" → "Pesos"
+   - "dólares", "dólar", "USD", "usd", "dolares" → "Dólar"
+   - "libras", "libra", "GBP", "pounds", "£" → "Libra Esterlina"
+   Si no se menciona moneda, dejá el campo vacío (no lo inventes).
 
 2. "registrar_clase" - cuando se dio una clase con UN solo alumno
    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, si dice "hoy" usá la fecha de hoy), hora (opcional)
