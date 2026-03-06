@@ -197,60 +197,59 @@ def ejecutar_accion(accion, datos, numero):
 
         if alumnos_del_rep and not datos.get("alumno_id_directo"):
             hoy = date.today()
-            resultados = []
-            for alumno_rep in alumnos_del_rep:
-                moneda = datos.get("moneda") or alumno_rep["moneda"] or "Dólar"
-                metodo = datos.get("metodo") or alumno_rep["metodo_pago"] or "Wise"
-                modalidad = (alumno_rep["modalidad"] or "").strip()
-                mes_pago = datos.get("mes", hoy.month)
-                anio_pago = datos.get("anio", hoy.year)
+            mes_pago = datos.get("mes", hoy.month)
+            anio_pago = datos.get("anio", hoy.year)
+            moneda = datos.get("moneda") or alumnos_del_rep[0]["moneda"] or "Dólar"
+            metodo = datos.get("metodo") or alumnos_del_rep[0]["metodo_pago"] or "Wise"
 
+            # 1. Recolectar clases de TODOS los alumnos del representante
+            clases_por_alumno = {}
+            for alumno_rep in alumnos_del_rep:
+                modalidad = (alumno_rep["modalidad"] or "").strip()
                 conn = __import__("database").get_connection()
                 cursor = conn.cursor()
-                if modalidad == "Semanal":
-                    cursor.execute("""
-                        SELECT id, fecha FROM clases
-                        WHERE alumno_id = ? AND pago_id IS NULL
-                        AND (estado = 'agendada' OR estado = 'dada')
-                        ORDER BY fecha ASC LIMIT 1
-                    """, (alumno_rep["id"],))
-                elif modalidad == "Mensual":
-                    cursor.execute("""
-                        SELECT id, fecha FROM clases
-                        WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                        AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
-                        ORDER BY fecha ASC
-                    """, (alumno_rep["id"], f"{mes_pago:02d}", str(anio_pago)))
-                elif "10" in modalidad or "paquete" in modalidad.lower():
-                    cursor.execute("""
-                        SELECT id, fecha FROM clases
-                        WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                        ORDER BY fecha ASC LIMIT 10
-                    """, (alumno_rep["id"],))
-                else:
-                    cursor.execute("""
-                        SELECT id, fecha FROM clases
-                        WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                        AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
-                        ORDER BY fecha ASC
-                    """, (alumno_rep["id"], f"{mes_pago:02d}", str(anio_pago)))
+                cursor.execute("""
+                    SELECT id, fecha FROM clases
+                    WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                    AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
+                    ORDER BY fecha ASC
+                """, (alumno_rep["id"], f"{mes_pago:02d}", str(anio_pago)))
                 clases = cursor.fetchall()
                 conn.close()
+                clases_por_alumno[alumno_rep["id"]] = {
+                    "alumno": alumno_rep,
+                    "clases": clases
+                }
 
+            # 2. Total de clases combinadas para calcular precio combo
+            total_clases = sum(len(v["clases"]) for v in clases_por_alumno.values())
+
+            if total_clases == 0:
+                rep_nombre = alumnos_del_rep[0]["representante"]
+                return f"{rep_nombre} no tiene clases sin pagar este mes."
+
+            # 3. Calcular precio usando el total combinado (así aplica la promo correcta)
+            from promociones import calcular_monto as calc_monto
+            primer_id = alumnos_del_rep[0]["id"]
+            monto_total, precio_unit, moneda_promo = calc_monto(primer_id, total_clases)
+            if moneda_promo:
+                moneda = moneda_promo
+            if monto_total is None:
+                rep_nombre = alumnos_del_rep[0]["representante"]
+                return f"{rep_nombre} no tiene promo cargada. ¿Cuánto pagó?"
+
+            # 4. Distribuir el monto proporcionalmente entre los alumnos
+            # Cada alumno paga precio_unit * sus_clases
+            resultados = []
+            for alumno_id, info in clases_por_alumno.items():
+                alumno_rep = info["alumno"]
+                clases = info["clases"]
                 if not clases:
-                    resultados.append(f"• {alumno_rep['nombre']}: sin clases sin pagar")
+                    resultados.append(f"• {alumno_rep['nombre']}: sin clases este mes")
                     continue
-
-                from promociones import calcular_monto as calc_monto
                 n = len(clases)
-                monto_final, precio_unit, moneda_promo = calc_monto(alumno_rep["id"], n)
-                if moneda_promo:
-                    moneda = moneda_promo
-                if monto_final is None:
-                    resultados.append(f"• {alumno_rep['nombre']}: sin promo cargada, ¿cuánto pagó?")
-                    continue
-
-                pago_id = registrar_pago(alumno_id=alumno_rep["id"], monto=monto_final,
+                monto_alumno = round(precio_unit * n, 2)
+                pago_id = registrar_pago(alumno_id=alumno_rep["id"], monto=monto_alumno,
                                          moneda=moneda, metodo=metodo, notas=datos.get("notas"))
                 conn = __import__("database").get_connection()
                 for c in clases:
@@ -258,10 +257,12 @@ def ejecutar_accion(accion, datos, numero):
                 conn.commit()
                 conn.close()
                 fechas_str = ", ".join([c["fecha"].split("-")[2] for c in clases])
-                resultados.append(f"• {alumno_rep['nombre']}: {monto_final} {moneda} ({n} clases, días {fechas_str})")
+                resultados.append(f"• {alumno_rep['nombre']}: {monto_alumno} {moneda} ({n} clases, días {fechas_str})")
 
             rep_nombre = alumnos_del_rep[0]["representante"]
-            return "✅ Pago registrado para " + rep_nombre + ":\n" + "\n".join(resultados)
+            return (f"✅ Pago registrado para {rep_nombre}:\n"
+                    f"{'\n'.join(resultados)}\n"
+                    f"• Total: {monto_total} {moneda} ({total_clases} clases × {precio_unit}/clase)")
 
         # ── Caso normal: buscar por nombre de alumno ──
         alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
