@@ -4,8 +4,3 @@ r = conn.execute("DELETE FROM clases WHERE alumno_id=4 AND strftime('%m',fecha)=
 conn.commit()
 print('Borradas:', r.rowcount)
 conn.close()
-```
-
-Guardalo y después:
-```
-railway run python borrar_henry.py
