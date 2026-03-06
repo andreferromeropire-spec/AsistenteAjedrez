@@ -723,7 +723,8 @@ function cargarPagos() {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
       var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
       var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
-      var borrar = '<button class="btn-icon danger" title="Borrar pago" onclick="borrarPago('+JSON.stringify(p.nombre)+')">&#128465;</button>';
+      var np = p.nombre.replace(/"/g, '&quot;');
+      var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-nombre="'+np+'">&#128465;</button>';
       return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
@@ -756,9 +757,10 @@ function cargarAlumnos() {
   api('alumnos').then(function(datos) {
     var html = datos.map(function(a) {
       var pago = a.pago_este_mes ? '<span class="badge badge-green">Si</span>' : '<span class="badge badge-red">No</span>';
+      var n = a.nombre.replace(/"/g, '&quot;');
       var acciones = '<div class="actions-cell">'
-        + '<button class="btn-icon" title="Ver / editar" onclick="editarAlumno('+JSON.stringify(a.nombre)+')">&#9998;</button>'
-        + '<button class="btn-icon danger" title="Borrar" onclick="borrarAlumno('+JSON.stringify(a.nombre)+')">&#128465;</button>'
+        + '<button class="btn-icon btn-editar" title="Ver / editar" data-nombre="'+n+'">&#9998;</button>'
+        + '<button class="btn-icon danger btn-borrar-alumno" title="Borrar" data-nombre="'+n+'">&#128465;</button>'
         + '</div>';
       return '<tr><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
     }).join('') || '<tr><td colspan="9" class="empty">Sin alumnos</td></tr>';
@@ -809,13 +811,11 @@ function filtrarTabla(tablaId, texto) {
   });
 }
 
-// Funciones de accion rapida: llenan el chat y lo envian
+// Funciones de accion rapida via delegacion de eventos (evita problemas de escapado)
 function enviarAlChat(texto) {
-  showTab('clases', document.querySelector('.tab-btn'));  // no cambia de tab, solo activa el chat
   var input = document.getElementById('chat-input');
   input.value = texto;
   input.focus();
-  // Resaltar el campo para que Andrea sepa que debe confirmar o editar
   input.style.borderColor = 'var(--gold)';
   setTimeout(function(){ input.style.borderColor = ''; }, 1500);
 }
@@ -826,9 +826,8 @@ function editarAlumno(nombre) {
 }
 
 function borrarAlumno(nombre) {
-  if (!confirm('\u00bfBorrar a ' + nombre + '?\nEsto abrira el flujo de confirmacion en el chat.')) return;
+  if (!confirm('\u00bfBorrar a ' + nombre + '? Esto abrira el flujo de confirmacion en el chat.')) return;
   enviarAlChat('borra a ' + nombre);
-  showTab('clases', null);
   setTimeout(enviarMensaje, 100);
 }
 
@@ -836,6 +835,17 @@ function borrarPago(nombre) {
   enviarAlChat('borrar un pago de ' + nombre);
   setTimeout(enviarMensaje, 100);
 }
+
+// Delegacion de eventos para botones generados dinamicamente
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('button');
+  if (!btn) return;
+  var nombre = btn.getAttribute('data-nombre');
+  if (!nombre) return;
+  if (btn.classList.contains('btn-editar')) editarAlumno(nombre);
+  else if (btn.classList.contains('btn-borrar-alumno')) borrarAlumno(nombre);
+  else if (btn.classList.contains('btn-borrar-pago')) borrarPago(nombre);
+});
 
 cargarTodo();
 setInterval(cargarTodo, 60000);
