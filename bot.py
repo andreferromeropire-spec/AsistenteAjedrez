@@ -942,10 +942,23 @@ def ejecutar_accion(accion, datos, numero):
         # Si viene con pago_id elegido pero sin confirmar, pedimos confirmación
         if datos.get("pago_id_a_borrar"):
             pago_elegido = datos.get("detalle_pago_elegido", {})
-            fecha = pago_elegido.get("fecha", "—")
             monto = pago_elegido.get("monto", "—")
             moneda = pago_elegido.get("moneda", "—")
             metodo = pago_elegido.get("metodo", "—")
+            # Buscar clases asociadas para mostrar en confirmación
+            conn_conf = __import__("database").get_connection()
+            clases_conf = conn_conf.execute(
+                "SELECT fecha FROM clases WHERE pago_id = ? ORDER BY fecha ASC",
+                (pago_elegido.get("id"),)
+            ).fetchall()
+            conn_conf.close()
+            if clases_conf:
+                dias = ", ".join([c["fecha"].split("-")[2] for c in clases_conf])
+                n_cl = len(clases_conf)
+                dia_palabra = "día" if n_cl == 1 else "días"
+                detalle_clases = f"{n_cl} clase{'s' if n_cl > 1 else ''} — {dia_palabra} {dias}"
+            else:
+                detalle_clases = "sin clases asociadas"
             acciones_pendientes[numero] = {
                 "accion": "borrar_pago",
                 "datos": {
@@ -957,9 +970,8 @@ def ejecutar_accion(accion, datos, numero):
             }
             return (
                 f"⚠️ ¿Confirmás que querés borrar este pago de {alumno['nombre']}?\n"
-                f"• Fecha: {fecha}\n"
-                f"• Monto: {monto} {moneda}\n"
-                f"• Método: {metodo}\n\n"
+                f"• {monto} {moneda} por {metodo}\n"
+                f"• {detalle_clases}\n\n"
                 f"Respondé 1 para confirmar o 2 para cancelar."
             )
 
@@ -981,7 +993,8 @@ def ejecutar_accion(accion, datos, numero):
             if clases_pago:
                 dias = ", ".join([c["fecha"].split("-")[2] for c in clases_pago])
                 mes_año = clases_pago[0]["fecha"][:7]  # "2026-03"
-                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} (días {dias})"
+                palabra_dia = "días" if len(clases_pago) > 1 else "día"
+                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} ({palabra_dia} {dias})" 
             else:
                 detalle_clases = f"registrado {p['fecha']}"
             lista.append(f"{i+1}. {sim}{p['monto']} {p['moneda']} — {detalle_clases}")
@@ -1084,13 +1097,16 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                     return "Cancelado, no se borró nada."
                 elif 1 <= opcion <= len(candidatos):
                     elegido = candidatos[opcion - 1]
-                    accion = "borrar_pago"
-                    datos = {
+                    # Llamamos directamente a ejecutar_accion con el pago elegido
+                    # y retornamos para evitar doble ejecución
+                    datos_borrar = {
                         **pendiente["datos"],
                         "pago_id_a_borrar": elegido["id"],
-                        "detalle_pago_elegido": elegido
+                        "detalle_pago_elegido": dict(elegido)
                     }
-                    acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos}
+                    # Actualizamos pendiente sin pagos_candidatos
+                    acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos_borrar}
+                    return ejecutar_accion("borrar_pago", datos_borrar, numero)
                 else:
                     return f"Elegí un número entre 0 y {len(candidatos)}."
             elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
