@@ -159,14 +159,20 @@ def procesar_cambios(cambios):
 
     # 2. EVENTOS CANCELADOS
     for cancelado in cambios["cancelados"]:
+        # Si tenía pago vinculado, desvincularlo (queda como crédito)
+        cursor.execute("SELECT pago_id FROM clases WHERE id = ?", (cancelado["clase_id"],))
+        row = cursor.fetchone()
+        pago_id_anterior = row['pago_id'] if row else None
+
         cursor.execute("""
-            UPDATE clases SET estado = 'cancelada_por_profesora'
+            UPDATE clases SET estado = 'cancelada_por_profesora', pago_id = NULL
             WHERE id = ?
         """, (cancelado["clase_id"],))
-        mensajes.append(
-            f"🗑️ Clase cancelada (desapareció de Calendar): {cancelado['alumno']} "
-            f"el {cancelado['fecha']} a las {cancelado['hora']}"
-        )
+
+        msg = f"🗑️ Clase cancelada (desapareció de Calendar): {cancelado['alumno']} el {cancelado['fecha']} a las {cancelado['hora']}"
+        if pago_id_anterior:
+            msg += " (pago desvinculado — queda como crédito)"
+        mensajes.append(msg)
 
     # 3. EVENTOS MODIFICADOS
     for modificado in cambios["modificados"]:
@@ -180,16 +186,63 @@ def procesar_cambios(cambios):
             f"→ {modificado['nueva_fecha']} {modificado['nueva_hora']}"
         )
 
+    # 4. MARCAR CLASES PASADAS COMO DADAS
+    # Toda clase 'agendada' con fecha hasta ayer (< hoy) se considera dada.
+    # Las de hoy se marcan en la sync nocturna desde sincronizacion_diaria.
+    hoy = date.today().isoformat()
+    cursor.execute("""
+        UPDATE clases SET estado = 'dada'
+        WHERE estado = 'agendada'
+        AND fecha < ?
+    """, (hoy,))
+    clases_marcadas = cursor.rowcount
+    if clases_marcadas > 0:
+        mensajes.append(f"✅ {clases_marcadas} clase(s) marcada(s) como dadas (fechas pasadas)")
+
     conn.commit()
     conn.close()
     return mensajes
+
+
+def marcar_dadas_hoy():
+    """
+    Marca como dadas las clases de HOY que siguen en el calendario (estado agendada).
+    Se llama desde la sync nocturna para cerrar el día.
+    Devuelve la lista de clases marcadas con nombre de alumno.
+    """
+    hoy = date.today().isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Buscar clases de hoy que siguen agendadas (no canceladas)
+    cursor.execute("""
+        SELECT c.id, c.hora, a.nombre
+        FROM clases c
+        JOIN alumnos a ON c.alumno_id = a.id
+        WHERE c.estado = 'agendada'
+        AND c.fecha = ?
+        ORDER BY c.hora
+    """, (hoy,))
+    clases_hoy = cursor.fetchall()
+
+    if clases_hoy:
+        ids = [c['id'] for c in clases_hoy]
+        cursor.execute(
+            f"UPDATE clases SET estado = 'dada' WHERE id IN ({','.join('?'*len(ids))})",
+            ids
+        )
+        conn.commit()
+
+    conn.close()
+    return clases_hoy
 
 
 # SINCRONIZACION_DIARIA: La función que llama el scheduler.
 # También se puede llamar manualmente con un mes/año específico.
 # - Sin parámetros: sincroniza el mes actual, envía WhatsApp si hay cambios
 # - Con mes/anio: sincroniza ese mes y devuelve el resultado (para dashboard/bot)
-def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True):
+# - es_sync_nocturna=True: además marca las clases de hoy como dadas y notifica
+def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True, es_sync_nocturna=False):
     hoy = date.today()
     mes = mes or hoy.month
     anio = anio or hoy.year
@@ -197,29 +250,47 @@ def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True):
     cambios = detectar_cambios(mes, anio)
     total = len(cambios["nuevos"]) + len(cambios["cancelados"]) + len(cambios["modificados"])
 
-    if total == 0:
-        return {
-            "nuevos": 0, "cancelados": 0, "modificados": 0,
-            "mensajes": [], "no_identificados": []
-        }
+    mensajes_info = []
+    no_identificados = []
+    clases_nuevas = 0
 
-    mensajes = procesar_cambios(cambios)
+    if total > 0:
+        mensajes = procesar_cambios(cambios)
+        no_identificados = [m for m in mensajes if m.startswith("❓")]
+        mensajes_info = [m for m in mensajes if not m.startswith("❓")]
+        clases_nuevas = sum(1 for m in mensajes_info if m.startswith("📌"))
 
-    no_identificados = [m for m in mensajes if m.startswith("❓")]
-    mensajes_info = [m for m in mensajes if not m.startswith("❓")]
+    # Marcar clases de hoy como dadas en la sync nocturna
+    clases_dadas_hoy = []
+    if es_sync_nocturna:
+        clases_dadas_hoy = marcar_dadas_hoy()
 
-    # Solo enviar WhatsApp si se pidió explícitamente (sincronización automática)
+    # Enviar WhatsApp si corresponde
     if enviar_whatsapp:
-        texto = "Sincronizacion con Calendar:\n\n"
-        texto += "\n\n".join(mensajes)
-        enviar_mensaje(texto)
+        partes = []
 
-    clases_nuevas = sum(1 for m in mensajes_info if m.startswith("📌"))
+        if mensajes_info:
+            partes.append("Sincronización con Calendar:\n\n" + "\n\n".join(mensajes_info))
+
+        if no_identificados:
+            partes.append("\n".join(no_identificados))
+
+        if clases_dadas_hoy:
+            resumen = "✅ Clases de hoy marcadas como dadas:\n"
+            resumen += "\n".join([
+                f"  • {c['nombre']} a las {c['hora'] or '?'}"
+                for c in clases_dadas_hoy
+            ])
+            partes.append(resumen)
+
+        if partes:
+            enviar_mensaje("\n\n".join(partes))
 
     return {
         "nuevos": clases_nuevas,
         "cancelados": len(cambios["cancelados"]),
         "modificados": len(cambios["modificados"]),
         "mensajes": mensajes_info,
-        "no_identificados": no_identificados
+        "no_identificados": no_identificados,
+        "dadas_hoy": len(clases_dadas_hoy)
     }

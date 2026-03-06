@@ -496,14 +496,29 @@ def ejecutar_accion(accion, datos, numero):
             return aviso
         from clases import proximas_clases_alumno
         proximas = proximas_clases_alumno(alumno["id"])
+
+        # Si no hay clases agendadas futuras, buscar la clase dada más reciente
+        # (permite cancelar una clase pasada que ya fue marcada como dada)
         if not proximas:
-            return f"No encontré clases agendadas para {alumno['nombre']}."
-        clase = proximas[0]
+            conn = get_connection()
+            clase_dada = conn.execute("""
+                SELECT * FROM clases
+                WHERE alumno_id = ? AND estado = 'dada'
+                ORDER BY fecha DESC LIMIT 1
+            """, (alumno["id"],)).fetchone()
+            conn.close()
+            if not clase_dada:
+                return f"No encontré clases agendadas ni dadas para {alumno['nombre']}."
+            clase = clase_dada
+        else:
+            clase = proximas[0]
+
         resultado = cancelar_clase(clase["id"], cancelada_por=datos.get("cancelada_por", "alumno"))
         mensajes = {
             "cancelada_con_anticipacion": f"✅ Clase de {alumno['nombre']} cancelada. Avisó a tiempo, queda como crédito.",
             "cancelada_sin_anticipacion": f"⚠️ Clase de {alumno['nombre']} cancelada. No avisó a tiempo, se cobra igual.",
-            "cancelada_por_profesora": f"✅ Clase de {alumno['nombre']} cancelada por vos. No se cobra."
+            "cancelada_por_profesora": f"✅ Clase de {alumno['nombre']} cancelada. No se cobra.",
+            "cancelada_dada_con_pago": f"✅ Clase de {alumno['nombre']} del {clase['fecha']} cancelada. El pago quedó desvinculado — podés usarlo como crédito para otra clase."
         }
         respuesta = mensajes.get(resultado, "Clase cancelada.")
         return (aviso + "\n" + respuesta) if aviso else respuesta
@@ -608,26 +623,44 @@ def ejecutar_accion(accion, datos, numero):
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT fecha, hora, pago_id FROM clases
+            SELECT fecha, hora, estado, pago_id FROM clases
             WHERE alumno_id = ?
             AND strftime('%m', fecha) = ?
             AND strftime('%Y', fecha) = ?
-            AND estado = 'agendada'
             ORDER BY fecha ASC
         """, (alumno["id"], f"{mes:02d}", str(anio)))
         clases = cursor.fetchall()
         conn.close()
         if not clases:
-            return f"{alumno['nombre']} no tiene clases agendadas en {mes}/{anio}."
-        respuesta = f"📅 Clases de {alumno['nombre']} en {mes}/{anio}:\n"
-        pagadas = 0
+            return f"{alumno['nombre']} no tiene clases en {mes}/{anio}."
+
+        DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']
+        def fmt_fecha(f):
+            from datetime import date as _date
+            p = f.split('-')
+            d = _date(int(p[0]), int(p[1]), int(p[2]))
+            return f"{DIAS[d.weekday()]} {p[2]}/{p[1]}"
+
+        respuesta = f"📅 Clases de {alumno['nombre']} en {mes}/{anio}:\n\n"
+        pagadas = dadas = agendadas = canceladas = 0
         for clase in clases:
             hora = f" a las {clase['hora']}" if clase['hora'] else ""
+            estado = clase['estado']
             paga = " ✅" if clase['pago_id'] else ""
+            if estado == 'dada':
+                icono = "🟢"; dadas += 1
+            elif estado == 'agendada':
+                icono = "🔵"; agendadas += 1
+            elif 'cancelada' in estado:
+                icono = "🔴"; canceladas += 1
+            else:
+                icono = "⚪"
             if clase['pago_id']:
                 pagadas += 1
-            respuesta += f"• {clase['fecha']}{hora}{paga}\n"
-        respuesta += f"\nTotal: {len(clases)} clases ({pagadas} pagas, {len(clases)-pagadas} pendientes)"
+            respuesta += f"• {fmt_fecha(clase['fecha'])}{hora}  {icono}{paga}\n"
+
+        respuesta += f"\n🟢 dada  🔵 agendada  🔴 cancelada  ✅ paga"
+        respuesta += f"\n\nTotal: {len(clases)} clases · Pagas: {pagadas} / {dadas + agendadas}"
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "cuanto_debe_alumno":

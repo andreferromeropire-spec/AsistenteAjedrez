@@ -28,12 +28,13 @@ def agendar_clase(alumno_id, fecha, hora=None, origen="manual", google_event_id=
     print(f"Clase agendada para alumno {alumno_id} el {fecha}")
 
 # Cancela una clase aplicando la regla de las 24hs.
+# Si la clase ya estaba marcada como 'dada', la cancela como profesora
+# y desvincula el pago (queda como crédito).
 # Devuelve el estado final para que el bot pueda avisar el resultado.
 def cancelar_clase(clase_id, cancelada_por="alumno"):
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Primero busca la clase para saber su fecha
     cursor.execute("SELECT * FROM clases WHERE id = ?", (clase_id,))
     clase = cursor.fetchone()
 
@@ -41,20 +42,33 @@ def cancelar_clase(clase_id, cancelada_por="alumno"):
         conn.close()
         return "no_encontrada"
 
-    # Si la canceló el alumno, aplica la regla de 24hs
+    # Si la clase ya estaba dada, cancelarla siempre como profesora
+    # y desvincular el pago (queda como crédito para otra clase)
+    if clase['estado'] == 'dada':
+        pago_id_anterior = clase['pago_id']
+        cursor.execute("""
+            UPDATE clases
+            SET estado = 'cancelada_por_profesora', cancelada_por = 'profesora',
+                fecha_cancelacion = ?, pago_id = NULL
+            WHERE id = ?
+        """, (date.today().isoformat(), clase_id))
+        conn.commit()
+        conn.close()
+        if pago_id_anterior:
+            return "cancelada_dada_con_pago"  # el bot avisa que el pago quedó como crédito
+        return "cancelada_por_profesora"
+
+    # Clase futura: aplica regla de 24hs si la canceló el alumno
     if cancelada_por == "alumno":
         fecha_clase = datetime.fromisoformat(f"{clase['fecha']} {clase['hora'] or '00:00'}")
         ahora = datetime.now()
         diferencia = fecha_clase - ahora
 
         if diferencia < timedelta(hours=24):
-            # Canceló tarde, se cobra igual
             estado_final = "cancelada_sin_anticipacion"
         else:
-            # Canceló a tiempo, queda como crédito
             estado_final = "cancelada_con_anticipacion"
     else:
-        # La canceló la profesora, no se cobra ni acredita
         estado_final = "cancelada_por_profesora"
 
     cursor.execute("""

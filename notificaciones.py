@@ -129,7 +129,8 @@ def configurar_scheduler():
     # Sincronización con Calendar dos veces por día
     from sincronizacion import sincronizacion_diaria
     scheduler.add_job(sincronizacion_diaria, 'cron', hour=8, minute=30)
-    scheduler.add_job(sincronizacion_diaria, 'cron', hour=20, minute=0)
+    scheduler.add_job(sincronizacion_diaria, 'cron', hour=20, minute=0,
+                      kwargs={'es_sync_nocturna': True})
 
     scheduler.start()
     return scheduler
