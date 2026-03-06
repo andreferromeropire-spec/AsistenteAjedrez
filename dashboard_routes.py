@@ -233,11 +233,12 @@ def api_pagos():
     anio = int(request.args.get('anio', date.today().year))
     conn = get_connection()
     pagos = conn.execute("""
-        SELECT p.id, p.fecha, p.monto, p.moneda, p.metodo, p.notas, a.nombre, a.representante
+        SELECT p.id, p.fecha, p.monto, p.moneda, p.metodo, p.notas, a.nombre, a.representante,
+               COALESCE(a.representante, a.nombre) as responsable
         FROM pagos p
         JOIN alumnos a ON p.alumno_id = a.id
         WHERE strftime('%m',p.fecha)=? AND strftime('%Y',p.fecha)=?
-        ORDER BY p.fecha DESC
+        ORDER BY p.fecha DESC, responsable
     """, (f"{mes:02d}", str(anio))).fetchall()
     # Para cada pago, buscar las fechas de clases asociadas
     resultado = []
@@ -954,7 +955,7 @@ tr:hover td{background:var(--gold-dim)}
           <div class="section-title">Pagos registrados</div>
           <div class="filters"><input type="text" placeholder="Buscar..." oninput="filtrarTabla('t-pagos',this.value)"></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Fecha</th><th>Alumno</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Clases</th><th>Notas</th><th></th></tr></thead>
+            <table><thead><tr><th>Fecha</th><th>Responsable</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Clases</th><th>Notas</th><th></th></tr></thead>
             <tbody id="t-pagos"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
           </div>
           <div class="totals-row" id="totales-pagos"></div>
@@ -965,7 +966,7 @@ tr:hover td{background:var(--gold-dim)}
         <div class="section">
           <div class="section-title">Alumnos mensuales sin pago</div>
           <div class="table-wrap">
-            <table><thead><tr><th>Alumno</th><th>Representante</th><th>Clases</th><th>$/clase</th><th>Total</th><th>Moneda</th></tr></thead>
+            <table><thead><tr><th>Responsable</th><th>Clases</th><th>$/clase</th><th>Total</th><th>Moneda</th></tr></thead>
             <tbody id="t-deuda"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
           </div>
           <div class="totals-row" id="totales-deuda"></div>
@@ -998,7 +999,6 @@ tr:hover td{background:var(--gold-dim)}
               <h3 style="margin:0">Ingresos mensuales</h3>
               <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
                 <select id="ingr-moneda-sel" onchange="renderIngresos()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.25rem 0.5rem;border-radius:4px;font-family:'DM Sans',sans-serif;font-size:0.78rem;outline:none">
-                  <option value="todas">Todas las monedas</option>
                   <option value="Dolar">Dólar</option>
                   <option value="Libra Esterlina">Libra Esterlina</option>
                   <option value="Pesos">Pesos</option>
@@ -1050,8 +1050,16 @@ var chatHistorial = [];
 // Leer mes/anio del selector (que el servidor ya pre-seleccionó con el mes actual)
 var mes = parseInt(document.getElementById('sel-mes').value);
 var anio = parseInt(document.getElementById('sel-anio').value);
-document.getElementById('sel-mes').addEventListener('change', function() { mes = +this.value; cargarTodo(); });
-document.getElementById('sel-anio').addEventListener('change', function() { anio = +this.value; cargarTodo(); });
+document.getElementById('sel-mes').addEventListener('change', function() {
+  mes = +this.value;
+  cargarTodo();
+  if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
+});
+document.getElementById('sel-anio').addEventListener('change', function() {
+  anio = +this.value;
+  cargarTodo();
+  if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
+});
 
 var DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 var MESES_NOMBRES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1249,10 +1257,10 @@ function poblarFiltroAlumnos() {
 }
 
 function formatFecha(fechaStr) {
-  // fechaStr = "2026-03-10" → "Mar 10/03"
+  // fechaStr = "2026-03-10" → "Mar 10"
   var partes = fechaStr.split('-');
   var d = new Date(+partes[0], +partes[1] - 1, +partes[2]);
-  return DIAS_SEMANA[d.getDay()] + ' ' + partes[2] + '/' + partes[1];
+  return DIAS_SEMANA[d.getDay()] + ' ' + partes[2];
 }
 
 function semanaActual() {
@@ -1293,16 +1301,46 @@ function cargarClases() {
 function cargarPagos() {
   api('pagos').then(function(datos) {
     var monedas = {};
-    var html = datos.length ? datos.map(function(p) {
+    // Agrupar por responsable + fecha (un responsable puede tener pagos de distintas fechas)
+    var grupos = {};
+    var orden = [];
+    datos.forEach(function(p) {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
-      var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
-      var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
-      var np = p.nombre.replace(/"/g, '&quot;');
-      var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
-      var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
-      var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
-      var clases_res = p.clases_resumen ? '<span style="color:var(--text-dim);font-size:0.78rem">'+p.clases_resumen+'</span>' : '-';
-      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
+      var key = p.responsable + '||' + p.fecha;
+      if (!grupos[key]) { grupos[key] = {responsable: p.responsable, fecha: p.fecha, items: [], monedas: {}}; orden.push(key); }
+      grupos[key].items.push(p);
+      grupos[key].monedas[p.moneda] = (grupos[key].monedas[p.moneda]||0) + p.monto;
+    });
+    var html = orden.length ? orden.map(function(key) {
+      var g = grupos[key];
+      var esGrupo = g.items.length > 1;
+      // Línea de nombre: responsable grande, representados abajo en gris
+      var nombreCell = '<strong>' + g.responsable + '</strong>';
+      if (esGrupo) {
+        var representados = g.items.map(function(p){ return p.nombre; }).join(', ');
+        nombreCell += '<br><span style="color:var(--text-muted);font-size:0.75rem">' + representados + '</span>';
+      }
+      // Monto: sumar todo del grupo
+      var montoCell = Object.keys(g.monedas).map(function(m) {
+        var s = m === 'Libra Esterlina' ? 'GBP' : m;
+        return s + fmt(g.monedas[m]);
+      }).join(' + ');
+      // Moneda badge
+      var monedaBadge = Object.keys(g.monedas).map(function(m){
+        return '<span class="badge badge-gold">'+m+'</span>';
+      }).join(' ');
+      // Clases resumen agrupado
+      var clasesCell = g.items.map(function(p){
+        var cr = p.clases_resumen ? p.clases_resumen : '';
+        return esGrupo ? '<span style="font-size:0.76rem"><strong>'+p.nombre+':</strong> '+cr+'</span>' : cr;
+      }).filter(Boolean).join('<br>');
+      // Notas
+      var notas = g.items.map(function(p){ return p.notas||''; }).filter(Boolean).join(', ') || '-';
+      // Botón borrar: borra todos los pagos del grupo en secuencia
+      var ids = g.items.map(function(p){ return p.id; });
+      var resumen = encodeURIComponent(g.fecha + ' ' + g.responsable + ' (' + g.items.length + ' pago(s))');
+      var borrar = '<button class="btn-icon danger btn-borrar-grupo" title="Borrar pago(s)" data-ids="'+ids.join(',')+'" data-resumen="'+resumen+'">&#128465;</button>';
+      return '<tr><td>'+g.fecha+'</td><td>'+nombreCell+'</td><td>'+montoCell+'</td><td>'+monedaBadge+'</td><td>'+(g.items[0].metodo||'-')+'</td><td style="font-size:0.78rem">'+clasesCell+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+notas+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
@@ -1316,11 +1354,40 @@ function cargarPagos() {
 function cargarDeudores() {
   api('deudores').then(function(datos) {
     var porCobrar = {};
-    var html = datos.length ? datos.map(function(d) {
-      if (d.total && d.moneda) porCobrar[d.moneda] = (porCobrar[d.moneda]||0) + d.total;
-      var sim = d.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
-      return '<tr><td><strong>'+d.nombre+'</strong></td><td>'+d.representante+'</td><td>'+d.clases+'</td><td>'+(d.precio_unitario ? sim+fmt(d.precio_unitario) : '-')+'</td><td>'+(d.total ? '<strong>'+sim+fmt(d.total)+'</strong>' : '-')+'</td><td><span class="badge badge-gold">'+d.moneda+'</span></td></tr>';
-    }).join('') : '<tr><td colspan="6" class="empty" style="color:var(--green)">Todos pagaron este mes</td></tr>';
+    // Agrupar por responsable
+    var grupos = {};
+    var orden = [];
+    datos.forEach(function(d) {
+      var resp = d.representante || d.nombre;
+      if (!grupos[resp]) { grupos[resp] = {responsable: resp, items: [], moneda: d.moneda}; orden.push(resp); }
+      grupos[resp].items.push(d);
+      if (d.total && d.moneda) {
+        porCobrar[d.moneda] = (porCobrar[d.moneda]||0) + d.total;
+        grupos[resp].moneda = d.moneda;
+      }
+    });
+    var html = orden.length ? orden.map(function(resp) {
+      var g = grupos[resp];
+      var esGrupo = g.items.length > 1;
+      var sim = g.moneda === 'Libra Esterlina' ? '£' : '$';
+      // Nombre responsable + representados abajo
+      var nombreCell = '<strong>' + g.responsable + '</strong>';
+      if (esGrupo) {
+        var reps = g.items.map(function(d){ return d.nombre; }).join(', ');
+        nombreCell += '<br><span style="color:var(--text-muted);font-size:0.75rem">' + reps + '</span>';
+      }
+      // Sumar clases y total
+      var totalClases = g.items.reduce(function(s,d){ return s + (d.clases||0); }, 0);
+      var totalMonto = g.items.reduce(function(s,d){ return s + (d.total||0); }, 0);
+      var precioUnitario = g.items[0].precio_unitario;
+      return '<tr>'
+        + '<td>' + nombreCell + '</td>'
+        + '<td>' + totalClases + '</td>'
+        + '<td>' + (precioUnitario ? sim+fmt(precioUnitario) : '-') + '</td>'
+        + '<td>' + (totalMonto ? '<strong>'+sim+fmt(totalMonto)+'</strong>' : '-') + '</td>'
+        + '<td><span class="badge badge-gold">' + g.moneda + '</span></td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="5" class="empty" style="color:var(--green)">Todos pagaron este mes</td></tr>';
     document.getElementById('t-deuda').innerHTML = html;
     var chips = Object.keys(porCobrar).map(function(m) {
       var s = m === 'Libra Esterlina' ? '\u00a3' : '$';
@@ -1603,6 +1670,31 @@ document.addEventListener('click', function(e) {
     var pagoId = btn.getAttribute('data-pago-id');
     var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
     borrarPagoDirecto(pagoId, resumen);
+    return;
+  }
+  if (btn.classList.contains('btn-borrar-grupo')) {
+    var ids = btn.getAttribute('data-ids').split(',').map(Number);
+    var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
+    if (!confirm('¿Borrar ' + ids.length + ' pago(s)?
+' + resumen)) return;
+    var borrados = 0;
+    var borrarSiguiente = function(i) {
+      if (i >= ids.length) {
+        alert('✅ ' + borrados + ' pago(s) borrado(s).');
+        cargarTodo();
+        poblarFiltroAlumnos();
+        return;
+      }
+      fetch('/dashboard/api/borrar_pago_id', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pago_id: ids[i]})
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if (d.ok) borrados++;
+        borrarSiguiente(i + 1);
+      }).catch(function(){ borrarSiguiente(i + 1); });
+    };
+    borrarSiguiente(0);
     return;
   }
   var nombre = btn.getAttribute('data-nombre');
