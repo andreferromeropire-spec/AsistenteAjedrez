@@ -1,5 +1,3 @@
-Ver henrys · PY
-Copy
 
 from database import get_connection
 
