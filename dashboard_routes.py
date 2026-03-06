@@ -399,6 +399,34 @@ def api_clases_sin_pagar():
 
         monto_calculado = round(precio_unitario * total_clases, 2) if precio_unitario else None
 
+        # Buscar label de la promo que aplica
+        promo_label = None
+        for alumno_nombre, adata in grupo['alumnos'].items():
+            rangos = conn.execute(
+                "SELECT clases_desde, clases_hasta FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
+                (adata['alumno_id'],)).fetchall()
+            for r in rangos:
+                if r['clases_desde'] <= total_clases <= r['clases_hasta']:
+                    if r['clases_desde'] == r['clases_hasta'] == 1:
+                        promo_label = 'clase suelta'
+                    elif r['clases_desde'] == r['clases_hasta']:
+                        promo_label = f'{r["clases_desde"]} clases'
+                    else:
+                        promo_label = f'{r["clases_desde"]}-{r["clases_hasta"]} clases'
+                    break
+            if promo_label:
+                break
+
+        # Obtener todos los rangos de promo para mostrar indicador dinámico
+        rangos_promo = []
+        for alumno_nombre, adata in grupo['alumnos'].items():
+            rangos = conn.execute(
+                "SELECT clases_desde, clases_hasta, precio_por_clase FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
+                (adata['alumno_id'],)).fetchall()
+            if rangos:
+                rangos_promo = [{'desde': r['clases_desde'], 'hasta': r['clases_hasta'], 'precio': r['precio_por_clase']} for r in rangos]
+                break
+
         resultado.append({
             'responsable': responsable,
             'es_representante': grupo['es_representante'],
@@ -411,6 +439,8 @@ def api_clases_sin_pagar():
             ],
             'total_clases': total_clases,
             'precio_unitario': precio_unitario,
+            'promo_label': promo_label,
+            'rangos_promo': rangos_promo,
             'monto_calculado': monto_calculado,
             'clase_ids': grupo['clases']
         })
@@ -533,7 +563,7 @@ def api_deudores():
 
         resultado.append({
             'nombre': nombres,
-            'representante': grupo['representante'] or '-',
+            'representante': grupo['representante'] or None,
             'clases': total_clases,
             'precio_unitario': precio_unitario,
             'total': total,
@@ -1187,6 +1217,13 @@ function api(ruta) {
 
 function fmt(n) { return Number(n).toLocaleString('es-AR'); }
 
+function monedaSimbolo(moneda) {
+  if (moneda === 'Dólar' || moneda === 'Dolar') return '$';
+  if (moneda === 'Libra Esterlina') return '£';
+  if (moneda === 'Pesos') return 'AR$';
+  return moneda;
+}
+
 function estadoBadge(e) {
   var map = {
     'agendada':'<span class="badge badge-gold">Agendada</span>',
@@ -1329,7 +1366,7 @@ function cargarPagos() {
       }).join(' + ');
       // Moneda badge
       var monedaBadge = Object.keys(g.monedas).map(function(m){
-        return '<span class="badge badge-gold">'+m+'</span>';
+        return '<span class="badge badge-gold">'+monedaSimbolo(m)+'</span>';
       }).join(' ');
       // Clases resumen agrupado
       var clasesCell = g.items.map(function(p){
@@ -1360,7 +1397,7 @@ function cargarDeudores() {
     var grupos = {};
     var orden = [];
     datos.forEach(function(d) {
-      var resp = d.representante || d.nombre;
+      var resp = (d.representante && d.representante !== '-') ? d.representante : d.nombre;
       if (!grupos[resp]) { grupos[resp] = {responsable: resp, items: [], moneda: d.moneda}; orden.push(resp); }
       grupos[resp].items.push(d);
       if (d.total && d.moneda) {
@@ -1387,7 +1424,7 @@ function cargarDeudores() {
         + '<td>' + totalClases + '</td>'
         + '<td>' + (precioUnitario ? sim+fmt(precioUnitario) : '-') + '</td>'
         + '<td>' + (totalMonto ? '<strong>'+sim+fmt(totalMonto)+'</strong>' : '-') + '</td>'
-        + '<td><span class="badge badge-gold">' + g.moneda + '</span></td>'
+        + '<td><span class="badge badge-gold">' + monedaSimbolo(g.moneda) + '</span></td>'
         + '</tr>';
     }).join('') : '<tr><td colspan="5" class="empty" style="color:var(--green)">Todos pagaron este mes</td></tr>';
     document.getElementById('t-deuda').innerHTML = html;
@@ -1408,7 +1445,7 @@ function cargarAlumnos() {
         + '<button class="btn-icon btn-editar" title="Ver / editar" data-nombre="'+n+'">&#9998;</button>'
         + '<button class="btn-icon danger btn-borrar-alumno" title="Borrar" data-nombre="'+n+'">&#128465;</button>'
         + '</div>';
-      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
+      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+monedaSimbolo(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
     }).join('') || '<tr><td colspan="9" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
   });
@@ -1760,7 +1797,7 @@ function renderCobrosResponsable(cont) {
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:0.75rem">'
       + '<span class="cobros-grupo-monto">' + montoStr + '</span>'
-      + '<button class="btn" onclick="abrirPago(' + gi + ')">Registrar pago</button>'
+      + '<button class="btn" onclick="abrirPago(' + gi + ')">Abrir formulario</button>'
       + '</div></div>'
       + alumnos
       + '<div class="cobros-inline-form" id="cobro-form-' + gi + '" style="display:none"></div>'
@@ -2010,7 +2047,7 @@ function renderCobrosChecks(cont) {
           + '<td><strong>' + a.nombre + '</strong>'
           + (g.es_representante ? '<br><span style="font-size:0.74rem;color:var(--text-muted)">' + g.responsable + '</span>' : '')
           + '</td>'
-          + '<td><span class="badge badge-gold">' + g.moneda + '</span></td>'
+          + '<td><span class="badge badge-gold">' + monedaSimbolo(g.moneda) + '</span></td>'
           + '</tr>');
       });
     });
@@ -2083,10 +2120,39 @@ function registrarSeleccionChecks() {
   procesarSiguiente(0);
 }
 
+function promoParaPrecio(rangos, precio) {
+  // Dada un precio/clase, devuelve el label de la promo que corresponde
+  if (!rangos || !rangos.length) return null;
+  for (var i = 0; i < rangos.length; i++) {
+    if (Math.abs(rangos[i].precio - precio) < 0.01) {
+      var r = rangos[i];
+      if (r.desde === r.hasta && r.desde === 1) return 'clase suelta';
+      if (r.desde === r.hasta) return r.desde + ' clases';
+      return r.desde + '-' + r.hasta + ' clases';
+    }
+  }
+  return '⚠️ no corresponde a ninguna promo';
+}
+
+function promoParaClases(rangos, n) {
+  // Dado un número de clases, devuelve {precio, label}
+  if (!rangos || !rangos.length) return null;
+  for (var i = 0; i < rangos.length; i++) {
+    if (rangos[i].desde <= n && n <= rangos[i].hasta) {
+      var r = rangos[i];
+      var lbl = (r.desde === r.hasta && r.desde === 1) ? 'clase suelta' :
+                (r.desde === r.hasta) ? r.desde + ' clases' : r.desde + '-' + r.hasta + ' clases';
+      return {precio: r.precio, label: lbl};
+    }
+  }
+  // Fuera de rango: usar el último
+  var last = rangos[rangos.length - 1];
+  return {precio: last.precio, label: '⚠️ fuera de promo'};
+}
+
 function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  // Si ya está abierto y no es llamado en masa, lo cierra (toggle)
   if (!noCloseOthers) {
     if (form.style.display !== 'none') { form.style.display = 'none'; return; }
     document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
@@ -2094,31 +2160,75 @@ function abrirPago(gi, noCloseOthers) {
   var cantidadDefault = g.total_clases || 0;
   var montoUnitario = g.precio_unitario || 0;
   var montoStr = g.monto_calculado || '';
+  var rangos = g.rangos_promo || [];
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
     return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
   }).join('');
   var monedaOptions = ['Dólar','Libra Esterlina','Pesos'].map(function(m){
     return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
   }).join('');
+
   form.innerHTML = '<div><label>Clases</label>'
-    + '<input type="number" min="1" class="cobro-clases-input" value="' + cantidadDefault + '" data-gi="' + gi + '" style="width:4rem">'
+    + '<input type="number" min="1" class="cobro-clases-input" value="' + cantidadDefault + '" style="width:4rem">'
     + '</div>'
-    + '<div><label>Monto</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
+    + '<div><label>$/clase</label>'
+    + '<input type="number" step="0.01" class="cobro-precio-input" value="' + (montoUnitario||'') + '" style="width:5rem">'
+    + '<span class="cobro-promo-label" style="font-size:0.74rem;color:var(--text-muted);margin-left:0.4rem"></span>'
+    + '</div>'
+    + '<div><label>Total</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
     + '<div><label>Moneda</label><select class="cobro-moneda-input">' + monedaOptions + '</select></div>'
     + '<div><label>Método</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
     + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">✓ Confirmar</button>'
+    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">✓ Registrar pago</button>'
     + '<button class="btn cobro-cancelar-btn" data-gi="' + gi + '">Cancelar</button>'
     + '</div>';
-  // Recalcular monto cuando cambia la cantidad de clases
+
   var clasesInput = form.querySelector('.cobro-clases-input');
-  var montoInput = form.querySelector('.cobro-monto-input');
-  if (montoUnitario) {
-    clasesInput.addEventListener('input', function() {
-      var n = parseInt(this.value) || 0;
-      montoInput.value = Math.round(montoUnitario * n * 100) / 100;
-    });
+  var precioInput = form.querySelector('.cobro-precio-input');
+  var montoInput  = form.querySelector('.cobro-monto-input');
+  var promoLabel  = form.querySelector('.cobro-promo-label');
+
+  var actualizarPromoLabel = function(precio) {
+    if (!promoLabel) return;
+    if (!precio || !rangos.length) { promoLabel.textContent = ''; return; }
+    promoLabel.textContent = promoParaPrecio(rangos, precio);
   }
+
+  // Inicializar label con el precio default
+  actualizarPromoLabel(montoUnitario);
+
+  // Clases cambia → recalcula total y actualiza promo
+  clasesInput.addEventListener('input', function() {
+    var n = parseInt(this.value) || 0;
+    var info = promoParaClases(rangos, n);
+    if (info) {
+      precioInput.value = info.precio;
+      montoInput.value = Math.round(info.precio * n * 100) / 100;
+      promoLabel.textContent = info.label;
+    } else if (precioInput.value) {
+      montoInput.value = Math.round(parseFloat(precioInput.value) * n * 100) / 100;
+    }
+  });
+
+  // Precio/clase cambia → recalcula total y actualiza indicador de promo
+  precioInput.addEventListener('input', function() {
+    var precio = parseFloat(this.value) || 0;
+    var n = parseInt(clasesInput.value) || 0;
+    if (n) montoInput.value = Math.round(precio * n * 100) / 100;
+    actualizarPromoLabel(precio);
+  });
+
+  // Total cambia → recalcula precio/clase y actualiza promo
+  montoInput.addEventListener('input', function() {
+    var total = parseFloat(this.value) || 0;
+    var n = parseInt(clasesInput.value) || 0;
+    if (n && total) {
+      var precioCalculado = Math.round(total / n * 100) / 100;
+      precioInput.value = precioCalculado;
+      actualizarPromoLabel(precioCalculado);
+    }
+  });
+
   form.style.display = 'flex';
   if (!noCloseOthers) {
     var btnReg = document.getElementById('btn-registrar-abiertos');

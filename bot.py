@@ -167,25 +167,32 @@ def ejecutar_accion(accion, datos, numero):
             nuevos_datos["candidato_elegido"] = elegido
             return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
-        candidatos = pendiente["candidatos"]
-        alumno_elegido = None
-        if numero_opcion and 1 <= numero_opcion <= len(candidatos):
-            alumno_elegido = candidatos[numero_opcion - 1]
-        elif nombre_aclaracion:
-            for c in candidatos:
-                if nombre_aclaracion.lower() in c['nombre'].lower():
-                    alumno_elegido = c
-                    break
+        # Si el pendiente es borrar_pago, redirigir al bloque correcto
+        if pendiente.get("accion") == "borrar_pago":
+            accion = "borrar_pago"
+            datos = {"numero_opcion": numero_opcion}
+        elif "candidatos" not in pendiente:
+            return "No entendí. ¿Qué querés hacer?"
+        else:
+            candidatos = pendiente["candidatos"]
+            alumno_elegido = None
+            if numero_opcion and 1 <= numero_opcion <= len(candidatos):
+                alumno_elegido = candidatos[numero_opcion - 1]
+            elif nombre_aclaracion:
+                for c in candidatos:
+                    if nombre_aclaracion.lower() in c['nombre'].lower():
+                        alumno_elegido = c
+                        break
 
-        if not alumno_elegido:
-            lista = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(candidatos)])
-            return f"No entendí cuál elegiste. Los candidatos son:\n{lista}\n\nRespondé con el número."
+            if not alumno_elegido:
+                lista = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(candidatos)])
+                return f"No entendí cuál elegiste. Los candidatos son:\n{lista}\n\nRespondé con el número."
 
-        del acciones_pendientes[numero]
-        nuevos_datos = pendiente["datos"].copy()
-        nuevos_datos["nombre_alumno"] = alumno_elegido["nombre"]
-        nuevos_datos["alumno_id_directo"] = alumno_elegido["id"]
-        return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
+            del acciones_pendientes[numero]
+            nuevos_datos = pendiente["datos"].copy()
+            nuevos_datos["nombre_alumno"] = alumno_elegido["nombre"]
+            nuevos_datos["alumno_id_directo"] = alumno_elegido["id"]
+            return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
     elif accion == "registrar_pago":
         nombre_buscado = datos.get("nombre_alumno", "")
