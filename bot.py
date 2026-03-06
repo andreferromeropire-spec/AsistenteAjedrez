@@ -959,11 +959,10 @@ def ejecutar_accion(accion, datos, numero):
 
     elif accion == "sincronizar_calendario":
         from sincronizacion import sincronizacion_diaria
-        from datetime import date
         hoy = date.today()
         mes = datos.get("mes", hoy.month)
         anio = datos.get("anio", hoy.year)
-        resultado = sincronizacion_diaria(mes, anio)
+        resultado = sincronizacion_diaria(mes, anio, enviar_whatsapp=False)
         nuevos = resultado["nuevos"]
         cancelados = resultado["cancelados"]
         modificados = resultado["modificados"]
