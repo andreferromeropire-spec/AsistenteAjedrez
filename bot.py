@@ -370,7 +370,8 @@ def ejecutar_accion(accion, datos, numero):
         # ── Calcular monto esperado según la promo ──
         from promociones import calcular_monto as calc_monto
         monto_esperado, precio_unitario, moneda_promo = calc_monto(alumno["id"], n_clases)
-        if moneda_promo:
+        # Si el usuario especificó una moneda, usarla. Si no, usar la de la promo.
+        if moneda_promo and not datos.get("moneda"):
             moneda = moneda_promo
 
         monto_pagado = datos.get("monto")
@@ -379,28 +380,41 @@ def ejecutar_accion(accion, datos, numero):
         moneda_pago_raw = datos.get("moneda")  # lo que dijo el usuario (puede ser None)
         monedas_distintas = moneda_pago_raw and moneda_promo and moneda_pago_raw != moneda_promo
 
-        if monto_pagado is not None and monto_esperado is not None and not monedas_distintas:
+        # Siempre confirmar si: montos distintos O monedas distintas
+        necesita_confirmacion = False
+        if monto_pagado is not None and monto_esperado is not None:
             diferencia = abs(float(monto_pagado) - float(monto_esperado))
-            if diferencia > 0.01:
-                fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
-                acciones_pendientes[numero] = {
-                    "accion": "registrar_pago",
-                    "datos": {
-                        **datos,
-                        "confirmado": True,
-                        "monto": monto_pagado,
-                        "moneda": moneda,
-                        "metodo": metodo,
-                        "clases_ids": clases_ids,
-                        "fechas_clases": fechas_clases,
-                        "nombre_alumno": alumno["nombre"],
-                        "alumno_id_directo": alumno["id"]
-                    }
+            if diferencia > 0.01 or monedas_distintas:
+                necesita_confirmacion = True
+
+        if necesita_confirmacion:
+            fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
+            acciones_pendientes[numero] = {
+                "accion": "registrar_pago",
+                "datos": {
+                    **datos,
+                    "confirmado": True,
+                    "monto": monto_pagado,
+                    "moneda": moneda,
+                    "metodo": metodo,
+                    "clases_ids": clases_ids,
+                    "fechas_clases": fechas_clases,
+                    "nombre_alumno": alumno["nombre"],
+                    "alumno_id_directo": alumno["id"]
                 }
+            }
+            if monedas_distintas:
                 return (
-                    f"⚠️ {alumno['nombre']} tiene {n_clases} clases (días {fechas_str}) "
-                    f"→ debería ser {monto_esperado} {moneda} ({precio_unitario}/clase), "
-                    f"pero registraste {monto_pagado} {moneda}.\n\n"
+                    f"⚠️ {alumno['nombre']} tiene {n_clases} clases (días {fechas_str})\n"
+                    f"• Precio habitual: {monto_esperado} {moneda_promo} ({precio_unitario}/clase)\n"
+                    f"• Vas a registrar: {monto_pagado} {moneda} (moneda diferente)\n\n"
+                    f"¿Confirmás? Respondé 1 para guardar o 2 para cancelar."
+                )
+            else:
+                return (
+                    f"⚠️ {alumno['nombre']} tiene {n_clases} clases (días {fechas_str})\n"
+                    f"• Precio esperado: {monto_esperado} {moneda} ({precio_unitario}/clase)\n"
+                    f"• Registraste: {monto_pagado} {moneda}\n\n"
                     f"¿Guardamos {monto_pagado} igual? Respondé 1 para confirmar o 2 para reingresar."
                 )
 
