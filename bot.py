@@ -1134,6 +1134,18 @@ def sincronizar_calendario_endpoint():
     resultado = sincronizar_mes(hoy.month, hoy.year)
     return f"✅ {resultado['clases_registradas']} clases registradas. No identificadas: {resultado['no_identificadas']}"
 
+#Temporal
+
+@app.route("/limpiar_henry", methods=["GET"])
+def limpiar_henry():
+    from database import get_connection
+    conn = get_connection()
+    r = conn.execute("DELETE FROM clases WHERE alumno_id=4 AND strftime('%m',fecha)='03' AND strftime('%Y',fecha)='2026'")
+    conn.commit()
+    print('Borradas:', r.rowcount)
+    conn.close()
+    return f"Borradas: {r.rowcount} clases de Henry Chen en marzo"
+
 if __name__ == "__main__":
     scheduler = configurar_scheduler()
     port = int(os.environ.get("PORT", 5000))
