@@ -1675,8 +1675,7 @@ document.addEventListener('click', function(e) {
   if (btn.classList.contains('btn-borrar-grupo')) {
     var ids = btn.getAttribute('data-ids').split(',').map(Number);
     var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
-    if (!confirm('¿Borrar ' + ids.length + ' pago(s)?
-' + resumen)) return;
+    if (!confirm('¿Borrar ' + ids.length + ' pago(s)? ' + resumen)) return;
     var borrados = 0;
     var borrarSiguiente = function(i) {
       if (i >= ids.length) {
