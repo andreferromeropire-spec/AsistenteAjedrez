@@ -936,7 +936,7 @@ function sincronizarCalendario() {
           partes.push('Eventos sin identificar:');
           d.no_identificados.forEach(function(e){ partes.push(e); });
         }
-        alert(partes.join('\n'));
+        alert(partes.join(String.fromCharCode(10)));
       }
       cargarTodo();
     } else {
