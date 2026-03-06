@@ -1420,6 +1420,13 @@ document.addEventListener('click', function(e) {
   }
   var btn = e.target.closest('button');
   if (!btn) return;
+  // Cancelar formulario inline de cobros
+  if (btn.classList.contains('cobro-cancelar-btn')) {
+    var gi = btn.getAttribute('data-gi');
+    var f = document.getElementById('cobro-form-' + gi);
+    if (f) f.style.display = 'none';
+    return;
+  }
   if (btn.classList.contains('btn-borrar-pago')) {
     var pagoId = btn.getAttribute('data-pago-id');
     var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
@@ -1609,7 +1616,7 @@ function abrirPago(gi) {
     + '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
     + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
     + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
-    + '<button class="btn" onclick="document.getElementById(\'cobro-form-' + gi + '\').style.display=\'none\'">Cancelar</button>'
+    + '<button class="btn cobro-cancelar-btn" data-gi="' + gi + '">Cancelar</button>'
     + '</div>';
   form.style.display = 'flex';
 }
