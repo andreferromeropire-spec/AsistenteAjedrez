@@ -269,21 +269,58 @@ def api_borrar_pago_id():
 def api_sincronizar():
     try:
         from sincronizacion import sincronizacion_diaria
-        from datetime import date
+        from datetime import date, datetime
         data = request.get_json() or {}
         hoy = date.today()
-        mes = int(data.get('mes', hoy.month))
-        anio = int(data.get('anio', hoy.year))
-        resultado = sincronizacion_diaria(mes, anio, enviar_whatsapp=False)
+
+        # Acepta lista de meses [{mes, anio}, ...] o mes/anio individuales
+        meses_lista = data.get('meses', None)
+        if not meses_lista:
+            mes = int(data.get('mes', hoy.month))
+            anio = int(data.get('anio', hoy.year))
+            meses_lista = [{'mes': mes, 'anio': anio}]
+
+        total_nuevos = 0
+        total_cancelados = 0
+        total_modificados = 0
+        todos_no_identificados = []
+        detalles = []
+
+        for item in meses_lista:
+            m = int(item['mes'])
+            a = int(item['anio'])
+            resultado = sincronizacion_diaria(m, a, enviar_whatsapp=False)
+            total_nuevos += resultado['nuevos']
+            total_cancelados += resultado['cancelados']
+            total_modificados += resultado['modificados']
+            todos_no_identificados += resultado.get('no_identificados', [])
+            detalles.append({'mes': m, 'anio': a, 'nuevos': resultado['nuevos'],
+                             'cancelados': resultado['cancelados'], 'modificados': resultado['modificados']})
+
+        # Guardar timestamp de última sync
+        _ultima_sync['ts'] = datetime.now().strftime('%d/%m %H:%M')
+        _ultima_sync['meses'] = [f"{i['mes']}/{i['anio']}" for i in meses_lista]
+
         return jsonify({
             'ok': True,
-            'nuevos': resultado['nuevos'],
-            'cancelados': resultado['cancelados'],
-            'modificados': resultado['modificados'],
-            'no_identificados': resultado['no_identificados']
+            'nuevos': total_nuevos,
+            'cancelados': total_cancelados,
+            'modificados': total_modificados,
+            'no_identificados': todos_no_identificados,
+            'detalles': detalles
         })
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
+
+
+# Estado en memoria para última sincronización
+_ultima_sync = {'ts': None, 'meses': []}
+
+
+@dashboard_bp.route('/dashboard/api/ultima_sync')
+@login_required
+def api_ultima_sync():
+    return jsonify(_ultima_sync)
 
 
 @dashboard_bp.route('/dashboard/api/deudores')
@@ -301,34 +338,65 @@ def api_deudores():
             WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
         )
     """, (f"{mes:02d}", str(anio))).fetchall()
-    resultado = []
+
+    # Agrupar por representante para calcular precio combo
+    grupos = {}  # clave: representante o nombre si no tiene
     for d in deudores:
-        clases = conn.execute("""
-            SELECT COUNT(*) FROM clases
-            WHERE alumno_id=? AND estado='agendada'
-            AND strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
-        """, (d['id'], f"{mes:02d}", str(anio))).fetchone()[0]
-        rangos = conn.execute(
-            "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
-            (d['id'],)).fetchall()
-        precio = None
-        moneda = d['moneda']
-        for r in rangos:
-            if r['clases_desde'] <= clases <= r['clases_hasta']:
-                precio = r['precio_por_clase']
-                moneda = r['moneda']
+        clave = d['representante'] if d['representante'] else d['nombre']
+        if clave not in grupos:
+            grupos[clave] = {'representante': d['representante'], 'moneda': d['moneda'], 'alumnos': []}
+        grupos[clave]['alumnos'].append({'id': d['id'], 'nombre': d['nombre'], 'moneda': d['moneda']})
+
+    resultado = []
+    for clave, grupo in grupos.items():
+        alumnos = grupo['alumnos']
+
+        # Contar clases de cada alumno en el mes
+        clases_por_alumno = {}
+        for a in alumnos:
+            n = conn.execute("""
+                SELECT COUNT(*) FROM clases
+                WHERE alumno_id=? AND estado='agendada'
+                AND strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
+            """, (a['id'], f"{mes:02d}", str(anio))).fetchone()[0]
+            clases_por_alumno[a['id']] = n
+
+        total_clases = sum(clases_por_alumno.values())
+
+        # Precio combo: buscar en las promos del primer alumno usando total combinado
+        # (asumimos que todos los alumnos del mismo representante tienen la misma escala)
+        precio_unitario = None
+        moneda = grupo['moneda']
+        for a in alumnos:
+            rangos = conn.execute(
+                "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
+                (a['id'],)).fetchall()
+            for r in rangos:
+                if r['clases_desde'] <= total_clases <= r['clases_hasta']:
+                    precio_unitario = r['precio_por_clase']
+                    moneda = r['moneda']
+                    break
+            if precio_unitario is None and rangos:
+                precio_unitario = rangos[-1]['precio_por_clase']
+                moneda = rangos[-1]['moneda']
+            if precio_unitario is not None:
                 break
-        if precio is None and rangos:
-            precio = rangos[-1]['precio_por_clase']
-            moneda = rangos[-1]['moneda']
+
+        total = round(precio_unitario * total_clases, 2) if precio_unitario else None
+
+        es_combo = len(alumnos) > 1
+        nombres = ", ".join([a['nombre'] for a in alumnos])
+
         resultado.append({
-            'nombre': d['nombre'],
-            'representante': d['representante'] or '-',
-            'clases': clases,
-            'precio_unitario': precio,
-            'total': round(precio * clases, 2) if precio else None,
-            'moneda': moneda
+            'nombre': nombres,
+            'representante': grupo['representante'] or '-',
+            'clases': total_clases,
+            'precio_unitario': precio_unitario,
+            'total': total,
+            'moneda': moneda,
+            'es_combo': es_combo
         })
+
     conn.close()
     return jsonify(resultado)
 
@@ -467,6 +535,18 @@ tr:hover td{background:var(--gold-dim)}
 .section-title{font-family:'Playfair Display',serif;font-size:0.95rem;color:var(--gold-light);margin-bottom:0.9rem;display:flex;align-items:center;gap:0.5rem}
 .section-title::after{content:'';flex:1;height:1px;background:var(--border)}
 .section{margin-bottom:1.75rem}
+.mes-nav{display:flex;align-items:center;gap:0.25rem}
+.mes-btn{padding:0.4rem 0.55rem!important;font-size:0.75rem}
+.sync-group{position:relative;display:flex}
+.sync-group .btn:first-child{border-right:none;border-radius:4px 0 0 4px}
+.sync-arrow{padding:0.4rem 0.5rem!important;border-radius:0 4px 4px 0!important;font-size:0.7rem}
+.sync-dropdown{display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:0.75rem;min-width:200px;z-index:200;box-shadow:0 4px 16px var(--shadow);flex-direction:column;gap:0.4rem}
+.sync-dropdown.open{display:flex}
+.sync-dropdown-title{font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.25rem}
+.sync-dropdown label{display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer;padding:0.2rem 0}
+.sync-dropdown label:hover{color:var(--gold-light)}
+.sync-go{margin-top:0.4rem;width:100%;font-size:0.8rem;padding:0.5rem}
+.sync-info{font-size:0.7rem;color:var(--text-muted);white-space:nowrap}
 .chat-panel{background:var(--surface);border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;height:calc(100vh - 100px);position:sticky;top:80px;box-shadow:0 2px 12px var(--shadow);overflow:hidden}
 .chat-header{padding:0.85rem 1rem;border-bottom:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:0.5rem}
 .chat-header h3{font-size:0.85rem;color:var(--text);font-weight:500}
@@ -506,26 +586,42 @@ tr:hover td{background:var(--gold-dim)}
     <h1>Ajedrez Dashboard</h1>
   </div>
   <div class="header-right">
-    <select id="sel-mes">
-      <option value="1">Enero</option><option value="2">Febrero</option>
-      <option value="3">Marzo</option><option value="4">Abril</option>
-      <option value="5">Mayo</option><option value="6">Junio</option>
-      <option value="7">Julio</option><option value="8">Agosto</option>
-      <option value="9">Septiembre</option><option value="10">Octubre</option>
-      <option value="11">Noviembre</option><option value="12">Diciembre</option>
-    </select>
-    <select id="sel-anio">
-      <option value="2025">2025</option>
-      <option value="2026" selected>2026</option>
-      <option value="2027">2027</option>
-    </select>
+    <div class="mes-nav">
+      <button class="btn mes-btn" onclick="cambiarMes(-1)">&#9664;</button>
+      <select id="sel-mes">
+        <option value="1">Enero</option><option value="2">Febrero</option>
+        <option value="3">Marzo</option><option value="4">Abril</option>
+        <option value="5">Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option>
+        <option value="9">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <select id="sel-anio">
+        <option value="2025">2025</option>
+        <option value="2026" selected>2026</option>
+        <option value="2027">2027</option>
+      </select>
+      <button class="btn mes-btn" onclick="cambiarMes(1)">&#9654;</button>
+    </div>
     <div class="theme-group">
       <button class="theme-btn active" onclick="setTheme('light',this)">&#9728;</button>
       <button class="theme-btn" onclick="setTheme('dark',this)">&#9790;</button>
       <button class="theme-btn" onclick="setTheme('navy',this)">&#127754;</button>
     </div>
     <button class="btn" onclick="cargarTodo()">&#8635; Actualizar</button>
-    <button class="btn" id="btn-sync" onclick="sincronizarCalendario()">&#128197; Sincronizar</button>
+    <div class="sync-group">
+      <button class="btn" id="btn-sync" onclick="sincronizarCalendario()">&#128197; Sincronizar</button>
+      <button class="btn sync-arrow" id="btn-sync-arrow" onclick="toggleSyncMenu()" title="Elegir meses a sincronizar">&#9660;</button>
+      <div class="sync-dropdown" id="sync-dropdown">
+        <div class="sync-dropdown-title">Sincronizar meses:</div>
+        <label><input type="checkbox" class="sync-check" data-offset="0" checked> Mes actual</label>
+        <label><input type="checkbox" class="sync-check" data-offset="1"> Mes siguiente</label>
+        <label><input type="checkbox" class="sync-check" data-offset="-1"> Mes anterior</label>
+        <label><input type="checkbox" class="sync-check" data-offset="2"> En 2 meses</label>
+        <button class="btn sync-go" onclick="sincronizarSeleccion()">&#128197; Sincronizar selección</button>
+      </div>
+    </div>
+    <div class="sync-info" id="sync-info"></div>
     <a href="/dashboard/logout"><button class="btn">Salir</button></a>
   </div>
 </header>
@@ -559,6 +655,16 @@ tr:hover td{background:var(--gold-dim)}
             <option value="">Todos los estados</option>
             <option value="agendada">Agendada</option>
             <option value="cancelada">Cancelada</option>
+            <option value="dada">Dada</option>
+          </select>
+          <select id="filtro-pago" onchange="cargarClases()">
+            <option value="">Pagas y no pagas</option>
+            <option value="paga">&#10003; Pagas</option>
+            <option value="impaga">&#9633; No pagas</option>
+          </select>
+          <select id="filtro-periodo" onchange="cargarClases()">
+            <option value="">Todo el mes</option>
+            <option value="semana">Esta semana</option>
           </select>
         </div>
         <div class="table-wrap">
@@ -646,6 +752,42 @@ document.getElementById('sel-mes').value = mes;
 document.getElementById('sel-anio').value = anio;
 document.getElementById('sel-mes').addEventListener('change', function() { mes = +this.value; cargarTodo(); });
 document.getElementById('sel-anio').addEventListener('change', function() { anio = +this.value; cargarTodo(); });
+
+var DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+var MESES_NOMBRES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+function cambiarMes(delta) {
+  var d = new Date(anio, mes - 1 + delta, 1);
+  mes = d.getMonth() + 1;
+  anio = d.getFullYear();
+  document.getElementById('sel-mes').value = mes;
+  document.getElementById('sel-anio').value = anio;
+  cargarTodo();
+}
+
+function toggleSyncMenu() {
+  var dd = document.getElementById('sync-dropdown');
+  dd.classList.toggle('open');
+}
+
+
+function mesOffset(offset) {
+  var d = new Date(anio, mes - 1 + offset, 1);
+  return {mes: d.getMonth() + 1, anio: d.getFullYear()};
+}
+
+function sincronizarSeleccion() {
+  var checks = document.querySelectorAll('.sync-check:checked');
+  if (checks.length === 0) { alert('Seleccioná al menos un mes.'); return; }
+  var meses = [];
+  checks.forEach(function(c) {
+    var offset = parseInt(c.getAttribute('data-offset'));
+    meses.push(mesOffset(offset));
+  });
+  document.getElementById('sync-dropdown').classList.remove('open');
+  ejecutarSync(meses);
+}
 
 function setTheme(tema, btn) {
   document.documentElement.setAttribute('data-theme', tema);
@@ -749,10 +891,12 @@ function estadoBadge(e) {
 
 function cargarTodo() {
   cargarResumen();
+  poblarFiltroAlumnos();
   cargarClases();
   cargarPagos();
   cargarDeudores();
   cargarAlumnos();
+  cargarUltimaSync();
 }
 
 function cargarResumen() {
@@ -783,15 +927,43 @@ function poblarFiltroAlumnos() {
   });
 }
 
+function formatFecha(fechaStr) {
+  // fechaStr = "2026-03-10" → "Mar 10/03"
+  var partes = fechaStr.split('-');
+  var d = new Date(+partes[0], +partes[1] - 1, +partes[2]);
+  return DIAS_SEMANA[d.getDay()] + ' ' + partes[2] + '/' + partes[1];
+}
+
+function semanaActual() {
+  var hoy = new Date();
+  var lunes = new Date(hoy);
+  lunes.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7));
+  var domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  return {desde: lunes, hasta: domingo};
+}
+
 function cargarClases() {
   var estadoFiltro = document.getElementById('filtro-estado').value;
   var alumnoFiltro = document.getElementById('filtro-alumno-clases').value;
+  var pagoFiltro = document.getElementById('filtro-pago').value;
+  var periodoFiltro = document.getElementById('filtro-periodo').value;
   var url = 'clases' + (alumnoFiltro ? '?alumno='+encodeURIComponent(alumnoFiltro) : '');
   api(url).then(function(datos) {
     if (estadoFiltro) datos = datos.filter(function(c){ return c.estado.indexOf(estadoFiltro) !== -1; });
+    if (pagoFiltro === 'paga') datos = datos.filter(function(c){ return !!c.pago_id; });
+    if (pagoFiltro === 'impaga') datos = datos.filter(function(c){ return !c.pago_id; });
+    if (periodoFiltro === 'semana') {
+      var sem = semanaActual();
+      datos = datos.filter(function(c) {
+        var p = c.fecha.split('-');
+        var d = new Date(+p[0], +p[1]-1, +p[2]);
+        return d >= sem.desde && d <= sem.hasta;
+      });
+    }
     var html = datos.length ? datos.map(function(c) {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
-      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td></tr>';
+      return '<tr><td style="white-space:nowrap">'+formatFecha(c.fecha)+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td></tr>';
     }).join('') : '<tr><td colspan="6" class="empty">Sin clases en este periodo</td></tr>';
     document.getElementById('t-clases').innerHTML = html;
   });
@@ -940,8 +1112,14 @@ function borrarPagoDirecto(pagoId, resumen) {
   }).catch(function(){ alert('Error de conexion'); });
 }
 
-// Delegacion de eventos para botones generados dinamicamente
+// Delegacion de eventos para botones generados dinamicamente + cerrar dropdown
 document.addEventListener('click', function(e) {
+  // Cerrar dropdown de sync si se hace click fuera
+  var sg = document.querySelector('.sync-group');
+  if (sg && !sg.contains(e.target)) {
+    var dd = document.getElementById('sync-dropdown');
+    if (dd) dd.classList.remove('open');
+  }
   var btn = e.target.closest('button');
   if (!btn) return;
   if (btn.classList.contains('btn-borrar-pago')) {
@@ -956,24 +1134,41 @@ document.addEventListener('click', function(e) {
   else if (btn.classList.contains('btn-borrar-alumno')) borrarAlumno(nombre);
 });
 
+function cargarUltimaSync() {
+  fetch('/dashboard/api/ultima_sync').then(function(r){ return r.json(); }).then(function(d) {
+    var el = document.getElementById('sync-info');
+    if (d.ts) {
+      el.innerHTML = '&#x23F1; ' + d.ts;
+      el.title = 'Última sync: ' + d.meses.join(', ');
+    } else {
+      el.textContent = '';
+    }
+  }).catch(function(){});
+}
+
 function sincronizarCalendario() {
+  ejecutarSync([{mes: mes, anio: anio}]);
+}
+
+function ejecutarSync(mesesLista) {
   var btn = document.getElementById('btn-sync');
   btn.disabled = true;
   btn.textContent = '\u23f3 Sincronizando...';
   fetch('/dashboard/api/sincronizar', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({mes: mes, anio: anio})
+    body: JSON.stringify({meses: mesesLista})
   })
   .then(function(r){ return r.json(); })
   .then(function(d) {
     btn.disabled = false;
     btn.innerHTML = '&#128197; Sincronizar';
     if (d.ok) {
+      var mesNombres = mesesLista.map(function(m){ return MESES_NOMBRES[m.mes] + ' ' + m.anio; }).join(', ');
       if (d.nuevos === 0 && d.cancelados === 0 && d.modificados === 0) {
-        alert('\u2705 Sin cambios - el calendario ya estaba actualizado.');
+        alert('\u2705 Sin cambios en: ' + mesNombres);
       } else {
-        var partes = ['Sincronizacion ' + mes + '/' + anio + ':'];
+        var partes = ['Sincronizaci\u00f3n \u2014 ' + mesNombres + ':'];
         if (d.nuevos > 0) partes.push('- ' + d.nuevos + ' clase(s) nueva(s)');
         if (d.cancelados > 0) partes.push('- ' + d.cancelados + ' clase(s) cancelada(s)');
         if (d.modificados > 0) partes.push('- ' + d.modificados + ' clase(s) modificada(s)');
