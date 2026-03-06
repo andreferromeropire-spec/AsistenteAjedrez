@@ -96,7 +96,7 @@ def buscar_alumno_con_sugerencia(nombre):
             return resultado, sugerencias_rep
 
     # Buscar en nombres de alumnos
-    sugerencias = get_close_matches(nombre, nombres_alumnos, n=3, cutoff=0.5)
+    sugerencias = get_close_matches(nombre, nombres_alumnos, n=3, cutoff=0.4)
     if sugerencias:
         mejor = buscar_alumno_por_nombre(sugerencias[0])
         return mejor, sugerencias

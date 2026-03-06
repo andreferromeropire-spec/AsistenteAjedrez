@@ -15,9 +15,11 @@ def registrar_pago(alumno_id, monto, moneda, metodo, notas=None):
         INSERT INTO pagos (alumno_id, fecha, monto, moneda, metodo, notas)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (alumno_id, hoy, monto, moneda, metodo, notas))
+    pago_id = cursor.lastrowid
     conn.commit()
     conn.close()
     print(f"Pago registrado: alumno {alumno_id} - {monto} {moneda} via {metodo}")
+    return pago_id
 
 # Devuelve todos los pagos de un mes y año específico.
 # mes y año son números: mes=2, anio=2026 para febrero 2026
