@@ -243,6 +243,26 @@ def api_borrar_pago_id():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+@dashboard_bp.route('/dashboard/api/sincronizar', methods=['POST'])
+@login_required
+def api_sincronizar():
+    try:
+        from calendar_google import sincronizar_mes
+        from datetime import date
+        data = request.get_json() or {}
+        hoy = date.today()
+        mes = int(data.get('mes', hoy.month))
+        anio = int(data.get('anio', hoy.year))
+        resultado = sincronizar_mes(mes, anio)
+        return jsonify({
+            'ok': True,
+            'clases_registradas': resultado['clases_registradas'],
+            'no_identificadas': resultado['no_identificadas']
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 @dashboard_bp.route('/dashboard/api/deudores')
 @login_required
 def api_deudores():
@@ -482,6 +502,7 @@ tr:hover td{background:var(--gold-dim)}
       <button class="theme-btn" onclick="setTheme('navy',this)">&#127754;</button>
     </div>
     <button class="btn" onclick="cargarTodo()">&#8635; Actualizar</button>
+    <button class="btn" id="btn-sync" onclick="sincronizarCalendario()">&#128197; Sincronizar</button>
     <a href="/dashboard/logout"><button class="btn">Salir</button></a>
   </div>
 </header>
@@ -887,6 +908,37 @@ document.addEventListener('click', function(e) {
   if (btn.classList.contains('btn-editar')) editarAlumno(nombre);
   else if (btn.classList.contains('btn-borrar-alumno')) borrarAlumno(nombre);
 });
+
+function sincronizarCalendario() {
+  var btn = document.getElementById('btn-sync');
+  btn.disabled = true;
+  btn.textContent = '⏳ Sincronizando...';
+  fetch('/dashboard/api/sincronizar', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({mes: mes, anio: anio})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.innerHTML = '&#128197; Sincronizar';
+    if (d.ok) {
+      var msg = '✅ ' + d.clases_registradas + ' clases registradas.';
+      if (d.no_identificadas && d.no_identificadas.length > 0) {
+        msg += '\n\n⚠️ No identifiqué:\n' + d.no_identificadas.join('\n');
+      }
+      alert(msg);
+      cargarTodo();
+    } else {
+      alert('Error: ' + (d.error || 'No se pudo sincronizar'));
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.innerHTML = '&#128197; Sincronizar';
+    alert('Error de conexión.');
+  });
+}
 
 cargarTodo();
 setInterval(cargarTodo, 60000);

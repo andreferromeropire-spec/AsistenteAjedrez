@@ -957,6 +957,21 @@ def ejecutar_accion(accion, datos, numero):
         texto += "\n\n¿Cuál querés borrar? Respondé con el número."
         return (aviso + "\n" + texto) if aviso else texto
 
+    elif accion == "sincronizar_calendario":
+        from calendar_google import sincronizar_mes
+        from datetime import date
+        hoy = date.today()
+        mes = datos.get("mes", hoy.month)
+        anio = datos.get("anio", hoy.year)
+        resultado = sincronizar_mes(mes, anio)
+        clases = resultado["clases_registradas"]
+        no_id = resultado["no_identificadas"]
+        respuesta = f"✅ Sincronización {mes}/{anio}: {clases} clases registradas."
+        if no_id:
+            lista = "\n".join([f"• {e}" for e in no_id])
+            respuesta += f"\n\n⚠️ No identifiqué estos eventos:\n{lista}"
+        return respuesta
+
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"
 

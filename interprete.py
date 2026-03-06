@@ -94,12 +94,15 @@ Las acciones posibles son:
 18. "borrar_pago" - cuando quiere eliminar un pago registrado por error
     datos necesarios: nombre_alumno
     Ejemplos: "borrá el último pago de Stephen", "eliminar un pago de Grace",
-              "me equivoqué con el pago de Lucas", "quiero borrar un pago de Jeff",
-              "borrar registro de pago de fiona", "borra un pago de charlie",
-              "eliminar pago de karina", "quiero sacar un pago de henry"
+              "me equivoqué con el pago de Lucas", "quiero borrar un pago de Jeff"
 
 
-18. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+18. "sincronizar_calendario" - quiere sincronizar las clases con Google Calendar
+    datos necesarios: mes (número, opcional), anio (opcional)
+    Ejemplos: "sincronizá el calendario", "sincronizar clases", "actualizá las clases desde calendar",
+              "sincronizá marzo", "traé las clases de abril"
+
+19. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
