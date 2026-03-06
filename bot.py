@@ -18,7 +18,6 @@ crear_tablas()
 load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-2026")
-
 app.register_blueprint(dashboard_bp)
 
 historiales = {}
@@ -139,14 +138,104 @@ def ejecutar_accion(accion, datos, numero):
         return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
     elif accion == "registrar_pago":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        nombre_buscado = datos.get("nombre_alumno", "")
+
+        # ── Detección de representante ──
+        # Si el nombre buscado corresponde a un representante, pagamos por todos sus alumnos
+        from alumnos import buscar_alumno_por_representante
+        alumnos_del_rep = buscar_alumno_por_representante(nombre_buscado) if not datos.get("alumno_id_directo") else []
+
+        if alumnos_del_rep and not datos.get("alumno_id_directo"):
+            hoy = date.today()
+            resultados = []
+            for alumno_rep in alumnos_del_rep:
+                moneda = datos.get("moneda") or alumno_rep["moneda"] or "Dólar"
+                metodo = datos.get("metodo") or alumno_rep["metodo_pago"] or "Wise"
+                modalidad = (alumno_rep["modalidad"] or "").strip()
+                mes_pago = datos.get("mes", hoy.month)
+                anio_pago = datos.get("anio", hoy.year)
+
+                conn = __import__("database").get_connection()
+                cursor = conn.cursor()
+                if modalidad == "Semanal":
+                    cursor.execute("""
+                        SELECT id, fecha FROM clases
+                        WHERE alumno_id = ? AND pago_id IS NULL
+                        AND (estado = 'agendada' OR estado = 'dada')
+                        ORDER BY fecha ASC LIMIT 1
+                    """, (alumno_rep["id"],))
+                elif modalidad == "Mensual":
+                    cursor.execute("""
+                        SELECT id, fecha FROM clases
+                        WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                        AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
+                        ORDER BY fecha ASC
+                    """, (alumno_rep["id"], f"{mes_pago:02d}", str(anio_pago)))
+                elif "10" in modalidad or "paquete" in modalidad.lower():
+                    cursor.execute("""
+                        SELECT id, fecha FROM clases
+                        WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                        ORDER BY fecha ASC LIMIT 10
+                    """, (alumno_rep["id"],))
+                else:
+                    cursor.execute("""
+                        SELECT id, fecha FROM clases
+                        WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                        AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
+                        ORDER BY fecha ASC
+                    """, (alumno_rep["id"], f"{mes_pago:02d}", str(anio_pago)))
+                clases = cursor.fetchall()
+                conn.close()
+
+                if not clases:
+                    resultados.append(f"• {alumno_rep['nombre']}: sin clases sin pagar")
+                    continue
+
+                from promociones import calcular_monto as calc_monto
+                n = len(clases)
+                monto_final, precio_unit, moneda_promo = calc_monto(alumno_rep["id"], n)
+                if moneda_promo:
+                    moneda = moneda_promo
+                if monto_final is None:
+                    resultados.append(f"• {alumno_rep['nombre']}: sin promo cargada, ¿cuánto pagó?")
+                    continue
+
+                pago_id = registrar_pago(alumno_id=alumno_rep["id"], monto=monto_final,
+                                         moneda=moneda, metodo=metodo, notas=datos.get("notas"))
+                conn = __import__("database").get_connection()
+                for c in clases:
+                    conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, c["id"]))
+                conn.commit()
+                conn.close()
+                fechas_str = ", ".join([c["fecha"].split("-")[2] for c in clases])
+                resultados.append(f"• {alumno_rep['nombre']}: {monto_final} {moneda} ({n} clases, días {fechas_str})")
+
+            rep_nombre = alumnos_del_rep[0]["representante"]
+            return "✅ Pago registrado para " + rep_nombre + ":\n" + "\n".join(resultados)
+
+        # ── Caso normal: buscar por nombre de alumno ──
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
         if not alumno:
             return aviso
 
+        # Si el bot usó sugerencia fuzzy, verificar que no sea demasiado diferente
+        # Esto evita que "Carina" matchee silenciosamente con "Fiona" u otro nombre muy distinto
+        if aviso and not datos.get("sugerencia_confirmada"):
+            from difflib import SequenceMatcher
+            similitud = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
+            if similitud < 0.5:
+                acciones_pendientes[numero] = {
+                    "accion": accion,
+                    "datos": {**datos, "sugerencia_confirmada": True, "alumno_id_directo": alumno["id"]},
+                    "candidatos": [{"nombre": alumno["nombre"], "id": alumno["id"],
+                                    "representante": alumno["representante"]}]
+                }
+                return (f"No encontré '{nombre_buscado}'. ¿Quisiste decir {alumno['nombre']}?\n"
+                        f"Respondé 1 para confirmar o escribí el nombre correcto.")
+
         hoy = date.today()
 
-        # Si viene marcado como "confirmado", significa que el usuario
-        # ya vio la advertencia de diferencia de monto y decidió guardarlo igual
+        # Si viene marcado como "confirmado", el usuario ya aprobó la diferencia de monto
         if datos.get("confirmado"):
             pago_id = registrar_pago(
                 alumno_id=alumno["id"],
@@ -155,10 +244,9 @@ def ejecutar_accion(accion, datos, numero):
                 metodo=datos["metodo"],
                 notas=datos.get("notas")
             )
-            # Marcar las clases como pagadas
             clases_ids = datos.get("clases_ids", [])
             if clases_ids:
-                conn = __import__('database').get_connection()
+                conn = __import__("database").get_connection()
                 for clase_id in clases_ids:
                     conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, clase_id))
                 conn.commit()
@@ -166,70 +254,55 @@ def ejecutar_accion(accion, datos, numero):
             fechas = datos.get("fechas_clases", [])
             detalle_fechas = ", ".join([f.split("-")[2] for f in fechas]) if fechas else "—"
             respuesta = (f"✅ Registré el pago de {alumno['nombre']}: "
-                        f"{datos['monto']} {datos['moneda']} por {datos['metodo']}.\n"
-                        f"Clases marcadas como pagas: {detalle_fechas}")
+                        f"{datos['monto']} {datos['moneda']} por {datos['metodo']}."
+                        f"\nClases marcadas como pagas: {detalle_fechas}")
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
         # ── Determinar la moneda y método: usar los del alumno si no se especificaron ──
         moneda = datos.get("moneda") or alumno["moneda"] or "Dólar"
         metodo = datos.get("metodo") or alumno["metodo_pago"] or "Wise"
 
-        # ── Determinar qué clases aplican ──
+        # ── Determinar qué clases aplican según la modalidad ──
         cantidad_clases = datos.get("cantidad_clases")
         todas_del_mes = datos.get("todas_del_mes", False)
         mes_pago = datos.get("mes", hoy.month)
         anio_pago = datos.get("anio", hoy.year)
         modalidad = (alumno["modalidad"] or "").strip()
 
-        conn = __import__('database').get_connection()
+        conn = __import__("database").get_connection()
         cursor = conn.cursor()
 
         if cantidad_clases:
-            # Dijo explícitamente cuántas clases: toma esas N más próximas
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                ORDER BY fecha ASC
-                LIMIT ?
+                ORDER BY fecha ASC LIMIT ?
             """, (alumno["id"], cantidad_clases))
-
         elif todas_del_mes or modalidad == "Mensual":
-            # Dijo "todas del mes" O el alumno paga mensual: toma todas las del mes
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                AND strftime('%m', fecha) = ?
-                AND strftime('%Y', fecha) = ?
+                AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
-
         elif modalidad == "Semanal":
-            # Paga por clase suelta: toma 1 sola clase
-            # Prioriza clases ya dadas sin pagar; si no, la próxima agendada
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND pago_id IS NULL
                 AND (estado = 'agendada' OR estado = 'dada')
-                ORDER BY fecha ASC
-                LIMIT 1
+                ORDER BY fecha ASC LIMIT 1
             """, (alumno["id"],))
-
         elif "10" in modalidad or "paquete" in modalidad.lower():
-            # Paga cada 10 clases: toma las 10 próximas sin pagar
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                ORDER BY fecha ASC
-                LIMIT 10
+                ORDER BY fecha ASC LIMIT 10
             """, (alumno["id"],))
-
         else:
-            # Modalidad desconocida o vacía: toma todas las del mes actual como fallback
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
-                AND strftime('%m', fecha) = ?
-                AND strftime('%Y', fecha) = ?
+                AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
 
@@ -244,21 +317,18 @@ def ejecutar_accion(accion, datos, numero):
         fechas_clases = [c["fecha"] for c in clases]
         n_clases = len(clases)
 
-        # ── Calcular monto esperado según la promo del alumno ──
+        # ── Calcular monto esperado según la promo ──
         from promociones import calcular_monto as calc_monto
         monto_esperado, precio_unitario, moneda_promo = calc_monto(alumno["id"], n_clases)
-
-        # La moneda de la promo tiene prioridad sobre la inferida
         if moneda_promo:
             moneda = moneda_promo
 
-        # ── Comparar con el monto que dijo el usuario (si lo especificó) ──
         monto_pagado = datos.get("monto")
 
         if monto_pagado is not None and monto_esperado is not None:
             diferencia = abs(float(monto_pagado) - float(monto_esperado))
             if diferencia > 0.01:
-                # Hay diferencia: guardar los datos en pendiente y preguntar
+                fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
                 acciones_pendientes[numero] = {
                     "accion": "registrar_pago",
                     "datos": {
@@ -273,35 +343,25 @@ def ejecutar_accion(accion, datos, numero):
                         "alumno_id_directo": alumno["id"]
                     }
                 }
-                fechas_str = ", ".join([f.split("-")[2] for f in fechas_clases])
                 return (
-                    f"⚠️ {alumno['nombre']} tiene {n_clases} clases "
-                    f"(días {fechas_str}) → debería ser {monto_esperado} {moneda} "
-                    f"({precio_unitario}/clase), pero registraste {monto_pagado} {moneda}.\n\n"
-                    f"¿Guardamos ${monto_pagado} igual? Respondé 1 para confirmar o 2 para reingresar."
+                    f"⚠️ {alumno['nombre']} tiene {n_clases} clases (días {fechas_str}) "
+                    f"→ debería ser {monto_esperado} {moneda} ({precio_unitario}/clase), "
+                    f"pero registraste {monto_pagado} {moneda}.\n\n"
+                    f"¿Guardamos {monto_pagado} igual? Respondé 1 para confirmar o 2 para reingresar."
                 )
 
-        # ── Si no hay diferencia o no se especificó monto: usar el calculado ──
         monto_final = monto_pagado if monto_pagado is not None else monto_esperado
 
         if monto_final is None:
-            # El alumno no tiene promo cargada y tampoco dijo el monto
             respuesta = (f"{alumno['nombre']} tiene {n_clases} clases agendadas pero "
-                        f"no tiene promo cargada y no especificaste el monto. "
-                        f"¿Cuánto pagó?")
+                        f"no tiene promo cargada y no especificaste el monto. ¿Cuánto pagó?")
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
-        # ── Registrar el pago ──
-        pago_id = registrar_pago(
-            alumno_id=alumno["id"],
-            monto=monto_final,
-            moneda=moneda,
-            metodo=metodo,
-            notas=datos.get("notas")
-        )
+        # ── Registrar el pago y marcar clases ──
+        pago_id = registrar_pago(alumno_id=alumno["id"], monto=monto_final,
+                                  moneda=moneda, metodo=metodo, notas=datos.get("notas"))
 
-        # ── Marcar cada clase como pagada ──
-        conn = __import__('database').get_connection()
+        conn = __import__("database").get_connection()
         for clase_id in clases_ids:
             conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, clase_id))
         conn.commit()
