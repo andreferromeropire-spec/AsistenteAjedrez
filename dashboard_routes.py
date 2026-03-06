@@ -218,7 +218,7 @@ def api_pagos():
     anio = int(request.args.get('anio', date.today().year))
     conn = get_connection()
     pagos = conn.execute("""
-        SELECT p.fecha, p.monto, p.moneda, p.metodo, p.notas, a.nombre, a.representante
+        SELECT p.id, p.fecha, p.monto, p.moneda, p.metodo, p.notas, a.nombre, a.representante
         FROM pagos p
         JOIN alumnos a ON p.alumno_id = a.id
         WHERE strftime('%m',p.fecha)=? AND strftime('%Y',p.fecha)=?
@@ -226,6 +226,21 @@ def api_pagos():
     """, (f"{mes:02d}", str(anio))).fetchall()
     conn.close()
     return jsonify([dict(p) for p in pagos])
+
+
+@dashboard_bp.route('/dashboard/api/borrar_pago_id', methods=['POST'])
+@login_required
+def api_borrar_pago_id():
+    data = request.get_json()
+    pago_id = data.get('pago_id')
+    if not pago_id:
+        return jsonify({'ok': False, 'error': 'Falta pago_id'})
+    try:
+        from pagos import borrar_pago
+        ok, resultado = borrar_pago(pago_id)
+        return jsonify({'ok': ok, 'clases_desmarcadas': resultado if ok else 0})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 
 @dashboard_bp.route('/dashboard/api/deudores')
@@ -724,7 +739,9 @@ function cargarPagos() {
       var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
       var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
       var np = p.nombre.replace(/"/g, '&quot;');
-      var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-nombre="'+np+'">&#128465;</button>';
+      var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
+      var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
+      var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
       return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
@@ -836,15 +853,39 @@ function borrarPago(nombre) {
   setTimeout(enviarMensaje, 100);
 }
 
+function borrarPagoDirecto(pagoId, resumen) {
+  if (!confirm('\u00bfBorrar este pago?\n' + resumen)) return;
+  fetch('/dashboard/api/borrar_pago_id', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pago_id: pagoId})
+  }).then(function(r){ return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      var msg = '\u2705 Pago borrado.';
+      if (d.clases_desmarcadas > 0) msg += ' (' + d.clases_desmarcadas + ' clase(s) desmarcada(s))';
+      alert(msg);
+      cargarTodo();
+    } else {
+      alert('Error: ' + (d.error || 'No se pudo borrar'));
+    }
+  }).catch(function(){ alert('Error de conexion'); });
+}
+
 // Delegacion de eventos para botones generados dinamicamente
 document.addEventListener('click', function(e) {
   var btn = e.target.closest('button');
   if (!btn) return;
+  if (btn.classList.contains('btn-borrar-pago')) {
+    var pagoId = btn.getAttribute('data-pago-id');
+    var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
+    borrarPagoDirecto(pagoId, resumen);
+    return;
+  }
   var nombre = btn.getAttribute('data-nombre');
   if (!nombre) return;
   if (btn.classList.contains('btn-editar')) editarAlumno(nombre);
   else if (btn.classList.contains('btn-borrar-alumno')) borrarAlumno(nombre);
-  else if (btn.classList.contains('btn-borrar-pago')) borrarPago(nombre);
 });
 
 cargarTodo();
