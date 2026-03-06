@@ -247,17 +247,19 @@ def api_borrar_pago_id():
 @login_required
 def api_sincronizar():
     try:
-        from calendar_google import sincronizar_mes
+        from sincronizacion import sincronizacion_diaria
         from datetime import date
         data = request.get_json() or {}
         hoy = date.today()
         mes = int(data.get('mes', hoy.month))
         anio = int(data.get('anio', hoy.year))
-        resultado = sincronizar_mes(mes, anio)
+        resultado = sincronizacion_diaria(mes, anio)
         return jsonify({
             'ok': True,
-            'clases_registradas': resultado['clases_registradas'],
-            'no_identificadas': resultado['no_identificadas']
+            'nuevos': resultado['nuevos'],
+            'cancelados': resultado['cancelados'],
+            'modificados': resultado['modificados'],
+            'no_identificados': resultado['no_identificados']
         })
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
@@ -912,7 +914,7 @@ document.addEventListener('click', function(e) {
 function sincronizarCalendario() {
   var btn = document.getElementById('btn-sync');
   btn.disabled = true;
-  btn.textContent = '⏳ Sincronizando...';
+  btn.textContent = '\u23f3 Sincronizando...';
   fetch('/dashboard/api/sincronizar', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -921,13 +923,20 @@ function sincronizarCalendario() {
   .then(function(r){ return r.json(); })
   .then(function(d) {
     btn.disabled = false;
-    btn.innerHTML = '&#128197; Sincronizar';
+    btn.innerHTML = '📅 Sincronizar';
     if (d.ok) {
-      var msg = '✅ ' + d.clases_registradas + ' clases registradas.';
-      if (d.no_identificadas && d.no_identificadas.length > 0) {
-        msg += '\n\n⚠️ No identifiqué:\n' + d.no_identificadas.join('\n');
+      if (d.nuevos === 0 && d.cancelados === 0 && d.modificados === 0) {
+        alert('\u2705 Sin cambios — el calendario ya estaba actualizado.');
+      } else {
+        var msg = '\u2705 Sincronizaci\u00f3n ' + mes + '/' + anio + ':\n';
+        if (d.nuevos > 0) msg += '\u2022 ' + d.nuevos + ' clase(s) nueva(s)\n';
+        if (d.cancelados > 0) msg += '\u2022 ' + d.cancelados + ' clase(s) cancelada(s)\n';
+        if (d.modificados > 0) msg += '\u2022 ' + d.modificados + ' clase(s) modificada(s)\n';
+        if (d.no_identificados && d.no_identificados.length > 0) {
+          msg += '\n\u26a0\ufe0f Eventos sin identificar:\n' + d.no_identificados.join('\n');
+        }
+        alert(msg);
       }
-      alert(msg);
       cargarTodo();
     } else {
       alert('Error: ' + (d.error || 'No se pudo sincronizar'));
@@ -935,8 +944,8 @@ function sincronizarCalendario() {
   })
   .catch(function() {
     btn.disabled = false;
-    btn.innerHTML = '&#128197; Sincronizar';
-    alert('Error de conexión.');
+    btn.innerHTML = '📅 Sincronizar';
+    alert('Error de conexi\u00f3n.');
   });
 }
 

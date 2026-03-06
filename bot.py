@@ -958,19 +958,26 @@ def ejecutar_accion(accion, datos, numero):
         return (aviso + "\n" + texto) if aviso else texto
 
     elif accion == "sincronizar_calendario":
-        from calendar_google import sincronizar_mes
+        from sincronizacion import sincronizacion_diaria
         from datetime import date
         hoy = date.today()
         mes = datos.get("mes", hoy.month)
         anio = datos.get("anio", hoy.year)
-        resultado = sincronizar_mes(mes, anio)
-        clases = resultado["clases_registradas"]
-        no_id = resultado["no_identificadas"]
-        respuesta = f"✅ Sincronización {mes}/{anio}: {clases} clases registradas."
+        resultado = sincronizacion_diaria(mes, anio)
+        nuevos = resultado["nuevos"]
+        cancelados = resultado["cancelados"]
+        modificados = resultado["modificados"]
+        no_id = resultado["no_identificados"]
+        if nuevos == 0 and cancelados == 0 and modificados == 0:
+            return f"✅ Sin cambios en {mes}/{anio} — el calendario ya estaba actualizado."
+        respuesta = f"✅ Sincronización {mes}/{anio}:\n"
+        if nuevos: respuesta += f"• {nuevos} clase(s) nueva(s)\n"
+        if cancelados: respuesta += f"• {cancelados} clase(s) cancelada(s)\n"
+        if modificados: respuesta += f"• {modificados} clase(s) modificada(s)\n"
         if no_id:
-            lista = "\n".join([f"• {e}" for e in no_id])
-            respuesta += f"\n\n⚠️ No identifiqué estos eventos:\n{lista}"
-        return respuesta
+            lista = "\n".join([f"  {e}" for e in no_id])
+            respuesta += f"\n⚠️ Eventos sin identificar:\n{lista}"
+        return respuesta.strip()
 
     elif accion == "no_entiendo":
         return "No entendí bien. Podés decirme cosas como:\n• 'pagó Lucas 20000 pesos'\n• 'di clase con Henry'\n• 'quién debe este mes'\n• '¿cuánto gané en febrero?'"

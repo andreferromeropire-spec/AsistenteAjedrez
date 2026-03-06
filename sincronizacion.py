@@ -178,19 +178,39 @@ def procesar_cambios(cambios):
 
 
 # SINCRONIZACION_DIARIA: La función que llama el scheduler.
-# Detecta cambios del mes actual y te avisa solo si hay algo nuevo.
-# Si no hay cambios, silencio total.
-def sincronizacion_diaria():
+# También se puede llamar manualmente con un mes/año específico.
+# - Sin parámetros: sincroniza el mes actual, envía WhatsApp si hay cambios
+# - Con mes/anio: sincroniza ese mes y devuelve el resultado (para dashboard/bot)
+def sincronizacion_diaria(mes=None, anio=None):
     hoy = date.today()
-    cambios = detectar_cambios(hoy.month, hoy.year)
+    mes = mes or hoy.month
+    anio = anio or hoy.year
 
+    cambios = detectar_cambios(mes, anio)
     total = len(cambios["nuevos"]) + len(cambios["cancelados"]) + len(cambios["modificados"])
 
     if total == 0:
-        return  # Sin cambios, sin mensaje
+        return {
+            "nuevos": 0, "cancelados": 0, "modificados": 0,
+            "mensajes": [], "no_identificados": []
+        }
 
     mensajes = procesar_cambios(cambios)
 
-    texto = "📅 Sincronización con Calendar:\n\n"
-    texto += "\n\n".join(mensajes)
-    enviar_mensaje(texto)
+    # Separar los eventos no identificados (preguntas a Andrea) del resto
+    no_identificados = [m for m in mensajes if m.startswith("❓")]
+    mensajes_info = [m for m in mensajes if not m.startswith("❓")]
+
+    # Solo enviar WhatsApp en la sincronización automática del mes actual
+    if mes == hoy.month and anio == hoy.year:
+        texto = "📅 Sincronización con Calendar:\n\n"
+        texto += "\n\n".join(mensajes)
+        enviar_mensaje(texto)
+
+    return {
+        "nuevos": len(cambios["nuevos"]),
+        "cancelados": len(cambios["cancelados"]),
+        "modificados": len(cambios["modificados"]),
+        "mensajes": mensajes_info,
+        "no_identificados": no_identificados
+    }
