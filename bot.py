@@ -824,9 +824,24 @@ def ejecutar_accion(accion, datos, numero):
         return f"✅ Promo de {alumno['nombre']} actualizada: {detalle}"
     
     elif accion == "borrar_pago":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        nombre_buscado = datos.get("nombre_alumno", "")
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
         if not alumno:
             return aviso
+
+        # Verificar que la sugerencia fuzzy no sea demasiado diferente al nombre buscado
+        if aviso and not datos.get("sugerencia_confirmada") and not datos.get("pago_id_a_borrar"):
+            from difflib import SequenceMatcher
+            similitud = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
+            if similitud < 0.5:
+                acciones_pendientes[numero] = {
+                    "accion": accion,
+                    "datos": {**datos, "sugerencia_confirmada": True, "alumno_id_directo": alumno["id"]},
+                    "candidatos": [{"nombre": alumno["nombre"], "id": alumno["id"],
+                                    "representante": alumno["representante"]}]
+                }
+                return (f"No encontré '{nombre_buscado}'. ¿Quisiste decir {alumno['nombre']}?\n"
+                        f"Respondé 1 para confirmar o escribí el nombre correcto.")
 
         # Si viene con pago_id elegido y confirmación, ejecutamos el borrado
         if datos.get("pago_id_a_borrar") and datos.get("confirmado"):
@@ -960,7 +975,7 @@ def webhook():
                         respuesta = MessagingResponse()
                         respuesta.message(respuesta_texto)
                         return str(respuesta)
-                elif pendiente["datos"].get("confirmado"):
+                elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
                     # El usuario está confirmando o cancelando el borrado
                     if opcion == 1:
                         accion = "borrar_pago"
