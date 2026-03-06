@@ -928,12 +928,12 @@ function sincronizarCalendario() {
       if (d.nuevos === 0 && d.cancelados === 0 && d.modificados === 0) {
         alert('\u2705 Sin cambios - el calendario ya estaba actualizado.');
       } else {
-        var msg = '\u2705 Sincronizaci\u00f3n ' + mes + '/' + anio + ':\n';
-        if (d.nuevos > 0) msg += '\u2022 ' + d.nuevos + ' clase(s) nueva(s)\n';
-        if (d.cancelados > 0) msg += '\u2022 ' + d.cancelados + ' clase(s) cancelada(s)\n';
-        if (d.modificados > 0) msg += '\u2022 ' + d.modificados + ' clase(s) modificada(s)\n';
+        var msg = 'Sincronizacion ' + mes + '/' + anio + ':\n';
+        if (d.nuevos > 0) msg += '- ' + d.nuevos + ' clase(s) nueva(s)\n';
+        if (d.cancelados > 0) msg += '- ' + d.cancelados + ' clase(s) cancelada(s)\n';
+        if (d.modificados > 0) msg += '- ' + d.modificados + ' clase(s) modificada(s)\n';
         if (d.no_identificados && d.no_identificados.length > 0) {
-          msg += '\n\u26a0\ufe0f Eventos sin identificar:\n' + d.no_identificados.join('\n');
+          msg += '\nEventos sin identificar:\n' + d.no_identificados.join('\n');
         }
         alert(msg);
       }
