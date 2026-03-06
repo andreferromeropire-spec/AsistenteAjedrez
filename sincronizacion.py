@@ -60,9 +60,11 @@ def detectar_cambios(mes, anio):
 
     clases_db = cursor.fetchall()
 
-    # Traer IDs que ya decidiste ignorar
-    cursor.execute("SELECT google_event_id FROM eventos_ignorados")
-    ids_ignorados = {row['google_event_id'] for row in cursor.fetchall()}
+    # Traer IDs y titulos que ya decidiste ignorar
+    cursor.execute("SELECT google_event_id, titulo FROM eventos_ignorados")
+    rows_ignorados = cursor.fetchall()
+    ids_ignorados = {row['google_event_id'] for row in rows_ignorados}
+    titulos_ignorados = {row['titulo'].lower().strip() for row in rows_ignorados if row['titulo']}
     
     conn.close()
 
@@ -76,7 +78,8 @@ def detectar_cambios(mes, anio):
 
     # Eventos nuevos o modificados
     for google_id, evento in calendar_por_id.items():
-        if google_id in ids_ignorados:
+        titulo_lower = evento.get("titulo","").lower().strip()
+        if google_id in ids_ignorados or titulo_lower in titulos_ignorados:
             continue  # Ya decidiste ignorar este evento
         if google_id not in db_por_id:
             nuevos.append({

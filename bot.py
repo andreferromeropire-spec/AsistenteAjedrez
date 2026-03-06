@@ -957,6 +957,22 @@ def ejecutar_accion(accion, datos, numero):
         texto += "\n\n¿Cuál querés borrar? Respondé con el número."
         return (aviso + "\n" + texto) if aviso else texto
 
+    elif accion == "ignorar_evento":
+        titulo = datos.get("titulo", "")
+        if not titulo:
+            return "No entendi que evento queresIgnorar. Decime el titulo exacto."
+        from database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        key = f"titulo_{titulo}"
+        cursor.execute(
+            "INSERT OR IGNORE INTO eventos_ignorados (google_event_id, titulo, fecha_ignorado) VALUES (?, ?, ?)",
+            (key, titulo, date.today().isoformat())
+        )
+        conn.commit()
+        conn.close()
+        return f"Listo, voy a ignorar ese evento en futuras sincronizaciones."
+
     elif accion == "sincronizar_calendario":
         from sincronizacion import sincronizacion_diaria
         hoy = date.today()

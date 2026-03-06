@@ -102,7 +102,11 @@ Las acciones posibles son:
     Ejemplos: "sincronizá el calendario", "sincronizar clases", "actualizá las clases desde calendar",
               "sincronizá marzo", "traé las clases de abril"
 
-19. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+19. "ignorar_evento" - quiere ignorar un evento del calendario que no es una clase
+    datos necesarios: titulo (el título del evento a ignorar, tal como aparece)
+    Ejemplos: "ignorar: Andrea y Lucia de Elizalde", "ignorá ese evento", "no es una clase, ignoralo"
+
+20. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
