@@ -383,10 +383,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--gold:#2563a8;--gold-light:#2e72bf;--gold-dim:rgba(37,99,168,0.09);--green:#2e7d5e;--green-bg:rgba(46,125,94,0.1);--red:#b84040;--red-bg:rgba(184,64,64,0.1)}
-[data-theme="light"]{--bg:#f7f9fc;--bg2:#edf2f8;--surface:#ffffff;--surface2:#f2f6fb;--border:#c8d8eb;--text:#0f1e30;--text-dim:#4a6a8a;--text-muted:#85a0bc;--shadow:rgba(20,50,90,0.07)}
+:root{--gold:#1a56a0;--gold-light:#1a56a0;--gold-dim:rgba(26,86,160,0.08);--green:#1e7a52;--green-bg:rgba(30,122,82,0.1);--red:#b03030;--red-bg:rgba(176,48,48,0.1)}
+[data-theme="light"]{--bg:#ffffff;--bg2:#f0f5fa;--surface:#ffffff;--surface2:#eaf1f8;--border:#b8cfe0;--text:#0a1628;--text-dim:#2c4a6a;--text-muted:#6a8faa;--shadow:rgba(10,40,80,0.08)}
 [data-theme="dark"]{--bg:#0c1018;--bg2:#111820;--surface:#161e28;--surface2:#1c2530;--border:#253040;--text:#d0dce8;--text-dim:#5a7090;--text-muted:#354555;--shadow:rgba(0,0,0,0.4)}
-[data-theme="navy"]{--bg:#07090f;--bg2:#0b0e18;--surface:#0f1420;--surface2:#131928;--border:#1a2438;--text:#b8ccdf;--text-dim:#4a6280;--text-muted:#253545;--shadow:rgba(0,0,0,0.5);--gold:#5b9bd5;--gold-light:#7ab8f0;--gold-dim:rgba(91,155,213,0.12);--green:#4a9e7a;--red:#c0524a}
+[data-theme="navy"]{--bg:#07090f;--bg2:#0b0e18;--surface:#0f1420;--surface2:#131928;--border:#1a2438;--text:#b8ccdf;--text-dim:#4a6280;--text-muted:#253545;--shadow:rgba(0,0,0,0.5);--gold:#4d8fd4;--gold-light:#4d8fd4;--gold-dim:rgba(77,143,212,0.12);--green:#4a9e7a;--red:#c0524a}
 html{font-size:15px}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background 0.25s,color 0.25s}
 header{display:flex;align-items:center;justify-content:space-between;padding:0.9rem 1.75rem;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 2px 12px var(--shadow)}
@@ -570,7 +570,7 @@ tr:hover td{background:var(--gold-dim)}
       <div class="tab-panel" id="tab-alumnos">
         <div class="filters"><input type="text" placeholder="Buscar nombre o representante..." oninput="filtrarTabla('t-alumnos',this.value)"></div>
         <div class="table-wrap">
-          <table><thead><tr><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Clases</th><th>Pago</th><th></th></tr></thead>
+          <table><thead><tr><th>ID</th><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Clases</th><th>Pago</th><th></th></tr></thead>
           <tbody id="t-alumnos"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody></table>
         </div>
       </div>
@@ -802,7 +802,7 @@ function cargarAlumnos() {
         + '<button class="btn-icon btn-editar" title="Ver / editar" data-nombre="'+n+'">&#9998;</button>'
         + '<button class="btn-icon danger btn-borrar-alumno" title="Borrar" data-nombre="'+n+'">&#128465;</button>'
         + '</div>';
-      return '<tr><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
+      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
     }).join('') || '<tr><td colspan="9" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
   });
