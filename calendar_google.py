@@ -60,7 +60,13 @@ def obtener_eventos(fecha_inicio, fecha_fin):
     return eventos.get('items', [])
 
 # BUSCAR_ALUMNO_EN_EVENTO: Intenta identificar qué alumno
-# corresponde a un evento del calendario por el título
+# corresponde a un evento del calendario por el título.
+#
+# La lógica tiene 4 pasadas, de más precisa a menos precisa:
+# 1. Nombre completo del alumno en el título (ej: "Henry Chen" en "Chess Henry Chen")
+# 2. Apellido del representante o alias completo
+# 3. Todas las palabras del nombre están en el título (match parcial seguro)
+# 4. Al menos una palabra larga está en el título (fallback, solo si no hay ambigüedad)
 def buscar_alumno_en_evento(titulo):
     # Ignorar todo lo que venga después de " and " o " y " (suele ser el nombre de Andrea)
     if " and " in titulo.lower():
@@ -71,28 +77,42 @@ def buscar_alumno_en_evento(titulo):
     alumnos_activos = obtener_todos_los_alumnos()
     titulo_min = titulo.lower()
 
-    # Primero pasada: buscar nombre completo exacto
+    # PASADA 1: nombre completo exacto del alumno
+    # "Henry Chen" → solo matchea si "henry chen" está en el título
     for alumno in alumnos_activos:
         nombre = alumno['nombre'].lower().strip()
         if nombre in titulo_min:
             return alumno
 
-    # Segunda pasada: buscar por representante o alias
+    # PASADA 2: alias o apellido del representante completo
     for alumno in alumnos_activos:
         rep_valor = alumno['representante'] or ""
         representante = "" if rep_valor.strip() == "-" else rep_valor.lower().strip()
         alias = (alumno['alias'] or "").lower().strip()
-        
-        if representante and len(representante) >= 3 and representante in titulo_min:
-            return alumno
+
         if alias and len(alias) >= 3 and alias in titulo_min:
             return alumno
+        if representante and len(representante) >= 3 and representante in titulo_min:
+            return alumno
 
-    # Tercera pasada: buscar por palabra suelta (menos preciso)
+    # PASADA 3: todas las palabras del nombre están en el título
+    # Más seguro que buscar palabra suelta — exige que estén TODAS
+    # Ej: ["henry", "chen"] → ambas deben aparecer en el título
+    for alumno in alumnos_activos:
+        palabras = alumno['nombre'].lower().strip().split()
+        palabras_largas = [p for p in palabras if len(p) > 3]
+        if palabras_largas and all(p in titulo_min for p in palabras_largas):
+            return alumno
+
+    # PASADA 4: al menos una palabra larga, pero solo si hay un único candidato
+    # Evita que "henry" matchee ambos Henrys
+    candidatos = []
     for alumno in alumnos_activos:
         nombre = alumno['nombre'].lower().strip()
         if any(palabra in titulo_min for palabra in nombre.split() if len(palabra) > 3):
-            return alumno
+            candidatos.append(alumno)
+    if len(candidatos) == 1:
+        return candidatos[0]
 
     return None
 
