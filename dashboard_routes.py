@@ -1216,6 +1216,8 @@ function cargarTodo() {
   cargarDeudores();
   cargarAlumnos();
   cargarUltimaSync();
+  // Recargar cobros si esa pestaña está activa
+  if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
 }
 
 function cargarResumen() {
@@ -2118,6 +2120,10 @@ function abrirPago(gi, noCloseOthers) {
     });
   }
   form.style.display = 'flex';
+  if (!noCloseOthers) {
+    var btnReg = document.getElementById('btn-registrar-abiertos');
+    if (btnReg) btnReg.style.display = 'none';
+  }
 }
 
 function confirmarPagoInline(gi) {

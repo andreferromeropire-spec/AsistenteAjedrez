@@ -971,6 +971,68 @@ def ejecutar_accion(accion, datos, numero):
     
     elif accion == "borrar_pago":
         nombre_buscado = datos.get("nombre_alumno", "")
+
+        # ── Detección de representante ──
+        # Si buscan por representante, borrar TODOS sus pagos juntos del mes
+        if not datos.get("alumno_id_directo") and not datos.get("pago_id_a_borrar"):
+            from alumnos import buscar_alumno_por_representante
+            alumnos_del_rep = buscar_alumno_por_representante(nombre_buscado)
+            if alumnos_del_rep:
+                rep_nombre = alumnos_del_rep[0]["representante"]
+                nombres = " y ".join([a["nombre"] for a in alumnos_del_rep])
+                ids_alumnos = [a["id"] for a in alumnos_del_rep]
+                # Buscar pagos recientes de todos sus alumnos
+                from database import get_connection as _gc
+                conn_rep = _gc()
+                pagos_rep = []
+                for aid in ids_alumnos:
+                    ps = conn_rep.execute(
+                        "SELECT p.id, p.monto, p.moneda, p.fecha, a.nombre as alumno_nombre "
+                        "FROM pagos p JOIN alumnos a ON p.alumno_id = a.id "
+                        "WHERE p.alumno_id = ? ORDER BY p.fecha DESC LIMIT 3",
+                        (aid,)
+                    ).fetchall()
+                    pagos_rep.extend([dict(p) for p in ps])
+                conn_rep.close()
+
+                if not pagos_rep:
+                    return f"{rep_nombre} ({nombres}) no tiene pagos registrados."
+
+                if not datos.get("confirmado_rep"):
+                    # Agrupar por fecha para mostrar resumen
+                    from collections import defaultdict
+                    por_fecha = defaultdict(list)
+                    for p in pagos_rep:
+                        por_fecha[p["fecha"]].append(p)
+                    resumen_lineas = []
+                    pagos_ids_por_fecha = {}
+                    for fecha, ps in sorted(por_fecha.items(), reverse=True):
+                        total = sum(p["monto"] for p in ps)
+                        moneda = ps[0]["moneda"]
+                        alumnos_str = ", ".join([p["alumno_nombre"] for p in ps])
+                        resumen_lineas.append(f"• {fecha}: ${total} {moneda} ({alumnos_str})")
+                        pagos_ids_por_fecha[fecha] = [p["id"] for p in ps]
+
+                    acciones_pendientes[numero] = {
+                        "accion": "borrar_pago",
+                        "datos": {
+                            **datos,
+                            "confirmado_rep": True,
+                            "nombre_alumno": nombre_buscado,
+                            "pagos_ids_por_fecha": pagos_ids_por_fecha
+                        }
+                    }
+                    texto = "Pagos de " + rep_nombre + " (" + nombres + "):\n"
+                    for i, linea in enumerate(resumen_lineas[:5], 1):
+                        texto += str(i) + ". " + linea + "\n"
+                    texto += "0. Cancelar\n\n\u00bfCu\u00e1l quer\u00e9s borrar? Respond\u00e9 con el n\u00famero."
+                    return texto
+
+                # Ya eligió cuál borrar
+                if datos.get("pagos_ids_por_fecha"):
+                    from acciones_pendientes_handler import _get_eleccion
+                    pass  # lo manejamos abajo en el flujo de pagos_candidatos
+
         alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
         if not alumno:
             return aviso
@@ -1157,21 +1219,43 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 return "Responde 1 para confirmar o 2 para reingresar el monto."
 
         elif pendiente.get("accion") == "borrar_pago":
-            if "pagos_candidatos" in pendiente:
+            if "pagos_ids_por_fecha" in pendiente["datos"]:
+                # Caso representante: borrar todos los pagos de la fecha elegida
+                por_fecha = pendiente["datos"]["pagos_ids_por_fecha"]
+                fechas = sorted(por_fecha.keys(), reverse=True)
+                if opcion == 0:
+                    del acciones_pendientes[numero]
+                    return "Cancelado, no se borró nada."
+                elif 1 <= opcion <= len(fechas):
+                    fecha_elegida = fechas[opcion - 1]
+                    ids_a_borrar = por_fecha[fecha_elegida]
+                    del acciones_pendientes[numero]
+                    from pagos import borrar_pago as _borrar_pago
+                    borrados = 0
+                    clases_desmarcadas = 0
+                    for pid in ids_a_borrar:
+                        ok, res = _borrar_pago(pid)
+                        if ok:
+                            borrados += 1
+                            clases_desmarcadas += res if isinstance(res, int) else 0
+                    msg = f"🗑️ {borrados} pago(s) borrado(s) de {fecha_elegida}."
+                    if clases_desmarcadas > 0:
+                        msg += f" {clases_desmarcadas} clase(s) quedaron marcadas como no pagas."
+                    return msg
+                else:
+                    return f"Elegí un número entre 0 y {len(fechas)}."
+            elif "pagos_candidatos" in pendiente:
                 candidatos = pendiente["pagos_candidatos"]
                 if opcion == 0:
                     del acciones_pendientes[numero]
                     return "Cancelado, no se borró nada."
                 elif 1 <= opcion <= len(candidatos):
                     elegido = candidatos[opcion - 1]
-                    # Llamamos directamente a ejecutar_accion con el pago elegido
-                    # y retornamos para evitar doble ejecución
                     datos_borrar = {
                         **pendiente["datos"],
                         "pago_id_a_borrar": elegido["id"],
                         "detalle_pago_elegido": dict(elegido)
                     }
-                    # Actualizamos pendiente sin pagos_candidatos
                     acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos_borrar}
                     return ejecutar_accion("borrar_pago", datos_borrar, numero)
                 else:
