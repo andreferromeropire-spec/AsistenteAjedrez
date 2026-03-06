@@ -210,7 +210,7 @@ def ejecutar_accion(accion, datos, numero):
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id, fecha FROM clases
-                    WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                    WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                     AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                     ORDER BY fecha ASC
                 """, (alumno_rep["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -335,13 +335,13 @@ def ejecutar_accion(accion, datos, numero):
         if cantidad_clases:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT ?
             """, (alumno["id"], cantidad_clases))
         elif todas_del_mes or modalidad == "Mensual":
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -355,13 +355,13 @@ def ejecutar_accion(accion, datos, numero):
         elif "10" in modalidad or "paquete" in modalidad.lower():
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT 10
             """, (alumno["id"],))
         else:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))

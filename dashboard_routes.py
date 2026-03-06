@@ -42,7 +42,16 @@ def logout():
 @dashboard_bp.route('/dashboard')
 @login_required
 def dashboard():
-    return Response(DASHBOARD_HTML, mimetype='text/html')
+    from datetime import date as _date
+    hoy = _date.today()
+    meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+             'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    mes_options = ''.join(
+        f'<option value="{i+1}"{" selected" if i+1==hoy.month else ""}>{m}</option>'
+        for i, m in enumerate(meses)
+    )
+    html = DASHBOARD_HTML.replace('{MES_OPTIONS}', mes_options)
+    return Response(html, mimetype='text/html')
 
 
 @dashboard_bp.route('/dashboard/api/chat', methods=['POST'])
@@ -813,12 +822,7 @@ tr:hover td{background:var(--gold-dim)}
     <div class="mes-nav">
       <button class="btn mes-btn" onclick="cambiarMes(-1)">&#9664;</button>
       <select id="sel-mes">
-        <option value="1">Enero</option><option value="2">Febrero</option>
-        <option value="3">Marzo</option><option value="4">Abril</option>
-        <option value="5">Mayo</option><option value="6">Junio</option>
-        <option value="7">Julio</option><option value="8">Agosto</option>
-        <option value="9">Septiembre</option><option value="10">Octubre</option>
-        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+        {MES_OPTIONS}
       </select>
       <select id="sel-anio">
         <option value="2025">2025</option>
@@ -1040,13 +1044,12 @@ tr:hover td{background:var(--gold-dim)}
 </main>
 
 <script>
-var mes = new Date().getMonth() + 1;
-var anio = new Date().getFullYear();
 var charts = {};
 var chatHistorial = [];
 
-document.getElementById('sel-mes').value = mes;
-document.getElementById('sel-anio').value = anio;
+// Leer mes/anio del selector (que el servidor ya pre-seleccionó con el mes actual)
+var mes = parseInt(document.getElementById('sel-mes').value);
+var anio = parseInt(document.getElementById('sel-anio').value);
 document.getElementById('sel-mes').addEventListener('change', function() { mes = +this.value; cargarTodo(); });
 document.getElementById('sel-anio').addEventListener('change', function() { anio = +this.value; cargarTodo(); });
 
