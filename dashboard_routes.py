@@ -197,16 +197,22 @@ def api_alumnos():
 def api_clases():
     mes = int(request.args.get('mes', date.today().month))
     anio = int(request.args.get('anio', date.today().year))
+    alumno_filtro = request.args.get('alumno', '')
     conn = get_connection()
-    clases = conn.execute("""
-        SELECT c.fecha, c.hora, c.estado, c.origen,
+    query = """
+        SELECT c.fecha, c.hora, c.estado, c.origen, c.pago_id,
                a.nombre, a.pais, a.moneda, a.modalidad
         FROM clases c
         JOIN alumnos a ON c.alumno_id = a.id
         WHERE strftime('%m',c.fecha)=? AND strftime('%Y',c.fecha)=?
         AND a.activo=1
-        ORDER BY c.fecha, c.hora
-    """, (f"{mes:02d}", str(anio))).fetchall()
+    """
+    params = [f"{mes:02d}", str(anio)]
+    if alumno_filtro:
+        query += " AND a.nombre LIKE ?"
+        params.append(f"%{alumno_filtro}%")
+    query += " ORDER BY c.fecha, c.hora"
+    clases = conn.execute(query, params).fetchall()
     conn.close()
     return jsonify([dict(c) for c in clases])
 
@@ -224,8 +230,23 @@ def api_pagos():
         WHERE strftime('%m',p.fecha)=? AND strftime('%Y',p.fecha)=?
         ORDER BY p.fecha DESC
     """, (f"{mes:02d}", str(anio))).fetchall()
+    # Para cada pago, buscar las fechas de clases asociadas
+    resultado = []
+    for p in pagos:
+        d = dict(p)
+        clases = conn.execute(
+            "SELECT fecha FROM clases WHERE pago_id=? ORDER BY fecha ASC",
+            (p['id'],)
+        ).fetchall()
+        if clases:
+            dias = ", ".join([c['fecha'].split('-')[2] for c in clases])
+            meses = clases[0]['fecha'][:7]  # YYYY-MM
+            d['clases_resumen'] = f"{len(clases)} clase{'s' if len(clases)>1 else ''} — días {dias}"
+        else:
+            d['clases_resumen'] = ''
+        resultado.append(d)
     conn.close()
-    return jsonify([dict(p) for p in pagos])
+    return jsonify(resultado)
 
 
 @dashboard_bp.route('/dashboard/api/borrar_pago_id', methods=['POST'])
@@ -531,7 +552,9 @@ tr:hover td{background:var(--gold-dim)}
 
       <div class="tab-panel active" id="tab-clases">
         <div class="filters">
-          <input type="text" placeholder="Buscar alumno..." oninput="filtrarTabla('t-clases',this.value)">
+          <select id="filtro-alumno-clases" onchange="cargarClases()">
+            <option value="">Todos los alumnos</option>
+          </select>
           <select id="filtro-estado" onchange="cargarClases()">
             <option value="">Todos los estados</option>
             <option value="agendada">Agendada</option>
@@ -539,7 +562,7 @@ tr:hover td{background:var(--gold-dim)}
           </select>
         </div>
         <div class="table-wrap">
-          <table><thead><tr><th>Fecha</th><th>Hora</th><th>Alumno</th><th>Estado</th><th>Origen</th><th>Pais</th></tr></thead>
+          <table><thead><tr><th>Fecha</th><th>Hora</th><th>Alumno</th><th>Estado</th><th>Pago</th><th>Pais</th></tr></thead>
           <tbody id="t-clases"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
         </div>
       </div>
@@ -549,7 +572,7 @@ tr:hover td{background:var(--gold-dim)}
           <div class="section-title">Pagos registrados</div>
           <div class="filters"><input type="text" placeholder="Buscar..." oninput="filtrarTabla('t-pagos',this.value)"></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Fecha</th><th>Alumno</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Notas</th><th></th></tr></thead>
+            <table><thead><tr><th>Fecha</th><th>Alumno</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Clases</th><th>Notas</th><th></th></tr></thead>
             <tbody id="t-pagos"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
           </div>
           <div class="totals-row" id="totales-pagos"></div>
@@ -743,12 +766,32 @@ function cargarResumen() {
   });
 }
 
+function poblarFiltroAlumnos() {
+  api('alumnos').then(function(datos) {
+    var sel = document.getElementById('filtro-alumno-clases');
+    var actual = sel.value;
+    // Mantener solo la primera opcion
+    while (sel.options.length > 1) sel.remove(1);
+    datos.sort(function(a,b){ return a.nombre.localeCompare(b.nombre); });
+    datos.forEach(function(a) {
+      var opt = document.createElement('option');
+      opt.value = a.nombre;
+      opt.textContent = a.nombre;
+      if (a.nombre === actual) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+}
+
 function cargarClases() {
   var estadoFiltro = document.getElementById('filtro-estado').value;
-  api('clases').then(function(datos) {
+  var alumnoFiltro = document.getElementById('filtro-alumno-clases').value;
+  var url = 'clases' + (alumnoFiltro ? '?alumno='+encodeURIComponent(alumnoFiltro) : '');
+  api(url).then(function(datos) {
     if (estadoFiltro) datos = datos.filter(function(c){ return c.estado.indexOf(estadoFiltro) !== -1; });
     var html = datos.length ? datos.map(function(c) {
-      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+c.origen+'</td><td>'+(c.pais||'-')+'</td></tr>';
+      var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
+      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td></tr>';
     }).join('') : '<tr><td colspan="6" class="empty">Sin clases en este periodo</td></tr>';
     document.getElementById('t-clases').innerHTML = html;
   });
@@ -765,7 +808,8 @@ function cargarPagos() {
       var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
       var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
       var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
-      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
+      var clases_res = p.clases_resumen ? '<span style="color:var(--text-dim);font-size:0.78rem">'+p.clases_resumen+'</span>' : '-';
+      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
@@ -889,6 +933,7 @@ function borrarPagoDirecto(pagoId, resumen) {
       if (d.clases_desmarcadas > 0) msg += ' (' + d.clases_desmarcadas + ' clase(s) desmarcada(s))';
       alert(msg);
       cargarTodo();
+  poblarFiltroAlumnos();
     } else {
       alert('Error: ' + (d.error || 'No se pudo borrar'));
     }

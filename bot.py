@@ -601,7 +601,7 @@ def ejecutar_accion(accion, datos, numero):
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT fecha, hora FROM clases
+            SELECT fecha, hora, pago_id FROM clases
             WHERE alumno_id = ?
             AND strftime('%m', fecha) = ?
             AND strftime('%Y', fecha) = ?
@@ -613,10 +613,14 @@ def ejecutar_accion(accion, datos, numero):
         if not clases:
             return f"{alumno['nombre']} no tiene clases agendadas en {mes}/{anio}."
         respuesta = f"📅 Clases de {alumno['nombre']} en {mes}/{anio}:\n"
+        pagadas = 0
         for clase in clases:
             hora = f" a las {clase['hora']}" if clase['hora'] else ""
-            respuesta += f"• {clase['fecha']}{hora}\n"
-        respuesta += f"\nTotal: {len(clases)} clases"
+            paga = " ✅" if clase['pago_id'] else ""
+            if clase['pago_id']:
+                pagadas += 1
+            respuesta += f"• {clase['fecha']}{hora}{paga}\n"
+        respuesta += f"\nTotal: {len(clases)} clases ({pagadas} pagas, {len(clases)-pagadas} pendientes)"
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "cuanto_debe_alumno":
