@@ -1,6 +1,5 @@
 """
 dashboard_routes.py
-PRUEBA DE DEPLOY
 """
 from flask import Blueprint, Response, request, session, redirect, jsonify
 from functools import wraps
@@ -1723,7 +1722,7 @@ function registrarTodosAbiertos() {
   if (!pendientes.length) { alert('No hay formularios con monto v\u00e1lido para registrar.'); return; }
   var registrados = 0;
   var errores = [];
-  function procesarSiguiente(idx) {
+  var procesarSiguiente = function(idx) {
     if (idx >= pendientes.length) {
       var msg = '\u2705 ' + registrados + ' pago(s) registrado(s).';
       if (errores.length) msg += ' \u26a0\ufe0f Errores: ' + errores.join(', ');
@@ -1749,7 +1748,6 @@ function registrarTodosAbiertos() {
 
 function renderCobrosSemana(cont) {
   var semanas = {};
-  // Agrupar clases por semana Y por responsable dentro de cada semana
   cobrosData.forEach(function(g) {
     g.alumnos.forEach(function(a) {
       a.clases.forEach(function(c) {
@@ -1763,8 +1761,7 @@ function renderCobrosSemana(cont) {
         if (!semanas[key].grupos[resp]) {
           semanas[key].grupos[resp] = {
             gi: cobrosData.indexOf(g),
-            responsable: resp,
-            moneda: g.moneda,
+            responsable: resp, moneda: g.moneda,
             metodo: g.metodo_pago,
             monto_calculado: g.monto_calculado,
             precio_unitario: g.precio_unitario,
@@ -1789,51 +1786,45 @@ function renderCobrosSemana(cont) {
 
   var semIdx = 0;
   html += keys.map(function(key) {
+    var si = semIdx++;
     var sem = semanas[key];
     var domingo = new Date(sem.lunes); domingo.setDate(sem.lunes.getDate() + 6);
     var titulo = 'Semana del ' + sem.lunes.getDate() + '/' + (sem.lunes.getMonth()+1)
                + ' al ' + domingo.getDate() + '/' + (domingo.getMonth()+1);
-    var totalItems = Object.values(sem.grupos).reduce(function(s,g){return s+g.items.length;},0);
     var respKeys = Object.keys(sem.grupos);
-    var si = semIdx++;
+    var totalItems = respKeys.reduce(function(s,r){ return s + sem.grupos[r].items.length; }, 0);
 
     var gruposHtml = respKeys.map(function(resp) {
-      var grupo = sem.grupos[resp];
-      var n = grupo.items.length;
-      var monto = grupo.precio_unitario ? Math.round(grupo.precio_unitario * n * 100)/100 : null;
-      var montoStr = monto ? simMoneda(grupo.moneda) + fmt(monto) + ' ' + grupo.moneda : 'sin precio';
-      var filas = grupo.items.map(function(it) {
-        return '<div class="cobros-grupo-clases" style="padding-left:1.5rem">'
-          + formatFecha(it.fecha) + ' ' + (it.hora||'')
-          + ' \u2014 <strong>' + it.alumno + '</strong>'
-          + (it.es_representante ? ' <span style="color:var(--text-muted);font-size:0.75rem">(' + resp + ')</span>' : '')
-          + '</div>';
+      var grp = sem.grupos[resp];
+      var sim = simMoneda(grp.moneda);
+      var n = grp.items.length;
+      var monto = grp.precio_unitario ? Math.round(grp.precio_unitario * n * 100) / 100 : null;
+      var montoStr = monto ? sim + fmt(monto) + ' ' + grp.moneda : 'sin precio';
+      var filas = grp.items.map(function(it) {
+        return '<div class="cobros-grupo-clases">' + formatFecha(it.fecha) + ' ' + (it.hora||'')
+          + ' &mdash; <strong>' + it.alumno + '</strong></div>';
       }).join('');
-      return '<div style="border-top:1px solid var(--bg2)">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 1rem">'
-        + '<span style="font-size:0.83rem;font-weight:500">' + resp + '</span>'
-        + '<span style="font-size:0.82rem;color:var(--gold-light)">' + montoStr + '</span>'
+      return '<div style="border-top:1px solid var(--border);padding:0.5rem 1rem">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.25rem 0">'
+        + '<span style="font-size:0.85rem;font-weight:500">' + resp + '</span>'
+        + '<span class="cobros-grupo-monto" style="font-size:0.85rem">' + montoStr + '</span>'
         + '</div>' + filas + '</div>';
     }).join('');
 
-    // Guardar datos del grupo para poder registrar
-    return '<div class="cobros-grupo" id="sem-grupo-' + si + '" data-sem-key="' + key + '">'
+    var safeKey = key.replace(/-/g, '_');
+    return '<div class="cobros-grupo" id="sem-grupo-' + si + '">'
       + '<div class="cobros-grupo-header">'
       + '<div style="display:flex;align-items:center;gap:0.6rem">'
-      + '<input type="checkbox" class="sem-check" data-si="' + si + '" data-key="' + key + '" '
-      + 'onchange="actualizarBotonesSemana()" style="width:15px;height:15px;cursor:pointer">'
+      + '<input type="checkbox" class="sem-check" data-si="' + si + '" data-key="' + key + '" onchange="actualizarBotonesSemana()" style="width:15px;height:15px;cursor:pointer">'
       + '<div><div class="cobros-grupo-titulo">' + titulo + '</div>'
-      + '<div class="cobros-grupo-sub">' + totalItems + ' clase(s) \u2014 ' + respKeys.length + ' responsable(s)</div>'
+      + '<div class="cobros-grupo-sub">' + totalItems + ' clase(s) &mdash; ' + respKeys.length + ' responsable(s)</div>'
       + '</div></div>'
-      + '<button class="btn" onclick="abrirPagoSemana(' + si + ','' + key + '')">Registrar semana</button>'
+      + '<button class="btn sem-registrar-btn" data-si="' + si + '" data-key="' + key + '">Registrar semana</button>'
       + '</div>'
       + gruposHtml
       + '<div class="cobros-inline-form cobros-sem-form" id="sem-form-' + si + '" style="display:none"></div>'
       + '</div>';
   }).join('');
-
-  // Guardar mapa semanas para usar al registrar
-  window._semanasData = semanas;
   cont.innerHTML = html;
 }
 
@@ -1845,93 +1836,71 @@ function selectAllSemana(master) {
 function actualizarBotonesSemana() {
   var checks = document.querySelectorAll('.sem-check:checked');
   var btnAbrir = document.getElementById('btn-abrir-formularios');
-  var btnReg = document.getElementById('btn-registrar-abiertos');
-  if (btnAbrir) btnAbrir.style.display = checks.length ? 'flex' : 'none';
-  var hayAbiertos = document.querySelectorAll('.cobros-sem-form[style*="flex"]').length > 0;
-  if (btnReg) btnReg.style.display = hayAbiertos ? 'flex' : 'none';
+  btnAbrir.style.display = checks.length ? 'flex' : 'none';
 }
 
-function abrirPagoSemana(si, key) {
-  var sem = window._semanasData && window._semanasData[key];
-  if (!sem) return;
+function abrirFormularioSemana(si, key) {
+  var semanas_data = window._semanas_data;
+  if (!semanas_data || !semanas_data[key]) return;
   var form = document.getElementById('sem-form-' + si);
   if (!form) return;
-  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
+  if (form.style.display === 'flex') { form.style.display = 'none'; return; }
   document.querySelectorAll('.cobros-sem-form').forEach(function(f){ f.style.display = 'none'; });
-
-  // Un sub-formulario por responsable
-  var html = '';
-  Object.keys(sem.grupos).forEach(function(resp, ri) {
-    var g = sem.grupos[resp];
-    var n = g.items.length;
-    var monto = g.precio_unitario ? Math.round(g.precio_unitario * n * 100)/100 : '';
-    var metodosOpts = ['Wise','PayPal','Transferencia nacional'].map(function(m){
-      return '<option' + (m===g.metodo?' selected':'') + '>' + m + '</option>';
-    }).join('');
-    var monedaOpts = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
-      return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
-    }).join('');
-    html += '<div style="border-top:1px solid var(--bg2);padding:0.6rem 1rem 0">'
-      + '<div style="font-size:0.8rem;font-weight:500;margin-bottom:0.4rem">' + resp + ' (' + n + ' clases)</div>'
-      + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">'
-      + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">Monto</label>'
-      + '<input type="number" step="0.01" class="sem-monto-' + si + '" data-resp="' + resp + '" value="' + monto + '" style="width:110px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem"></div>'
-      + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">Moneda</label>'
-      + '<select class="sem-moneda-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem">' + monedaOpts + '</select></div>'
-      + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">M\u00e9todo</label>'
-      + '<select class="sem-metodo-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem">' + metodosOpts + '</select></div>'
-      + '</div></div>';
-  });
-  html += '<div style="display:flex;gap:0.5rem;padding:0.75rem 1rem">'
-    + '<button class="btn" onclick="confirmarPagoSemana(' + si + ','' + key + '')">\u2713 Confirmar todos</button>'
-    + '<button class="btn cobros-sem-cancelar" data-si="' + si + '">Cancelar</button></div>';
-  form.innerHTML = html;
+  var grp = semanas_data[key];
+  var totalItems = Object.values(grp.grupos).reduce(function(s,g){ return s + g.items.length; }, 0);
+  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
+    var firstGrp = Object.values(grp.grupos)[0];
+    return '<option' + (firstGrp && m === firstGrp.moneda ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
+    var firstGrp = Object.values(grp.grupos)[0];
+    return '<option' + (firstGrp && m === firstGrp.metodo ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  form.innerHTML = '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
+    + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
+    + '<button class="btn sem-confirmar-btn" data-si="' + si + '" data-key="' + key + '">\u2713 Confirmar</button>'
+    + '<button class="btn sem-cancelar-btn" data-si="' + si + '">Cancelar</button>'
+    + '</div>';
   form.style.display = 'flex';
-  form.style.flexDirection = 'column';
 }
 
 function confirmarPagoSemana(si, key) {
-  var sem = window._semanasData && window._semanasData[key];
-  if (!sem) return;
-  var respKeys = Object.keys(sem.grupos);
-  var pagos = [];
-  var sinMonto = [];
-  respKeys.forEach(function(resp) {
-    var g = sem.grupos[resp];
-    var montoEl = document.querySelector('.sem-monto-' + si + '[data-resp="' + resp + '"]');
-    var monedaEl = document.querySelector('.sem-moneda-' + si + '[data-resp="' + resp + '"]');
-    var metodoEl = document.querySelector('.sem-metodo-' + si + '[data-resp="' + resp + '"]');
-    if (!montoEl) return;
-    var monto = parseFloat(montoEl.value);
-    if (!monto || isNaN(monto)) { sinMonto.push(resp); return; }
-    var clase_ids = g.items.map(function(it){ return it.clase_id; });
-    // Buscar gData en cobrosData
-    var gData = cobrosData.find(function(x){ return x.responsable === resp; });
-    if (!gData) return;
+  if (!window._semanas_data || !window._semanas_data[key]) return;
+  var form = document.getElementById('sem-form-' + si);
+  var metodo = form.querySelector('.cobro-metodo-input').value;
+  var semGrupos = window._semanas_data[key].grupos;
+  var pendientes = Object.values(semGrupos).map(function(grp) {
+    var n = grp.items.length;
+    var monto = grp.precio_unitario ? Math.round(grp.precio_unitario * n * 100) / 100 : null;
+    if (!monto) return null;
+    var gData = cobrosData[grp.gi];
+    if (!gData) return null;
     var gMod = Object.assign({}, gData);
-    gMod.total_clases = g.items.length;
-    gMod.clase_ids = clase_ids;
-    gMod.alumnos = g.items.reduce(function(acc, it) {
-      var found = acc.find(function(x){ return x.alumno_id === it.alumno_id; });
-      if (found) { found.clases.push({id: it.clase_id}); found.cantidad++; }
-      else acc.push({alumno_id: it.alumno_id, nombre: it.alumno, clases: [{id: it.clase_id}], cantidad: 1});
-      return acc;
-    }, []);
-    pagos.push({g: gMod, monto: monto, moneda: monedaEl.value, metodo: metodoEl.value});
-  });
-  if (sinMonto.length) alert('Sin monto: ' + sinMonto.join(', '));
-  if (!pagos.length) return;
+    gMod.total_clases = n;
+    gMod.clase_ids = grp.items.map(function(it){ return it.clase_id; });
+    gMod.alumnos = [{
+      alumno_id: grp.items[0].alumno_id,
+      clases: grp.items.map(function(it){ return {id: it.clase_id}; }),
+      cantidad: n
+    }];
+    return {g: gMod, monto: monto, moneda: grp.moneda, metodo: metodo};
+  }).filter(Boolean);
+  if (!pendientes.length) { alert('Sin precio configurado para esta semana.'); return; }
   var registrados = 0;
-  function siguiente(i) {
-    if (i >= pagos.length) {
+  var siguiente = function(i) {
+    if (i >= pendientes.length) {
       alert('\u2705 ' + registrados + ' pago(s) registrado(s).');
+      form.style.display = 'none';
       cargarCobros(); cargarTodo(); return;
     }
-    var p = pagos[i];
-    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function(){ registrados++; siguiente(i+1); });
+    var p = pendientes[i];
+    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function() {
+      registrados++; siguiente(i+1);
+    });
   }
   siguiente(0);
 }
+
 
 function renderCobrosChecks(cont) {
   var filas = [];
@@ -2008,7 +1977,7 @@ function registrarSeleccionChecks() {
   }
   if (!pagos.length) return;
   var registrados = 0;
-  function procesarSiguiente(idx) {
+  var procesarSiguiente = function(idx) {
     if (idx >= pagos.length) {
       alert('✅ ' + registrados + ' pago(s) registrado(s).');
       cargarCobros(); cargarTodo(); return;
