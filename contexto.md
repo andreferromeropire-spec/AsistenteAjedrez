@@ -206,3 +206,104 @@ Ejemplo: Charlie tiene Grace (4 clases) + Fiona (4 clases) = 8 clases totales �
 - `test_sincronizacion.py` — prueba la detección de cambios de Calendar
 - `database.py` — crear tablas (correr una vez al inicio)
 - `sincronizar_sheets.py` — sincronizar alumnos desde Google Sheets
+
+# AsistenteAjedrez — Contexto del proyecto
+
+## Stack técnico
+- Python + Flask, SQLite, Twilio (WhatsApp), Claude API, Google Calendar API
+- Hosting: Railway (~$5-7/mes)
+- Archivos principales: bot.py, dashboard_routes.py, pagos.py, clases.py, sincronizacion.py, notificaciones.py, promociones.py, alumnos.py, database.py, calendar_google.py
+
+## Estado actual del bot (WhatsApp)
+Bot en producción. WhatsApp temporalmente bloqueado por verificación de Meta (pendiente resolver).
+
+### Acciones implementadas
+- registrar_pago (alumno individual y representante con precio combo)
+- ver_clases / clases_del_mes — muestra estado con íconos 🟢 dada 🔵 agendada 🔴 cancelada ✅ paga
+- clases_del_mes detecta representante automáticamente y muestra todas sus clases con nombre de alumno en cada línea, orden cronológico, sin preguntar
+- cuanto_debe_alumno
+- registrar_clase, cancelar_clase, reprogramar_clase
+- borrar_pago
+- agregar_alumno
+- sincronizar (manual)
+
+### Lógica de pagos
+- Fecha del pago = primer día del mes de las clases (no la fecha de registro)
+- Representantes: un pago por alumno con precio proporcional al combo
+- Precio combo: se calcula sumando clases de todos los alumnos del representante
+
+### Estados de clases
+- agendada → clase futura en el calendario
+- dada → clase pasada (se marca automáticamente en cada sync)
+- cancelada_por_profesora / cancelada_con_anticipacion
+
+### Sincronización
+- Sync matutina (8:30): sincroniza calendario, marca clases pasadas como dadas
+- Sync nocturna (20:00): marca clases de HOY como dadas, envía resumen por WhatsApp
+- Al cancelar clase ya dada: desvincula pago_id (queda como crédito)
+
+---
+
+## Estado actual del dashboard
+
+### Pestañas
+- **Clases**: tabla con filtros (alumno, estado, pago, semana). Navegación por mes.
+- **Cobros**: registro rápido de pagos con 3 vistas:
+  - Por responsable: checkbox por grupo + Seleccionar todos → Abrir formularios → Registrar todos
+  - Por semana: agrupado por semana con checkbox y registro en masa
+  - Con checkboxes: selección libre, registra cada responsable por separado automáticamente
+- **Pagos**: historial de pagos con borrado
+- **Deuda**: alumnos con clases sin pagar agrupados por representante
+- **Alumnos**: CRUD de alumnos
+- **Gráficos**: barras anuales (agendadas/dadas/canceladas) + líneas de ingresos por moneda
+
+### Métricas de cabecera
+Alumnos activos, clases agendadas, canceladas, cobrado USD/GBP/ARS
+
+### Chat integrado
+Mismo bot que WhatsApp, accesible desde el dashboard
+
+---
+
+## Bugs conocidos / pendientes chicos
+- Cobros por semana: handlers de sem-registrar-btn y sem-confirmar-btn a verificar
+- Gráfico de ingresos: monedas en la misma escala (ARS vs USD/GBP incomparables) — PENDIENTE
+- Vista por responsable: cobro en masa (abrir formularios + registrar todos) — implementado pero sin probar en prod aún
+
+---
+
+## Pendientes funcionales
+1. Gráfico ingresos: selector de moneda + conversión estimada a USD via API tipo de cambio (frankfurter.app, sin key)
+2. Cobros por semana: verificar que el flujo completo funciona en prod
+3. Resolver verificación de WhatsApp con Meta
+
+---
+
+## Lo que faltaría para ser vendible a otros profes
+
+### Mínimo viable (MVP vendible)
+1. **Onboarding automatizado**: un script o flujo que configure un nuevo profe (nombre, alumnos, promociones, calendario) sin tocar código
+2. **Multi-tenant**: cada profe tiene su propia DB o esquema aislado
+3. **Deploy propio por cliente** o un SaaS compartido con autenticación por usuario
+4. **Documentación mínima**: cómo usar el bot (5-6 comandos más comunes)
+5. **Precio y modelo de cobro definido**: one-time setup + suscripción mensual por hosting, o SaaS fijo
+
+### Ya resuelto (ventaja competitiva)
+- Lógica de precio combo por volumen de clases
+- Multi-moneda (USD, GBP, ARS)
+- Representantes (padres que pagan por varios alumnos)
+- Sync automática con Google Calendar
+- Dashboard completo
+- Notificaciones automáticas
+- Tolerancia a errores tipográficos
+
+### Riesgo principal
+- Todavía depende de que cada cliente configure su propio Twilio + Google Calendar API + Claude API
+- Eso requiere onboarding técnico o que lo hagas vos por cada cliente
+
+---
+
+## Historial de sesiones relevantes
+- Sesión 1-N: construcción del bot base, lógica de promociones, pagos, alumnos
+- Sesión reciente: dashboard con pestaña Cobros (3 vistas), cobros en masa, sync automática de clases dadas, gráficos anuales, fecha de pago = mes de las clases, clases_del_mes detecta representante
+- Última sesión: fix bugs JS (function declarations anidadas, escapes \\' en triple-quoted HTML, SyntaxError por strings en Edge)
