@@ -28,23 +28,7 @@ Tu trabajo es interpretar el mensaje y devolver SOLO un JSON con esta estructura
 Las acciones posibles son:
 
 1. "registrar_pago" - cuando alguien pagó
-   datos necesarios: nombre_alumno
-   datos opcionales según lo que diga el mensaje:
-   - monto: si menciona un número de dinero (ej: "pagó $104", "pagó 20000")
-   - moneda: solo si la menciona explícitamente (Dólar/Pesos/Libra Esterlina). Si no la menciona, NO la incluyas, el sistema la toma del perfil del alumno
-   - metodo: solo si lo menciona explícitamente (Wise/PayPal/Transferencia nacional). Si no, NO lo incluyas
-   - cantidad_clases: si menciona una cantidad de clases (ej: "pagó 3 clases", "pagó 1 clase")
-   - todas_del_mes: true si dice "todas las clases del mes", "el mes", "todo el mes"
-   - mes: número de mes si lo especifica (ej: "las clases de febrero" → mes: 2)
-   - anio: año si lo especifica
-   - notas: aclaración adicional si la hay
-   
-   Ejemplos:
-   "Stephen pagó $104" → monto: 104 (sin moneda ni metodo)
-   "Lucas pagó 3 clases" → cantidad_clases: 3
-   "Leila pagó todas las clases del mes" → todas_del_mes: true
-   "Henry pagó $28 por Wise" → monto: 28, metodo: "Wise"
-   "Grace pagó las clases de febrero" → todas_del_mes: true, mes: 2
+   datos necesarios: nombre_alumno, monto, moneda (Dólar/Pesos/Libra Esterlina), metodo (Wise/PayPal/Transferencia nacional), notas (opcional)
 
 2. "registrar_clase" - cuando se dio una clase con UN solo alumno
    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, si dice "hoy" usá la fecha de hoy), hora (opcional)
@@ -106,6 +90,13 @@ Las acciones posibles son:
     Ejemplos: "cambiá la promo de Juan: 1-5 clases $30, 6-10 clases $28",
               "agregá promo a Isabella: 1-3 clases £16, 4-5 clases £15",
               "actualizá los precios de Grace: 1-3 clases $28, 4-7 clases $25"
+
+18. "borrar_pago" - cuando quiere eliminar un pago registrado por error
+    datos necesarios: nombre_alumno
+    Ejemplos: "borrá el último pago de Stephen", "eliminar un pago de Grace",
+              "me equivoqué con el pago de Lucas", "quiero borrar un pago de Jeff",
+              "borrar registro de pago de fiona", "borra un pago de charlie",
+              "eliminar pago de karina", "quiero sacar un pago de henry"
 
 
 18. "no_entiendo" - si el mensaje no corresponde a ninguna acción
