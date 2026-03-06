@@ -181,7 +181,7 @@ def procesar_cambios(cambios):
 # También se puede llamar manualmente con un mes/año específico.
 # - Sin parámetros: sincroniza el mes actual, envía WhatsApp si hay cambios
 # - Con mes/anio: sincroniza ese mes y devuelve el resultado (para dashboard/bot)
-def sincronizacion_diaria(mes=None, anio=None):
+def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True):
     hoy = date.today()
     mes = mes or hoy.month
     anio = anio or hoy.year
@@ -197,13 +197,12 @@ def sincronizacion_diaria(mes=None, anio=None):
 
     mensajes = procesar_cambios(cambios)
 
-    # Separar los eventos no identificados (preguntas a Andrea) del resto
     no_identificados = [m for m in mensajes if m.startswith("❓")]
     mensajes_info = [m for m in mensajes if not m.startswith("❓")]
 
-    # Solo enviar WhatsApp en la sincronización automática del mes actual
-    if mes == hoy.month and anio == hoy.year:
-        texto = "📅 Sincronización con Calendar:\n\n"
+    # Solo enviar WhatsApp si se pidió explícitamente (sincronización automática)
+    if enviar_whatsapp:
+        texto = "Sincronizacion con Calendar:\n\n"
         texto += "\n\n".join(mensajes)
         enviar_mensaje(texto)
 

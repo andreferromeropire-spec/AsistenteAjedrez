@@ -253,7 +253,7 @@ def api_sincronizar():
         hoy = date.today()
         mes = int(data.get('mes', hoy.month))
         anio = int(data.get('anio', hoy.year))
-        resultado = sincronizacion_diaria(mes, anio)
+        resultado = sincronizacion_diaria(mes, anio, enviar_whatsapp=False)
         return jsonify({
             'ok': True,
             'nuevos': resultado['nuevos'],
@@ -383,10 +383,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--gold:#b48c50;--gold-light:#c9a060;--gold-dim:rgba(180,140,80,0.12);--green:#2e7d5e;--green-bg:rgba(46,125,94,0.1);--red:#b84040;--red-bg:rgba(184,64,64,0.1)}
-[data-theme="light"]{--bg:#f5f0e8;--bg2:#ece6d8;--surface:#ffffff;--surface2:#faf8f4;--border:#e0d8cc;--text:#2c2416;--text-dim:#8a7a68;--text-muted:#b0a090;--shadow:rgba(0,0,0,0.07)}
-[data-theme="dark"]{--bg:#0f0e0c;--bg2:#161411;--surface:#1a1816;--surface2:#201e1b;--border:#2e2b27;--text:#e8ddd0;--text-dim:#7a6f62;--text-muted:#4a4540;--shadow:rgba(0,0,0,0.4)}
-[data-theme="navy"]{--bg:#0a0f1a;--bg2:#0d1422;--surface:#111827;--surface2:#162035;--border:#1e2d45;--text:#c8d8f0;--text-dim:#5a7090;--text-muted:#2e4060;--shadow:rgba(0,0,0,0.5);--gold:#5b9bd5;--gold-light:#7ab8f0;--gold-dim:rgba(91,155,213,0.12);--green:#4a9e7a;--red:#c0524a}
+:root{--gold:#3d7ebf;--gold-light:#5294d4;--gold-dim:rgba(61,126,191,0.10);--green:#2e7d5e;--green-bg:rgba(46,125,94,0.1);--red:#b84040;--red-bg:rgba(184,64,64,0.1)}
+[data-theme="light"]{--bg:#f0f4f8;--bg2:#e4ecf4;--surface:#ffffff;--surface2:#f5f8fc;--border:#ccd8e8;--text:#1a2636;--text-dim:#5a7290;--text-muted:#94adc4;--shadow:rgba(30,60,100,0.07)}
+[data-theme="dark"]{--bg:#0c1018;--bg2:#111820;--surface:#161e28;--surface2:#1c2530;--border:#253040;--text:#d0dce8;--text-dim:#5a7090;--text-muted:#354555;--shadow:rgba(0,0,0,0.4)}
+[data-theme="navy"]{--bg:#07090f;--bg2:#0b0e18;--surface:#0f1420;--surface2:#131928;--border:#1a2438;--text:#b8ccdf;--text-dim:#4a6280;--text-muted:#253545;--shadow:rgba(0,0,0,0.5);--gold:#5b9bd5;--gold-light:#7ab8f0;--gold-dim:rgba(91,155,213,0.12);--green:#4a9e7a;--red:#c0524a}
 html{font-size:15px}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background 0.25s,color 0.25s}
 header{display:flex;align-items:center;justify-content:space-between;padding:0.9rem 1.75rem;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 2px 12px var(--shadow)}
