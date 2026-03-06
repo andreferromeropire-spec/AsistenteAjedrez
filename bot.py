@@ -970,10 +970,22 @@ def ejecutar_accion(accion, datos, numero):
 
         simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
         lista = []
+        conn_h = __import__("database").get_connection()
         for i, p in enumerate(pagos):
             sim = simbolos.get(p["moneda"], "")
-            notas = f" ({p['notas']})" if p["notas"] else ""
-            lista.append(f"{i+1}. {p['fecha']} — {sim}{p['monto']} {p['moneda']} por {p['metodo']}{notas}")
+            # Buscar clases asociadas a este pago
+            clases_pago = conn_h.execute(
+                "SELECT fecha FROM clases WHERE pago_id = ? ORDER BY fecha ASC",
+                (p["id"],)
+            ).fetchall()
+            if clases_pago:
+                dias = ", ".join([c["fecha"].split("-")[2] for c in clases_pago])
+                mes_año = clases_pago[0]["fecha"][:7]  # "2026-03"
+                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} (días {dias})"
+            else:
+                detalle_clases = f"registrado {p['fecha']}"
+            lista.append(f"{i+1}. {sim}{p['monto']} {p['moneda']} — {detalle_clases}")
+        conn_h.close()
 
         # Guardamos los pagos en pendiente para cuando elija el número
         acciones_pendientes[numero] = {
