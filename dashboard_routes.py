@@ -60,14 +60,61 @@ def api_chat():
         numero_web = 'dashboard_web'
         accion = 'no_entiendo'
         datos = {}
+
         if numero_web in acciones_pendientes and mensaje.strip().isdigit():
             pendiente = acciones_pendientes[numero_web]
-            if pendiente.get('accion') == 'confirmar_borrado':
+            opcion = int(mensaje.strip())
+            accion_pendiente = pendiente.get('accion')
+
+            if accion_pendiente == 'confirmar_borrado':
                 accion = 'confirmar_borrado'
-                datos = {'numero_opcion': int(mensaje.strip())}
+                datos = {'numero_opcion': opcion}
+
+            elif accion_pendiente == 'borrar_pago':
+                if 'pagos_candidatos' in pendiente:
+                    # El usuario elige qué pago borrar de la lista
+                    candidatos = pendiente['pagos_candidatos']
+                    if 1 <= opcion <= len(candidatos):
+                        elegido = candidatos[opcion - 1]
+                        accion = 'borrar_pago'
+                        datos = {
+                            **pendiente['datos'],
+                            'pago_id_a_borrar': elegido['id'],
+                            'detalle_pago_elegido': elegido
+                        }
+                        acciones_pendientes[numero_web] = {'accion': 'borrar_pago', 'datos': datos}
+                    else:
+                        return jsonify({'respuesta': f"Elegi un numero entre 1 y {len(candidatos)}."})
+                elif pendiente['datos'].get('confirmado') or pendiente['datos'].get('pago_id_a_borrar'):
+                    # El usuario confirma o cancela el borrado
+                    if opcion == 1:
+                        accion = 'borrar_pago'
+                        datos = pendiente['datos']
+                    elif opcion == 2:
+                        del acciones_pendientes[numero_web]
+                        return jsonify({'respuesta': 'Cancelado, no se borro nada.'})
+                    else:
+                        return jsonify({'respuesta': 'Responde 1 para confirmar o 2 para cancelar.'})
+                else:
+                    accion = 'aclaracion_alumno'
+                    datos = {'numero_opcion': opcion}
+
+            elif accion_pendiente == 'registrar_pago' and pendiente['datos'].get('confirmado'):
+                # Confirmacion de diferencia de monto
+                if opcion == 1:
+                    accion = 'registrar_pago'
+                    datos = pendiente['datos']
+                    del acciones_pendientes[numero_web]
+                elif opcion == 2:
+                    del acciones_pendientes[numero_web]
+                    return jsonify({'respuesta': 'Cancelado. Mandame el pago de nuevo con el monto correcto.'})
+                else:
+                    return jsonify({'respuesta': 'Responde 1 para confirmar o 2 para reingresar el monto.'})
+
             else:
                 accion = 'aclaracion_alumno'
-                datos = {'numero_opcion': int(mensaje.strip())}
+                datos = {'numero_opcion': opcion}
+
         else:
             if numero_web in acciones_pendientes and not mensaje.strip().isdigit():
                 del acciones_pendientes[numero_web]
@@ -77,6 +124,7 @@ def api_chat():
             if accion == 'aclaracion_alumno' and numero_web not in acciones_pendientes:
                 accion = 'no_entiendo'
                 datos = {}
+
         respuesta = bot_module.ejecutar_accion(accion, datos, numero_web)
         return jsonify({'respuesta': respuesta})
     except Exception as e:
