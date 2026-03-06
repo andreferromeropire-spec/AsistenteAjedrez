@@ -383,8 +383,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--gold:#3d7ebf;--gold-light:#5294d4;--gold-dim:rgba(61,126,191,0.10);--green:#2e7d5e;--green-bg:rgba(46,125,94,0.1);--red:#b84040;--red-bg:rgba(184,64,64,0.1)}
-[data-theme="light"]{--bg:#f0f4f8;--bg2:#e4ecf4;--surface:#ffffff;--surface2:#f5f8fc;--border:#ccd8e8;--text:#1a2636;--text-dim:#5a7290;--text-muted:#94adc4;--shadow:rgba(30,60,100,0.07)}
+:root{--gold:#2563a8;--gold-light:#2e72bf;--gold-dim:rgba(37,99,168,0.09);--green:#2e7d5e;--green-bg:rgba(46,125,94,0.1);--red:#b84040;--red-bg:rgba(184,64,64,0.1)}
+[data-theme="light"]{--bg:#f7f9fc;--bg2:#edf2f8;--surface:#ffffff;--surface2:#f2f6fb;--border:#c8d8eb;--text:#0f1e30;--text-dim:#4a6a8a;--text-muted:#85a0bc;--shadow:rgba(20,50,90,0.07)}
 [data-theme="dark"]{--bg:#0c1018;--bg2:#111820;--surface:#161e28;--surface2:#1c2530;--border:#253040;--text:#d0dce8;--text-dim:#5a7090;--text-muted:#354555;--shadow:rgba(0,0,0,0.4)}
 [data-theme="navy"]{--bg:#07090f;--bg2:#0b0e18;--surface:#0f1420;--surface2:#131928;--border:#1a2438;--text:#b8ccdf;--text-dim:#4a6280;--text-muted:#253545;--shadow:rgba(0,0,0,0.5);--gold:#5b9bd5;--gold-light:#7ab8f0;--gold-dim:rgba(91,155,213,0.12);--green:#4a9e7a;--red:#c0524a}
 html{font-size:15px}

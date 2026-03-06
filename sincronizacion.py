@@ -79,7 +79,10 @@ def detectar_cambios(mes, anio):
     # Eventos nuevos o modificados
     for google_id, evento in calendar_por_id.items():
         titulo_lower = evento.get("titulo","").lower().strip()
-        if google_id in ids_ignorados or titulo_lower in titulos_ignorados:
+        # Ignorar si el google_id está en la lista, o si algún titulo ignorado
+        # está contenido en el titulo del evento (match parcial)
+        titulo_ignorado = any(t in titulo_lower for t in titulos_ignorados if t)
+        if google_id in ids_ignorados or titulo_ignorado:
             continue  # Ya decidiste ignorar este evento
         if google_id not in db_por_id:
             nuevos.append({
