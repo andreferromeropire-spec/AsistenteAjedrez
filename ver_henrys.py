@@ -10,15 +10,3 @@ for h in henrys:
     print(f"id={h['id']} | nombre='{h['nombre']}' | rep='{h['representante']}'")
 
 conn.close()
-
-
-
-
-
-
-
-
-
-
-
-

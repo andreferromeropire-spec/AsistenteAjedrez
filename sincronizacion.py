@@ -214,6 +214,8 @@ def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True):
         texto += "\n\n".join(mensajes)
         enviar_mensaje(texto)
 
+    clases_nuevas = sum(1 for m in mensajes_info if m.startswith("📌"))
+
     return {
         "nuevos": clases_nuevas,
         "cancelados": len(cambios["cancelados"]),
