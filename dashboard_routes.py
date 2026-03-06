@@ -1970,7 +1970,6 @@ function actualizarSeleccion() {
 }
 
 function registrarSeleccionChecks() {
-  // Registra cada responsable seleccionado por separado, automáticamente
   var checks = document.querySelectorAll('.cobro-check:checked');
   if (!checks.length) return;
   var grupos = {};
@@ -1983,7 +1982,6 @@ function registrarSeleccionChecks() {
     grupos[resp].alumnos[aid].push(cid);
   });
   var responsables = Object.keys(grupos);
-  // Construir lista de pagos a registrar, uno por responsable
   var pagos = [];
   var sinPrecio = [];
   responsables.forEach(function(resp) {
@@ -1995,7 +1993,6 @@ function registrarSeleccionChecks() {
     var totalClases = alumnos.reduce(function(s,a){return s+a.clase_ids.length;},0);
     var monto = gData.precio_unitario ? Math.round(gData.precio_unitario * totalClases * 100) / 100 : null;
     if (monto === null) { sinPrecio.push(resp); return; }
-    // Reconstruir g con solo las clases seleccionadas
     var gMod = Object.assign({}, gData);
     gMod.total_clases = totalClases;
     gMod.clase_ids = alumnos.reduce(function(s,a){return s.concat(a.clase_ids);}, []);
@@ -2006,13 +2003,13 @@ function registrarSeleccionChecks() {
     pagos.push({g: gMod, monto: monto, moneda: grupos[resp].moneda, metodo: grupos[resp].metodo, resp: resp});
   });
   if (sinPrecio.length) {
-    alert('Sin precio cargado: ' + sinPrecio.join(', ') + '. Registralos manualmente desde "Por responsable".');
+    alert('Sin precio: ' + sinPrecio.join(', ') + '. Registralos desde Por responsable.');
   }
   if (!pagos.length) return;
   var registrados = 0;
   function procesarSiguiente(idx) {
     if (idx >= pagos.length) {
-      alert('\u2705 ' + registrados + ' pago(s) registrado(s) autom\u00e1ticamente.');
+      alert('✅ ' + registrados + ' pago(s) registrado(s).');
       cargarCobros(); cargarTodo(); return;
     }
     var p = pagos[idx];
