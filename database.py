@@ -100,12 +100,19 @@ def crear_tablas():
     except:
         pass  # Ya existe, ignorar
 
-    # pago_id en clases: guarda con qué pago se pagó esa clase
-    # Permite saber qué clases están pagas y cuáles no
     try:
         cursor.execute("ALTER TABLE clases ADD COLUMN pago_id INTEGER")
     except:
         pass  # Ya existe, ignorar
+
+    # acciones_pendientes en DB: funciona con múltiples workers
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acciones_pendientes (
+            numero TEXT PRIMARY KEY,
+            datos TEXT NOT NULL,
+            actualizado TEXT NOT NULL
+        )
+    """)
 
     conn.commit()
     conn.close()

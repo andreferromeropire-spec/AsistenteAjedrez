@@ -23,7 +23,57 @@ app.register_blueprint(dashboard_bp)
 historiales = {}
 MAXIMO_MENSAJES_HISTORIAL = 10
 
-acciones_pendientes = {}
+# acciones_pendientes persiste en DB para soportar múltiples workers
+import json as _json
+
+def _get_pendiente(numero):
+    from database import get_connection
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT datos FROM acciones_pendientes WHERE numero = ?", (numero,)
+    ).fetchone()
+    conn.close()
+    return _json.loads(row["datos"]) if row else None
+
+def _set_pendiente(numero, datos):
+    from database import get_connection
+    from datetime import datetime
+    conn = get_connection()
+    conn.execute(
+        "INSERT OR REPLACE INTO acciones_pendientes (numero, datos, actualizado) VALUES (?, ?, ?)",
+        (numero, _json.dumps(datos, default=str), datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+def _del_pendiente(numero):
+    from database import get_connection
+    conn = get_connection()
+    conn.execute("DELETE FROM acciones_pendientes WHERE numero = ?", (numero,))
+    conn.commit()
+    conn.close()
+
+def _in_pendiente(numero):
+    return _get_pendiente(numero) is not None
+
+# Clase que imita la interfaz de dict para compatibilidad con el código existente
+class AccionesPendientesDB:
+    def __getitem__(self, numero):
+        v = _get_pendiente(numero)
+        if v is None:
+            raise KeyError(numero)
+        return v
+    def __setitem__(self, numero, valor):
+        _set_pendiente(numero, valor)
+    def __delitem__(self, numero):
+        _del_pendiente(numero)
+    def __contains__(self, numero):
+        return _in_pendiente(numero)
+    def get(self, numero, default=None):
+        v = _get_pendiente(numero)
+        return v if v is not None else default
+
+acciones_pendientes = AccionesPendientesDB()
 
 
 def buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos):
