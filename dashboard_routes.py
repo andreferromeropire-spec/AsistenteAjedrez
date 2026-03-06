@@ -923,10 +923,10 @@ function sincronizarCalendario() {
   .then(function(r){ return r.json(); })
   .then(function(d) {
     btn.disabled = false;
-    btn.innerHTML = '📅 Sincronizar';
+    btn.innerHTML = '&#128197; Sincronizar';
     if (d.ok) {
       if (d.nuevos === 0 && d.cancelados === 0 && d.modificados === 0) {
-        alert('\u2705 Sin cambios — el calendario ya estaba actualizado.');
+        alert('\u2705 Sin cambios - el calendario ya estaba actualizado.');
       } else {
         var msg = '\u2705 Sincronizaci\u00f3n ' + mes + '/' + anio + ':\n';
         if (d.nuevos > 0) msg += '\u2022 ' + d.nuevos + ' clase(s) nueva(s)\n';
@@ -944,7 +944,7 @@ function sincronizarCalendario() {
   })
   .catch(function() {
     btn.disabled = false;
-    btn.innerHTML = '📅 Sincronizar';
+    btn.innerHTML = '&#128197; Sincronizar';
     alert('Error de conexi\u00f3n.');
   });
 }
