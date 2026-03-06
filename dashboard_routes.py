@@ -1725,7 +1725,7 @@ function registrarTodosAbiertos() {
   function procesarSiguiente(idx) {
     if (idx >= pendientes.length) {
       var msg = '\u2705 ' + registrados + ' pago(s) registrado(s).';
-      if (errores.length) msg += '\n\u26a0\ufe0f Errores: ' + errores.join(', ');
+      if (errores.length) msg += ' \u26a0\ufe0f Errores: ' + errores.join(', ');
       alert(msg);
       document.getElementById('btn-registrar-abiertos').style.display = 'none';
       document.getElementById('btn-abrir-formularios').style.display = 'none';
