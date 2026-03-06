@@ -1439,20 +1439,12 @@ function renderIngresos() {
       borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
     });
     yLabel = 'USD';
-  } else if (sel === 'todas') {
-    Object.keys(monedas).forEach(function(m) {
-      datasets.push({
-        label: m,
-        data: monedas[m],
-        borderColor: colores[m] || '#b48c50',
-        backgroundColor: (colores[m] || '#b48c50') + '22',
-        borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
-      });
-    });
   } else {
     // Moneda específica — buscar con o sin tilde
     var key = Object.keys(monedas).find(function(k){ return k === sel || k.replace('\u00f3','o') === sel.replace('\u00f3','o'); });
-    if (key && monedas[key]) {
+    var hasData = key && monedas[key] && monedas[key].some(function(v){ return v > 0; });
+    var tcInfo = document.getElementById('ingr-tc-info');
+    if (hasData) {
       datasets.push({
         label: key,
         data: monedas[key],
@@ -1460,6 +1452,9 @@ function renderIngresos() {
         backgroundColor: (colores[key] || '#b48c50') + '22',
         borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
       });
+      if (tcInfo && sel !== 'usd_total') tcInfo.textContent = '';
+    } else if (tcInfo) {
+      tcInfo.textContent = '· Sin datos para este año';
     }
   }
 
@@ -1695,13 +1690,14 @@ function actualizarBotonesResponsable() {
 
 function abrirFormulariosSeleccionados() {
   var checks = document.querySelectorAll('.resp-check:checked');
+  if (!checks.length) return;
   // Cerrar todos primero
   document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  // Abrir todos los seleccionados sin que se cierren entre sí
   checks.forEach(function(chk) {
     var gi = parseInt(chk.getAttribute('data-gi'));
-    abrirPago(gi);
+    abrirPago(gi, true);
   });
-  // Mostrar botón de registrar todos
   document.getElementById('btn-registrar-abiertos').style.display = 'flex';
   document.getElementById('btn-abrir-formularios').style.display = 'none';
 }
@@ -1991,25 +1987,42 @@ function registrarSeleccionChecks() {
   procesarSiguiente(0);
 }
 
-function abrirPago(gi) {
+function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
-  document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  // Si ya está abierto y no es llamado en masa, lo cierra (toggle)
+  if (!noCloseOthers) {
+    if (form.style.display !== 'none') { form.style.display = 'none'; return; }
+    document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  }
+  var cantidadDefault = g.total_clases || 0;
+  var montoUnitario = g.precio_unitario || 0;
   var montoStr = g.monto_calculado || '';
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
     return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
   }).join('');
-  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
+  var monedaOptions = ['Dólar','Libra Esterlina','Pesos'].map(function(m){
     return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
   }).join('');
-  form.innerHTML = '<div><label>Monto</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
+  form.innerHTML = '<div><label>Clases</label>'
+    + '<input type="number" min="1" class="cobro-clases-input" value="' + cantidadDefault + '" data-gi="' + gi + '" style="width:4rem">'
+    + '</div>'
+    + '<div><label>Monto</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
     + '<div><label>Moneda</label><select class="cobro-moneda-input">' + monedaOptions + '</select></div>'
-    + '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
+    + '<div><label>Método</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
     + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
+    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">✓ Confirmar</button>'
     + '<button class="btn cobro-cancelar-btn" data-gi="' + gi + '">Cancelar</button>'
     + '</div>';
+  // Recalcular monto cuando cambia la cantidad de clases
+  var clasesInput = form.querySelector('.cobro-clases-input');
+  var montoInput = form.querySelector('.cobro-monto-input');
+  if (montoUnitario) {
+    clasesInput.addEventListener('input', function() {
+      var n = parseInt(this.value) || 0;
+      montoInput.value = Math.round(montoUnitario * n * 100) / 100;
+    });
+  }
   form.style.display = 'flex';
 }
 
@@ -2019,8 +2032,23 @@ function confirmarPagoInline(gi) {
   var monto = parseFloat(form.querySelector('.cobro-monto-input').value);
   var moneda = form.querySelector('.cobro-moneda-input').value;
   var metodo = form.querySelector('.cobro-metodo-input').value;
-  if (!monto || isNaN(monto)) { alert('Ingres\u00e1 un monto v\u00e1lido.'); return; }
-  enviarPagoRapido(g, monto, moneda, metodo, function() {
+  var clasesInput = form.querySelector('.cobro-clases-input');
+  var nClases = clasesInput ? parseInt(clasesInput.value) : null;
+  if (!monto || isNaN(monto)) { alert('Ingresá un monto válido.'); return; }
+  // Si se editó la cantidad de clases, ajustar el g para enviar solo esas
+  var gFinal = g;
+  if (nClases !== null && nClases !== g.total_clases) {
+    // Tomar solo las primeras nClases clases de cada alumno proporcionalmente
+    gFinal = Object.assign({}, g);
+    var clasesTomadas = 0;
+    gFinal.alumnos = g.alumnos.map(function(a) {
+      var tomar = Math.min(a.clases.length, Math.max(0, nClases - clasesTomadas));
+      clasesTomadas += tomar;
+      return Object.assign({}, a, {clases: a.clases.slice(0, tomar), cantidad: tomar});
+    }).filter(function(a){ return a.cantidad > 0; });
+    gFinal.total_clases = nClases;
+  }
+  enviarPagoRapido(gFinal, monto, moneda, metodo, function() {
     form.style.display = 'none';
     cargarCobros();
     cargarTodo();
