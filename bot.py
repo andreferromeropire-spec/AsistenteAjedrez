@@ -274,7 +274,7 @@ def ejecutar_accion(accion, datos, numero):
             from difflib import SequenceMatcher
             # Comparar contra nombre del alumno Y contra su representante
             sim_nombre = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
-            rep = (alumno.get("representante") or "").lower()
+            rep = (alumno["representante"] if alumno["representante"] else "").lower()
             sim_rep = SequenceMatcher(None, nombre_buscado.lower(), rep).ratio() if rep else 0
             similitud = max(sim_nombre, sim_rep)
             if similitud < 0.4:
@@ -910,8 +910,11 @@ def ejecutar_accion(accion, datos, numero):
         # Verificar que la sugerencia fuzzy no sea demasiado diferente al nombre buscado
         if aviso and not datos.get("sugerencia_confirmada") and not datos.get("pago_id_a_borrar"):
             from difflib import SequenceMatcher
-            similitud = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
-            if similitud < 0.5:
+            sim_nombre = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
+            rep2 = (alumno["representante"] if alumno["representante"] else "").lower()
+            sim_rep2 = SequenceMatcher(None, nombre_buscado.lower(), rep2).ratio() if rep2 else 0
+            similitud = max(sim_nombre, sim_rep2)
+            if similitud < 0.4:
                 acciones_pendientes[numero] = {
                     "accion": accion,
                     "datos": {**datos, "sugerencia_confirmada": True, "alumno_id_directo": alumno["id"]},
