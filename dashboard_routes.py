@@ -1874,11 +1874,11 @@ function abrirPagoSemana(si, key) {
       + '<div style="font-size:0.8rem;font-weight:500;margin-bottom:0.4rem">' + resp + ' (' + n + ' clases)</div>'
       + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">'
       + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">Monto</label>'
-      + '<input type="number" step="0.01" class="sem-monto-' + si + '" data-resp="' + resp + '" value="' + monto + '" style="width:110px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:'DM Sans',sans-serif"></div>'
+      + '<input type="number" step="0.01" class="sem-monto-' + si + '" data-resp="' + resp + '" value="' + monto + '" style="width:110px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem"></div>'
       + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">Moneda</label>'
-      + '<select class="sem-moneda-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:'DM Sans',sans-serif">' + monedaOpts + '</select></div>'
+      + '<select class="sem-moneda-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem">' + monedaOpts + '</select></div>'
       + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">M\u00e9todo</label>'
-      + '<select class="sem-metodo-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:'DM Sans',sans-serif">' + metodosOpts + '</select></div>'
+      + '<select class="sem-metodo-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem">' + metodosOpts + '</select></div>'
       + '</div></div>';
   });
   html += '<div style="display:flex;gap:0.5rem;padding:0.75rem 1rem">'
