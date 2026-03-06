@@ -591,6 +591,40 @@ def api_ingresos_anuales():
     return jsonify(monedas)
 
 
+@dashboard_bp.route('/dashboard/api/tipo_cambio')
+@login_required
+def api_tipo_cambio():
+    """Devuelve tipo de cambio del día: blue ARS/USD y GBP/USD."""
+    import urllib.request, json as _json
+    resultado = {'ars_usd': None, 'gbp_usd': None, 'error': None}
+    try:
+        # Dólar blue desde bluelytics
+        req = urllib.request.Request(
+            'https://api.bluelytics.com.ar/v2/latest',
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = _json.loads(r.read())
+        resultado['ars_usd'] = data['blue']['value_sell']
+    except Exception as e:
+        resultado['error'] = f"Blue no disponible: {e}"
+    try:
+        # GBP/USD desde frankfurter (oficial, suficiente para esterlinas)
+        req2 = urllib.request.Request(
+            'https://api.frankfurter.app/latest?from=GBP&to=USD',
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req2, timeout=5) as r2:
+            data2 = _json.loads(r2.read())
+        resultado['gbp_usd'] = data2['rates']['USD']
+    except Exception as e2:
+        if resultado['error']:
+            resultado['error'] += f" | GBP no disponible: {e2}"
+        else:
+            resultado['error'] = f"GBP no disponible: {e2}"
+    return jsonify(resultado)
+
+
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -824,6 +858,7 @@ tr:hover td{background:var(--gold-dim)}
     <div class="metric"><div class="metric-label">Cobrado USD</div><div class="metric-value green" id="m-usd">-</div></div>
     <div class="metric"><div class="metric-label">Cobrado GBP</div><div class="metric-value green" id="m-gbp">-</div></div>
     <div class="metric"><div class="metric-label">Cobrado ARS</div><div class="metric-value green" id="m-ars">-</div></div>
+    <div class="metric"><div class="metric-label">Total est. USD <span style="font-size:0.6rem;opacity:0.6">(blue)</span></div><div class="metric-value green" id="m-total-usd">-</div></div>
   </div>
 
   <div class="main-layout">
@@ -955,7 +990,19 @@ tr:hover td{background:var(--gold-dim)}
             <canvas id="chart-anual" height="260"></canvas>
           </div>
           <div class="chart-box">
-            <h3>Ingresos mensuales</h3>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
+              <h3 style="margin:0">Ingresos mensuales</h3>
+              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+                <select id="ingr-moneda-sel" onchange="renderIngresos()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.25rem 0.5rem;border-radius:4px;font-family:'DM Sans',sans-serif;font-size:0.78rem;outline:none">
+                  <option value="todas">Todas las monedas</option>
+                  <option value="Dolar">Dólar</option>
+                  <option value="Libra Esterlina">Libra Esterlina</option>
+                  <option value="Pesos">Pesos</option>
+                  <option value="usd_total">Todo en USD (blue)</option>
+                </select>
+                <span id="ingr-tc-info" style="font-size:0.7rem;color:var(--text-muted)"></span>
+              </div>
+            </div>
             <canvas id="chart-ingresos" height="260"></canvas>
           </div>
         </div>
@@ -1141,6 +1188,16 @@ function estadoBadge(e) {
 }
 
 function cargarTodo() {
+  // Cargar tipo de cambio primero para que las métricas ya lo tengan
+  if (!window._tipoCambio) {
+    fetch('/dashboard/api/tipo_cambio').then(function(r){ return r.json(); })
+    .then(function(tc) {
+      window._tipoCambio = tc;
+      var info = document.getElementById('ingr-tc-info');
+      if (info && tc.ars_usd) info.textContent = '\u00b7 Blue: $' + tc.ars_usd + ' ARS/USD';
+      cargarResumen(); // Re-cargar métricas con el TC ya disponible
+    }).catch(function(){ window._tipoCambio = {}; });
+  }
   cargarResumen();
   poblarFiltroAlumnos();
   cargarClases();
@@ -1155,9 +1212,19 @@ function cargarResumen() {
     document.getElementById('m-alumnos').textContent = d.total_alumnos;
     document.getElementById('m-clases').textContent = d.clases_agendadas;
     document.getElementById('m-canceladas').textContent = d.clases_canceladas;
-    document.getElementById('m-usd').textContent = d.pagos['Dolar'] ? '$'+fmt(d.pagos['Dolar']) : (d.pagos['D\u00f3lar'] ? '$'+fmt(d.pagos['D\u00f3lar']) : '-');
-    document.getElementById('m-gbp').textContent = d.pagos['Libra Esterlina'] ? '\u00a3'+fmt(d.pagos['Libra Esterlina']) : '-';
-    document.getElementById('m-ars').textContent = d.pagos['Pesos'] ? '$'+fmt(d.pagos['Pesos']) : '-';
+    var usd = d.pagos['Dolar'] || d.pagos['D\u00f3lar'] || 0;
+    var gbp = d.pagos['Libra Esterlina'] || 0;
+    var ars = d.pagos['Pesos'] || 0;
+    document.getElementById('m-usd').textContent = usd ? '$'+fmt(usd) : '-';
+    document.getElementById('m-gbp').textContent = gbp ? '\u00a3'+fmt(gbp) : '-';
+    document.getElementById('m-ars').textContent = ars ? '$'+fmt(ars) : '-';
+    // Calcular total en USD si hay tipo de cambio disponible
+    if (window._tipoCambio && window._tipoCambio.ars_usd) {
+      var tc = window._tipoCambio;
+      var totalUsd = usd + (gbp * (tc.gbp_usd || 1.27)) + (ars / tc.ars_usd);
+      var elTotal = document.getElementById('m-total-usd');
+      if (elTotal) elTotal.textContent = '~$' + fmt(Math.round(totalUsd));
+    }
   });
 }
 
@@ -1291,34 +1358,28 @@ function cargarGraficos() {
     renderGraficoAnual(datos, meses, tickColor, gridColor);
   });
 
-  // Gráfico 2: Ingresos mensuales por moneda
+  // Gráfico 2: Ingresos mensuales
   fetch('/dashboard/api/ingresos_anuales?anio=' + anio).then(function(r){ return r.json(); })
-  .then(function(monedas) {
-    if (charts.ingresos) charts.ingresos.destroy();
-    var colores = {'D\u00f3lar': '#4a9e7a', 'Libra Esterlina': '#5b8db8', 'Pesos': '#c0524a'};
-    var datasets = Object.keys(monedas).map(function(m) {
-      return {
-        label: m,
-        data: monedas[m],
-        borderColor: colores[m] || '#b48c50',
-        backgroundColor: (colores[m] || '#b48c50') + '22',
-        borderWidth: 2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        tension: 0.3,
-        fill: true
-      };
-    });
-    charts.ingresos = new Chart(document.getElementById('chart-ingresos').getContext('2d'), {
-      type: 'line',
-      data: { labels: meses, datasets: datasets },
-      options: {
-        plugins: { legend: { labels: { color: tickColor, font: { size: 11 }, boxWidth: 12 } } },
-        scales: {
-          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
-          y: { ticks: { color: tickColor }, grid: { color: gridColor }, beginAtZero: true }
-        }
+  .then(function(data) {
+    window._ingresosData = data;
+    window._ingresosTickColor = tickColor;
+    window._ingresosGridColor = gridColor;
+    window._ingresosMeses = meses;
+    // Cargar tipo de cambio en paralelo
+    fetch('/dashboard/api/tipo_cambio').then(function(r){ return r.json(); })
+    .then(function(tc) {
+      window._tipoCambio = tc;
+      var info = document.getElementById('ingr-tc-info');
+      if (tc.ars_usd && !tc.error) {
+        info.textContent = '\u00b7 Blue: $' + tc.ars_usd + ' ARS/USD';
+      } else if (tc.error) {
+        info.textContent = '\u00b7 TC no disponible';
+        info.title = tc.error;
       }
+      renderIngresos();
+    }).catch(function() {
+      window._tipoCambio = {};
+      renderIngresos();
     });
   });
 
@@ -1333,6 +1394,100 @@ function cargarGraficos() {
     };
   });
 }
+
+function renderIngresos() {
+  var monedas = window._ingresosData;
+  var tickColor = window._ingresosTickColor || '#6a8faa';
+  var gridColor = window._ingresosGridColor || '#e0eaf4';
+  var meses = window._ingresosMeses || ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var tc = window._tipoCambio || {};
+  if (!monedas) return;
+
+  var sel = document.getElementById('ingr-moneda-sel').value;
+  var colores = {'D\u00f3lar': '#4a9e7a', 'Libra Esterlina': '#5b8db8', 'Pesos': '#c0524a'};
+  var datasets = [];
+  var yLabel = '';
+
+  if (sel === 'usd_total') {
+    // Convertir todo a USD usando blue para ARS y frankfurter para GBP
+    var arsUsd = tc.ars_usd ? 1 / tc.ars_usd : null;
+    var gbpUsd = tc.gbp_usd || null;
+    var total = [0,0,0,0,0,0,0,0,0,0,0,0];
+    var ok = true;
+    Object.keys(monedas).forEach(function(m) {
+      monedas[m].forEach(function(v, i) {
+        if (!v) return;
+        if (m === 'D\u00f3lar' || m === 'Dolar') {
+          total[i] += v;
+        } else if ((m === 'Libra Esterlina') && gbpUsd) {
+          total[i] += v * gbpUsd;
+        } else if (m === 'Pesos' && arsUsd) {
+          total[i] += v * arsUsd;
+        } else {
+          ok = false; // Falta tipo de cambio
+        }
+      });
+    });
+    if (!ok) {
+      document.getElementById('ingr-tc-info').textContent = '\u00b7 Falta TC para convertir';
+    }
+    datasets.push({
+      label: 'Total USD (estimado)',
+      data: total.map(function(v){ return Math.round(v * 100) / 100; }),
+      borderColor: '#4a9e7a',
+      backgroundColor: '#4a9e7a22',
+      borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
+    });
+    yLabel = 'USD';
+  } else if (sel === 'todas') {
+    Object.keys(monedas).forEach(function(m) {
+      datasets.push({
+        label: m,
+        data: monedas[m],
+        borderColor: colores[m] || '#b48c50',
+        backgroundColor: (colores[m] || '#b48c50') + '22',
+        borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
+      });
+    });
+  } else {
+    // Moneda específica — buscar con o sin tilde
+    var key = Object.keys(monedas).find(function(k){ return k === sel || k.replace('\u00f3','o') === sel.replace('\u00f3','o'); });
+    if (key && monedas[key]) {
+      datasets.push({
+        label: key,
+        data: monedas[key],
+        borderColor: colores[key] || '#b48c50',
+        backgroundColor: (colores[key] || '#b48c50') + '22',
+        borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
+      });
+    }
+  }
+
+  if (charts.ingresos) charts.ingresos.destroy();
+  charts.ingresos = new Chart(document.getElementById('chart-ingresos').getContext('2d'), {
+    type: 'line',
+    data: { labels: meses, datasets: datasets },
+    options: {
+      plugins: {
+        legend: { labels: { color: tickColor, font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('es-AR');
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+        y: { ticks: { color: tickColor, callback: function(v){ return v.toLocaleString('es-AR'); } },
+             grid: { color: gridColor }, beginAtZero: true,
+             title: yLabel ? { display: true, text: yLabel, color: tickColor, font: { size: 10 } } : { display: false } }
+      }
+    }
+  });
+}
+
 
 function renderGraficoAnual(datos, meses, tickColor, gridColor) {
   if (charts.anual) charts.anual.destroy();
@@ -1432,11 +1587,18 @@ document.addEventListener('click', function(e) {
   }
   var btn = e.target.closest('button');
   if (!btn) return;
-  // Cancelar formulario inline de cobros
+  // Cancelar formulario inline de cobros (responsable)
   if (btn.classList.contains('cobro-cancelar-btn')) {
     var gi = btn.getAttribute('data-gi');
     var f = document.getElementById('cobro-form-' + gi);
     if (f) f.style.display = 'none';
+    return;
+  }
+  // Cancelar formulario inline de cobros (semana)
+  if (btn.classList.contains('cobros-sem-cancelar')) {
+    var si = btn.getAttribute('data-si');
+    var fs = document.getElementById('sem-form-' + si);
+    if (fs) fs.style.display = 'none';
     return;
   }
   if (btn.classList.contains('btn-borrar-pago')) {
@@ -1586,6 +1748,7 @@ function registrarTodosAbiertos() {
 
 function renderCobrosSemana(cont) {
   var semanas = {};
+  // Agrupar clases por semana Y por responsable dentro de cada semana
   cobrosData.forEach(function(g) {
     g.alumnos.forEach(function(a) {
       a.clases.forEach(function(c) {
@@ -1594,33 +1757,179 @@ function renderCobrosSemana(cont) {
         var lunes = new Date(d);
         lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
         var key = lunes.toISOString().slice(0,10);
-        if (!semanas[key]) semanas[key] = {lunes: lunes, items: []};
-        semanas[key].items.push({responsable: g.responsable, alumno: a.nombre,
-          alumno_id: a.alumno_id, clase_id: c.id, fecha: c.fecha, hora: c.hora,
-          moneda: g.moneda, metodo: g.metodo_pago, es_representante: g.es_representante});
+        if (!semanas[key]) semanas[key] = {lunes: lunes, grupos: {}};
+        var resp = g.responsable;
+        if (!semanas[key].grupos[resp]) {
+          semanas[key].grupos[resp] = {
+            gi: cobrosData.indexOf(g),
+            responsable: resp,
+            moneda: g.moneda,
+            metodo: g.metodo_pago,
+            monto_calculado: g.monto_calculado,
+            precio_unitario: g.precio_unitario,
+            items: []
+          };
+        }
+        semanas[key].grupos[resp].items.push({
+          alumno: a.nombre, alumno_id: a.alumno_id,
+          clase_id: c.id, fecha: c.fecha, hora: c.hora,
+          es_representante: g.es_representante
+        });
       });
     });
   });
+
   var keys = Object.keys(semanas).sort();
   if (!keys.length) { cont.innerHTML = '<div class="empty">Todo cobrado</div>'; return; }
-  var html = keys.map(function(key) {
+
+  var html = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">'
+    + '<input type="checkbox" id="sem-master" onchange="selectAllSemana(this)" style="width:15px;height:15px;cursor:pointer">'
+    + '<label for="sem-master" style="cursor:pointer">Seleccionar todos</label></div>';
+
+  var semIdx = 0;
+  html += keys.map(function(key) {
     var sem = semanas[key];
     var domingo = new Date(sem.lunes); domingo.setDate(sem.lunes.getDate() + 6);
     var titulo = 'Semana del ' + sem.lunes.getDate() + '/' + (sem.lunes.getMonth()+1)
                + ' al ' + domingo.getDate() + '/' + (domingo.getMonth()+1);
-    var filas = sem.items.map(function(it) {
-      return '<div class="cobros-grupo-clases">' + formatFecha(it.fecha) + ' ' + (it.hora||'')
-        + ' \u2014 <strong>' + it.alumno + '</strong>'
-        + (it.es_representante ? ' <span style="color:var(--text-muted);font-size:0.75rem">(' + it.responsable + ')</span>' : '')
-        + '</div>';
+    var totalItems = Object.values(sem.grupos).reduce(function(s,g){return s+g.items.length;},0);
+    var respKeys = Object.keys(sem.grupos);
+    var si = semIdx++;
+
+    var gruposHtml = respKeys.map(function(resp) {
+      var grupo = sem.grupos[resp];
+      var n = grupo.items.length;
+      var monto = grupo.precio_unitario ? Math.round(grupo.precio_unitario * n * 100)/100 : null;
+      var montoStr = monto ? simMoneda(grupo.moneda) + fmt(monto) + ' ' + grupo.moneda : 'sin precio';
+      var filas = grupo.items.map(function(it) {
+        return '<div class="cobros-grupo-clases" style="padding-left:1.5rem">'
+          + formatFecha(it.fecha) + ' ' + (it.hora||'')
+          + ' \u2014 <strong>' + it.alumno + '</strong>'
+          + (it.es_representante ? ' <span style="color:var(--text-muted);font-size:0.75rem">(' + resp + ')</span>' : '')
+          + '</div>';
+      }).join('');
+      return '<div style="border-top:1px solid var(--bg2)">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 1rem">'
+        + '<span style="font-size:0.83rem;font-weight:500">' + resp + '</span>'
+        + '<span style="font-size:0.82rem;color:var(--gold-light)">' + montoStr + '</span>'
+        + '</div>' + filas + '</div>';
     }).join('');
-    return '<div class="cobros-grupo">'
-      + '<div class="cobros-grupo-header"><div>'
-      + '<div class="cobros-grupo-titulo">' + titulo + '</div>'
-      + '<div class="cobros-grupo-sub">' + sem.items.length + ' clase(s)</div>'
-      + '</div></div>' + filas + '</div>';
+
+    // Guardar datos del grupo para poder registrar
+    return '<div class="cobros-grupo" id="sem-grupo-' + si + '" data-sem-key="' + key + '">'
+      + '<div class="cobros-grupo-header">'
+      + '<div style="display:flex;align-items:center;gap:0.6rem">'
+      + '<input type="checkbox" class="sem-check" data-si="' + si + '" data-key="' + key + '" '
+      + 'onchange="actualizarBotonesSemana()" style="width:15px;height:15px;cursor:pointer">'
+      + '<div><div class="cobros-grupo-titulo">' + titulo + '</div>'
+      + '<div class="cobros-grupo-sub">' + totalItems + ' clase(s) \u2014 ' + respKeys.length + ' responsable(s)</div>'
+      + '</div></div>'
+      + '<button class="btn" onclick="abrirPagoSemana(' + si + ','' + key + '')">Registrar semana</button>'
+      + '</div>'
+      + gruposHtml
+      + '<div class="cobros-inline-form cobros-sem-form" id="sem-form-' + si + '" style="display:none"></div>'
+      + '</div>';
   }).join('');
+
+  // Guardar mapa semanas para usar al registrar
+  window._semanasData = semanas;
   cont.innerHTML = html;
+}
+
+function selectAllSemana(master) {
+  document.querySelectorAll('.sem-check').forEach(function(c){ c.checked = master.checked; });
+  actualizarBotonesSemana();
+}
+
+function actualizarBotonesSemana() {
+  var checks = document.querySelectorAll('.sem-check:checked');
+  var btnAbrir = document.getElementById('btn-abrir-formularios');
+  var btnReg = document.getElementById('btn-registrar-abiertos');
+  if (btnAbrir) btnAbrir.style.display = checks.length ? 'flex' : 'none';
+  var hayAbiertos = document.querySelectorAll('.cobros-sem-form[style*="flex"]').length > 0;
+  if (btnReg) btnReg.style.display = hayAbiertos ? 'flex' : 'none';
+}
+
+function abrirPagoSemana(si, key) {
+  var sem = window._semanasData && window._semanasData[key];
+  if (!sem) return;
+  var form = document.getElementById('sem-form-' + si);
+  if (!form) return;
+  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
+  document.querySelectorAll('.cobros-sem-form').forEach(function(f){ f.style.display = 'none'; });
+
+  // Un sub-formulario por responsable
+  var html = '';
+  Object.keys(sem.grupos).forEach(function(resp, ri) {
+    var g = sem.grupos[resp];
+    var n = g.items.length;
+    var monto = g.precio_unitario ? Math.round(g.precio_unitario * n * 100)/100 : '';
+    var metodosOpts = ['Wise','PayPal','Transferencia nacional'].map(function(m){
+      return '<option' + (m===g.metodo?' selected':'') + '>' + m + '</option>';
+    }).join('');
+    var monedaOpts = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
+      return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
+    }).join('');
+    html += '<div style="border-top:1px solid var(--bg2);padding:0.6rem 1rem 0">'
+      + '<div style="font-size:0.8rem;font-weight:500;margin-bottom:0.4rem">' + resp + ' (' + n + ' clases)</div>'
+      + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">'
+      + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">Monto</label>'
+      + '<input type="number" step="0.01" class="sem-monto-' + si + '" data-resp="' + resp + '" value="' + monto + '" style="width:110px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:'DM Sans',sans-serif"></div>'
+      + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">Moneda</label>'
+      + '<select class="sem-moneda-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:'DM Sans',sans-serif">' + monedaOpts + '</select></div>'
+      + '<div><label style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:0.2rem">M\u00e9todo</label>'
+      + '<select class="sem-metodo-' + si + '" data-resp="' + resp + '" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:'DM Sans',sans-serif">' + metodosOpts + '</select></div>'
+      + '</div></div>';
+  });
+  html += '<div style="display:flex;gap:0.5rem;padding:0.75rem 1rem">'
+    + '<button class="btn" onclick="confirmarPagoSemana(' + si + ','' + key + '')">\u2713 Confirmar todos</button>'
+    + '<button class="btn cobros-sem-cancelar" data-si="' + si + '">Cancelar</button></div>';
+  form.innerHTML = html;
+  form.style.display = 'flex';
+  form.style.flexDirection = 'column';
+}
+
+function confirmarPagoSemana(si, key) {
+  var sem = window._semanasData && window._semanasData[key];
+  if (!sem) return;
+  var respKeys = Object.keys(sem.grupos);
+  var pagos = [];
+  var sinMonto = [];
+  respKeys.forEach(function(resp) {
+    var g = sem.grupos[resp];
+    var montoEl = document.querySelector('.sem-monto-' + si + '[data-resp="' + resp + '"]');
+    var monedaEl = document.querySelector('.sem-moneda-' + si + '[data-resp="' + resp + '"]');
+    var metodoEl = document.querySelector('.sem-metodo-' + si + '[data-resp="' + resp + '"]');
+    if (!montoEl) return;
+    var monto = parseFloat(montoEl.value);
+    if (!monto || isNaN(monto)) { sinMonto.push(resp); return; }
+    var clase_ids = g.items.map(function(it){ return it.clase_id; });
+    // Buscar gData en cobrosData
+    var gData = cobrosData.find(function(x){ return x.responsable === resp; });
+    if (!gData) return;
+    var gMod = Object.assign({}, gData);
+    gMod.total_clases = g.items.length;
+    gMod.clase_ids = clase_ids;
+    gMod.alumnos = g.items.reduce(function(acc, it) {
+      var found = acc.find(function(x){ return x.alumno_id === it.alumno_id; });
+      if (found) { found.clases.push({id: it.clase_id}); found.cantidad++; }
+      else acc.push({alumno_id: it.alumno_id, nombre: it.alumno, clases: [{id: it.clase_id}], cantidad: 1});
+      return acc;
+    }, []);
+    pagos.push({g: gMod, monto: monto, moneda: monedaEl.value, metodo: metodoEl.value});
+  });
+  if (sinMonto.length) alert('Sin monto: ' + sinMonto.join(', '));
+  if (!pagos.length) return;
+  var registrados = 0;
+  function siguiente(i) {
+    if (i >= pagos.length) {
+      alert('\u2705 ' + registrados + ' pago(s) registrado(s).');
+      cargarCobros(); cargarTodo(); return;
+    }
+    var p = pagos[i];
+    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function(){ registrados++; siguiente(i+1); });
+  }
+  siguiente(0);
 }
 
 function renderCobrosChecks(cont) {
