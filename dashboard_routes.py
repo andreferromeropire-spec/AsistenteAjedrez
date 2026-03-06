@@ -74,7 +74,10 @@ def api_chat():
                 if 'pagos_candidatos' in pendiente:
                     # El usuario elige qué pago borrar de la lista
                     candidatos = pendiente['pagos_candidatos']
-                    if 1 <= opcion <= len(candidatos):
+                    if opcion == 0:
+                        del acciones_pendientes[numero_web]
+                        return jsonify({'respuesta': 'Cancelado, no se borró nada.'})
+                    elif 1 <= opcion <= len(candidatos):
                         elegido = candidatos[opcion - 1]
                         accion = 'borrar_pago'
                         datos = {
@@ -84,7 +87,7 @@ def api_chat():
                         }
                         acciones_pendientes[numero_web] = {'accion': 'borrar_pago', 'datos': datos}
                     else:
-                        return jsonify({'respuesta': f"Elegi un numero entre 1 y {len(candidatos)}."})
+                        return jsonify({'respuesta': f"Elegí un número entre 0 y {len(candidatos)}."})
                 elif pendiente['datos'].get('confirmado') or pendiente['datos'].get('pago_id_a_borrar'):
                     # El usuario confirma o cancela el borrado
                     if opcion == 1:
@@ -399,6 +402,10 @@ tr:hover td{background:var(--gold-dim)}
 .total-chip{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:0.45rem 0.9rem;font-size:0.82rem}
 .total-chip span{color:var(--gold-light);font-weight:500}
 .empty{padding:2.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem}
+.btn-icon{background:none;border:none;cursor:pointer;padding:0.2rem 0.35rem;border-radius:3px;font-size:0.85rem;opacity:0.45;transition:opacity 0.15s,background 0.15s;color:var(--text)}
+.btn-icon:hover{opacity:1;background:var(--gold-dim)}
+.btn-icon.danger:hover{background:var(--red-bg);color:var(--red)}
+.actions-cell{display:flex;gap:0.2rem;justify-content:center}
 .section-title{font-family:'Playfair Display',serif;font-size:0.95rem;color:var(--gold-light);margin-bottom:0.9rem;display:flex;align-items:center;gap:0.5rem}
 .section-title::after{content:'';flex:1;height:1px;background:var(--border)}
 .section{margin-bottom:1.75rem}
@@ -504,8 +511,8 @@ tr:hover td{background:var(--gold-dim)}
           <div class="section-title">Pagos registrados</div>
           <div class="filters"><input type="text" placeholder="Buscar..." oninput="filtrarTabla('t-pagos',this.value)"></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Fecha</th><th>Alumno</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Notas</th></tr></thead>
-            <tbody id="t-pagos"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+            <table><thead><tr><th>Fecha</th><th>Alumno</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Notas</th><th></th></tr></thead>
+            <tbody id="t-pagos"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
           </div>
           <div class="totals-row" id="totales-pagos"></div>
         </div>
@@ -525,8 +532,8 @@ tr:hover td{background:var(--gold-dim)}
       <div class="tab-panel" id="tab-alumnos">
         <div class="filters"><input type="text" placeholder="Buscar nombre o representante..." oninput="filtrarTabla('t-alumnos',this.value)"></div>
         <div class="table-wrap">
-          <table><thead><tr><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Clases</th><th>Pago</th></tr></thead>
-          <tbody id="t-alumnos"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody></table>
+          <table><thead><tr><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Clases</th><th>Pago</th><th></th></tr></thead>
+          <tbody id="t-alumnos"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody></table>
         </div>
       </div>
 
@@ -716,8 +723,9 @@ function cargarPagos() {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
       var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
       var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
-      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td></tr>';
-    }).join('') : '<tr><td colspan="6" class="empty">Sin pagos registrados</td></tr>';
+      var borrar = '<button class="btn-icon danger" title="Borrar pago" onclick="borrarPago('+JSON.stringify(p.nombre)+')">&#128465;</button>';
+      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
       var s = m === 'Libra Esterlina' ? '\u00a3' : '$';
@@ -748,8 +756,12 @@ function cargarAlumnos() {
   api('alumnos').then(function(datos) {
     var html = datos.map(function(a) {
       var pago = a.pago_este_mes ? '<span class="badge badge-green">Si</span>' : '<span class="badge badge-red">No</span>';
-      return '<tr><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td></tr>';
-    }).join('') || '<tr><td colspan="8" class="empty">Sin alumnos</td></tr>';
+      var acciones = '<div class="actions-cell">'
+        + '<button class="btn-icon" title="Ver / editar" onclick="editarAlumno('+JSON.stringify(a.nombre)+')">&#9998;</button>'
+        + '<button class="btn-icon danger" title="Borrar" onclick="borrarAlumno('+JSON.stringify(a.nombre)+')">&#128465;</button>'
+        + '</div>';
+      return '<tr><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
+    }).join('') || '<tr><td colspan="9" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
   });
 }
@@ -795,6 +807,34 @@ function filtrarTabla(tablaId, texto) {
   document.querySelectorAll('#'+tablaId+' tr').forEach(function(f){
     f.style.display = f.textContent.toLowerCase().indexOf(texto.toLowerCase()) !== -1 ? '' : 'none';
   });
+}
+
+// Funciones de accion rapida: llenan el chat y lo envian
+function enviarAlChat(texto) {
+  showTab('clases', document.querySelector('.tab-btn'));  // no cambia de tab, solo activa el chat
+  var input = document.getElementById('chat-input');
+  input.value = texto;
+  input.focus();
+  // Resaltar el campo para que Andrea sepa que debe confirmar o editar
+  input.style.borderColor = 'var(--gold)';
+  setTimeout(function(){ input.style.borderColor = ''; }, 1500);
+}
+
+function editarAlumno(nombre) {
+  enviarAlChat('ver ' + nombre);
+  setTimeout(enviarMensaje, 100);
+}
+
+function borrarAlumno(nombre) {
+  if (!confirm('\u00bfBorrar a ' + nombre + '?\nEsto abrira el flujo de confirmacion en el chat.')) return;
+  enviarAlChat('borra a ' + nombre);
+  showTab('clases', null);
+  setTimeout(enviarMensaje, 100);
+}
+
+function borrarPago(nombre) {
+  enviarAlChat('borrar un pago de ' + nombre);
+  setTimeout(enviarMensaje, 100);
 }
 
 cargarTodo();

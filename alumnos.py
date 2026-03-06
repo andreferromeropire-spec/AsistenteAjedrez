@@ -70,21 +70,33 @@ def agregar_alumno(nombre, representante=None, pais=None, idioma=None,
 
 # Busca por nombre exacto o parcial, con sugerencia si no encuentra
 def buscar_alumno_con_sugerencia(nombre):
-    # Primero intenta por nombre
+    # 1. Intenta por nombre de alumno (parcial)
     resultado = buscar_alumno_por_nombre(nombre)
     if resultado:
         return resultado, None
 
-    # Si no encontró, busca por representante
+    # 2. Intenta por representante (parcial)
     resultado = buscar_alumno_por_representante(nombre)
     if resultado:
         return resultado, None
 
-    # Si tampoco, busca nombres parecidos con difflib
+    # 3. Búsqueda difusa: compara contra nombres Y representantes
     todos = obtener_todos_los_alumnos()
-    nombres = [a['nombre'] for a in todos]
-    sugerencias = get_close_matches(nombre, nombres, n=3, cutoff=0.5)
+    
+    # Armar lista de todos los nombres posibles (alumno + representante)
+    nombres_alumnos = [a['nombre'] for a in todos]
+    representantes = list({a['representante'] for a in todos 
+                           if a['representante'] and a['representante'].strip() not in ('', '-')})
+    
+    # Buscar en representantes primero (cutoff más bajo para nombres propios)
+    sugerencias_rep = get_close_matches(nombre, representantes, n=1, cutoff=0.4)
+    if sugerencias_rep:
+        resultado = buscar_alumno_por_representante(sugerencias_rep[0])
+        if resultado:
+            return resultado, sugerencias_rep
 
+    # Buscar en nombres de alumnos
+    sugerencias = get_close_matches(nombre, nombres_alumnos, n=3, cutoff=0.5)
     if sugerencias:
         mejor = buscar_alumno_por_nombre(sugerencias[0])
         return mejor, sugerencias

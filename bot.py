@@ -953,6 +953,7 @@ def ejecutar_accion(accion, datos, numero):
             "pagos_candidatos": [dict(p) for p in pagos]
         }
         texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
+        texto += "\n0. Cancelar (no borrar nada)"
         texto += "\n\n¿Cuál querés borrar? Respondé con el número."
         return (aviso + "\n" + texto) if aviso else texto
 
@@ -963,111 +964,101 @@ def ejecutar_accion(accion, datos, numero):
         return "No entendí esa acción."
 
 
+
+def procesar_mensaje(mensaje_entrante, numero, historial=None):
+    """
+    Lógica compartida entre el webhook de WhatsApp y el chat del dashboard.
+    Recibe el mensaje y el identificador del usuario, devuelve el texto de respuesta.
+    """
+    if historial is None:
+        historial = []
+
+    accion = "no_entiendo"
+    datos = {}
+
+    if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
+        pendiente = acciones_pendientes[numero]
+        opcion = int(mensaje_entrante.strip())
+
+        if pendiente.get("accion") == "confirmar_borrado":
+            accion = "confirmar_borrado"
+            datos = {"numero_opcion": opcion}
+
+        elif pendiente.get("accion") == "registrar_pago" and pendiente["datos"].get("confirmado"):
+            if opcion == 1:
+                accion = "registrar_pago"
+                datos = pendiente["datos"]
+                del acciones_pendientes[numero]
+            elif opcion == 2:
+                del acciones_pendientes[numero]
+                return "Cancelado. Mandame el pago de nuevo con el monto correcto."
+            else:
+                return "Responde 1 para confirmar o 2 para reingresar el monto."
+
+        elif pendiente.get("accion") == "borrar_pago":
+            if "pagos_candidatos" in pendiente:
+                candidatos = pendiente["pagos_candidatos"]
+                if opcion == 0:
+                    del acciones_pendientes[numero]
+                    return "Cancelado, no se borró nada."
+                elif 1 <= opcion <= len(candidatos):
+                    elegido = candidatos[opcion - 1]
+                    accion = "borrar_pago"
+                    datos = {
+                        **pendiente["datos"],
+                        "pago_id_a_borrar": elegido["id"],
+                        "detalle_pago_elegido": elegido
+                    }
+                    acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos}
+                else:
+                    return f"Elegí un número entre 0 y {len(candidatos)}."
+            elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
+                if opcion == 1:
+                    accion = "borrar_pago"
+                    datos = pendiente["datos"]
+                elif opcion == 2:
+                    del acciones_pendientes[numero]
+                    return "Cancelado, no se borro nada."
+                else:
+                    return "Responde 1 para confirmar o 2 para cancelar."
+            else:
+                accion = "aclaracion_alumno"
+                datos = {"numero_opcion": opcion}
+
+        else:
+            accion = "aclaracion_alumno"
+            datos = {"numero_opcion": opcion}
+
+    else:
+        if numero in acciones_pendientes and not mensaje_entrante.strip().isdigit():
+            del acciones_pendientes[numero]
+        interpretado = interpretar_mensaje(mensaje_entrante, historial)
+        accion = interpretado.get("accion", "no_entiendo")
+        datos = interpretado.get("datos", {})
+        if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
+            accion = "no_entiendo"
+            datos = {}
+
+    return ejecutar_accion(accion, datos, numero)
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     mensaje_entrante = request.form.get("Body", "").strip()
     numero = request.form.get("From", "desconocido")
-    respuesta_texto = ""
 
     if numero not in historiales:
         historiales[numero] = []
     historial = historiales[numero]
 
-    accion = "no_entiendo"
-    datos = {}
-
     try:
-        if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
-            pendiente = acciones_pendientes[numero]
-            opcion = int(mensaje_entrante.strip())
-
-            if pendiente.get("accion") == "confirmar_borrado":
-                accion = "confirmar_borrado"
-                datos = {"numero_opcion": opcion}
-
-            elif pendiente.get("accion") == "registrar_pago" and pendiente["datos"].get("confirmado"):
-                # Confirmación de diferencia de monto
-                if opcion == 1:
-                    accion = "registrar_pago"
-                    datos = pendiente["datos"]
-                    del acciones_pendientes[numero]
-                elif opcion == 2:
-                    del acciones_pendientes[numero]
-                    respuesta_texto = "Cancelado. Mandame el pago de nuevo con el monto correcto."
-                    respuesta = MessagingResponse()
-                    respuesta.message(respuesta_texto)
-                    return str(respuesta)
-                else:
-                    respuesta_texto = "Respondé 1 para confirmar o 2 para reingresar el monto."
-                    respuesta = MessagingResponse()
-                    respuesta.message(respuesta_texto)
-                    return str(respuesta)
-
-            elif pendiente.get("accion") == "borrar_pago":
-                if "pagos_candidatos" in pendiente:
-                    # El usuario está eligiendo qué pago borrar de la lista
-                    candidatos = pendiente["pagos_candidatos"]
-                    if 1 <= opcion <= len(candidatos):
-                        elegido = candidatos[opcion - 1]
-                        accion = "borrar_pago"
-                        datos = {
-                            **pendiente["datos"],
-                            "pago_id_a_borrar": elegido["id"],
-                            "detalle_pago_elegido": elegido
-                        }
-                        # Actualizamos pendiente para la siguiente confirmación
-                        acciones_pendientes[numero] = {
-                            "accion": "borrar_pago",
-                            "datos": datos
-                        }
-                    else:
-                        respuesta_texto = f"Elegí un número entre 1 y {len(candidatos)}."
-                        respuesta = MessagingResponse()
-                        respuesta.message(respuesta_texto)
-                        return str(respuesta)
-                elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
-                    # El usuario está confirmando o cancelando el borrado
-                    if opcion == 1:
-                        accion = "borrar_pago"
-                        datos = pendiente["datos"]
-                    elif opcion == 2:
-                        del acciones_pendientes[numero]
-                        respuesta_texto = "Cancelado, no se borró nada."
-                        respuesta = MessagingResponse()
-                        respuesta.message(respuesta_texto)
-                        return str(respuesta)
-                    else:
-                        respuesta_texto = "Respondé 1 para confirmar o 2 para cancelar."
-                        respuesta = MessagingResponse()
-                        respuesta.message(respuesta_texto)
-                        return str(respuesta)
-                else:
-                    accion = "aclaracion_alumno"
-                    datos = {"numero_opcion": opcion}
-            else:
-                accion = "aclaracion_alumno"
-                datos = {"numero_opcion": opcion}
-        else:
-            if numero in acciones_pendientes and not mensaje_entrante.strip().isdigit():
-                del acciones_pendientes[numero]  # Cancela la acción pendiente si mandás texto
-            interpretado = interpretar_mensaje(mensaje_entrante, historial)
-            accion = interpretado.get("accion", "no_entiendo")
-            datos = interpretado.get("datos", {})
-            if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
-                accion = "no_entiendo"
-                datos = {}
-        respuesta_texto = ejecutar_accion(accion, datos, numero)
+        respuesta_texto = procesar_mensaje(mensaje_entrante, numero, historial)
     except Exception as e:
         respuesta_texto = f"Ocurrió un error: {str(e)}"
 
     historial.append({"role": "user", "content": mensaje_entrante})
     historial.append({"role": "assistant", "content": respuesta_texto})
-
-    if accion == "aclaracion_alumno" and numero not in acciones_pendientes:
-        historiales[numero] = []
-    elif accion not in ["no_entiendo"] and numero not in acciones_pendientes:
-        historiales[numero] = []
-    elif len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
+    if len(historial) > MAXIMO_MENSAJES_HISTORIAL * 2:
         historiales[numero] = []
 
     respuesta = MessagingResponse()
