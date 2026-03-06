@@ -7,18 +7,20 @@ from datetime import date
 # moneda: "Dólar", "Pesos", "Libra Esterlina"
 # metodo: "Wise", "PayPal", "Transferencia nacional"
 # notas: cualquier aclaración, por ejemplo "pagó 3 clases de febrero"
-def registrar_pago(alumno_id, monto, moneda, metodo, notas=None):
+def registrar_pago(alumno_id, monto, moneda, metodo, notas=None, fecha_pago=None):
     conn = get_connection()
     cursor = conn.cursor()
-    hoy = date.today().isoformat()  # Guarda la fecha de hoy automáticamente
+    # Si no se indica fecha, usa hoy. Los llamadores deben pasar el primer día
+    # del mes de las clases para que el pago aparezca en el mes correcto.
+    fecha = fecha_pago if fecha_pago else date.today().isoformat()
     cursor.execute("""
         INSERT INTO pagos (alumno_id, fecha, monto, moneda, metodo, notas)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (alumno_id, hoy, monto, moneda, metodo, notas))
+    """, (alumno_id, fecha, monto, moneda, metodo, notas))
     pago_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    print(f"Pago registrado: alumno {alumno_id} - {monto} {moneda} via {metodo}")
+    print(f"Pago registrado: alumno {alumno_id} - {monto} {moneda} via {metodo} ({fecha})")
     return pago_id
 
 # Devuelve todos los pagos de un mes y año específico.

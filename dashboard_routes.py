@@ -434,9 +434,17 @@ def api_registrar_pago_rapido():
             cids = item['clase_ids']
             if not cids:
                 continue
+            # Derivar fecha del pago del mes de la primera clase
+            primera_clase = conn.execute("SELECT fecha FROM clases WHERE id=?", (cids[0],)).fetchone()
+            if primera_clase:
+                partes = primera_clase['fecha'].split('-')
+                fecha_pago = f"{partes[0]}-{partes[1]}-01"
+            else:
+                fecha_pago = None
             # Monto proporcional si son varios alumnos
             monto_alumno = data.get('monto_proporcional', {}).get(str(aid), monto)
-            pago_id = registrar_pago(aid, monto_alumno, moneda, metodo, notas='Registrado desde dashboard')
+            pago_id = registrar_pago(aid, monto_alumno, moneda, metodo,
+                                     notas='Registrado desde dashboard', fecha_pago=fecha_pago)
             # Vincular clases
             conn.execute(
                 f"UPDATE clases SET pago_id=? WHERE id IN ({','.join('?'*len(cids))})",
@@ -863,7 +871,11 @@ tr:hover td{background:var(--gold-dim)}
             <button class="cobros-vista-btn" onclick="setCobrosVista('semana',this)">Por semana</button>
             <button class="cobros-vista-btn" onclick="setCobrosVista('checks',this)">Con checkboxes</button>
           </div>
-          <button class="btn" id="btn-registrar-seleccion" style="display:none" onclick="registrarSeleccion()">&#10003; Registrar seleccionadas</button>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <button class="btn" id="btn-registrar-seleccion" style="display:none" onclick="registrarSeleccionChecks()">&#10003; Registrar seleccionadas</button>
+            <button class="btn" id="btn-abrir-formularios" style="display:none" onclick="abrirFormulariosSeleccionados()">&#10003; Abrir formularios</button>
+            <button class="btn" id="btn-registrar-abiertos" style="display:none" onclick="registrarTodosAbiertos()">&#10003; Registrar todos</button>
+          </div>
         </div>
         <div id="cobros-content"><div class="empty" style="padding:2.5rem;text-align:center;color:var(--text-muted)">Cargando...</div></div>
 
@@ -1474,7 +1486,11 @@ function renderCobros() {
 function simMoneda(m) { return m === 'Libra Esterlina' ? '\u00a3' : '$'; }
 
 function renderCobrosResponsable(cont) {
-  var html = cobrosData.map(function(g, gi) {
+  var html = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">'
+    + '<input type="checkbox" id="resp-master" onchange="selectAllResponsable(this)" style="width:15px;height:15px;cursor:pointer">'
+    + '<label for="resp-master" style="cursor:pointer">Seleccionar todos</label>'
+    + '</div>';
+  html += cobrosData.map(function(g, gi) {
     var sim = simMoneda(g.moneda);
     var montoStr = g.monto_calculado ? sim + fmt(g.monto_calculado) + ' ' + g.moneda : 'sin precio';
     var sublinea = g.es_representante ? 'Representante' : 'Alumno';
@@ -1484,8 +1500,11 @@ function renderCobrosResponsable(cont) {
     }).join('');
     return '<div class="cobros-grupo" id="cobro-grupo-' + gi + '">'
       + '<div class="cobros-grupo-header">'
+      + '<div style="display:flex;align-items:center;gap:0.6rem">'
+      + '<input type="checkbox" class="resp-check" data-gi="' + gi + '" onchange="actualizarBotonesResponsable()" style="width:15px;height:15px;cursor:pointer">'
       + '<div><div class="cobros-grupo-titulo">' + g.responsable + '</div>'
       + '<div class="cobros-grupo-sub">' + sublinea + ' &bull; ' + g.total_clases + ' clase(s) sin pagar</div></div>'
+      + '</div>'
       + '<div style="display:flex;align-items:center;gap:0.75rem">'
       + '<span class="cobros-grupo-monto">' + montoStr + '</span>'
       + '<button class="btn" onclick="abrirPago(' + gi + ')">Registrar pago</button>'
@@ -1495,6 +1514,74 @@ function renderCobrosResponsable(cont) {
       + '</div>';
   }).join('');
   cont.innerHTML = html;
+}
+
+function selectAllResponsable(master) {
+  document.querySelectorAll('.resp-check').forEach(function(c){ c.checked = master.checked; });
+  actualizarBotonesResponsable();
+}
+
+function actualizarBotonesResponsable() {
+  var checks = document.querySelectorAll('.resp-check:checked');
+  var btnAbrir = document.getElementById('btn-abrir-formularios');
+  var btnReg = document.getElementById('btn-registrar-abiertos');
+  btnAbrir.style.display = checks.length ? 'flex' : 'none';
+  // btn-registrar-abiertos se muestra solo si hay formularios abiertos
+  var hayAbiertos = document.querySelectorAll('.cobros-inline-form[style*="flex"]').length > 0;
+  btnReg.style.display = hayAbiertos ? 'flex' : 'none';
+}
+
+function abrirFormulariosSeleccionados() {
+  var checks = document.querySelectorAll('.resp-check:checked');
+  // Cerrar todos primero
+  document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  checks.forEach(function(chk) {
+    var gi = parseInt(chk.getAttribute('data-gi'));
+    abrirPago(gi);
+  });
+  // Mostrar botón de registrar todos
+  document.getElementById('btn-registrar-abiertos').style.display = 'flex';
+  document.getElementById('btn-abrir-formularios').style.display = 'none';
+}
+
+function registrarTodosAbiertos() {
+  // Recolectar todos los formularios visibles y enviarlos en secuencia
+  var forms = document.querySelectorAll('.cobros-inline-form[style*="flex"]');
+  if (!forms.length) return;
+  var pendientes = [];
+  forms.forEach(function(form) {
+    var gi = parseInt(form.id.replace('cobro-form-', ''));
+    var monto = parseFloat(form.querySelector('.cobro-monto-input').value);
+    var moneda = form.querySelector('.cobro-moneda-input').value;
+    var metodo = form.querySelector('.cobro-metodo-input').value;
+    if (!monto || isNaN(monto)) return; // Saltear sin precio
+    pendientes.push({gi: gi, monto: monto, moneda: moneda, metodo: metodo});
+  });
+  if (!pendientes.length) { alert('No hay formularios con monto v\u00e1lido para registrar.'); return; }
+  var registrados = 0;
+  var errores = [];
+  function procesarSiguiente(idx) {
+    if (idx >= pendientes.length) {
+      var msg = '\u2705 ' + registrados + ' pago(s) registrado(s).';
+      if (errores.length) msg += '\n\u26a0\ufe0f Errores: ' + errores.join(', ');
+      alert(msg);
+      document.getElementById('btn-registrar-abiertos').style.display = 'none';
+      document.getElementById('btn-abrir-formularios').style.display = 'none';
+      var master = document.getElementById('resp-master');
+      if (master) master.checked = false;
+      cargarCobros();
+      cargarTodo();
+      return;
+    }
+    var p = pendientes[idx];
+    var g = cobrosData[p.gi];
+    enviarPagoRapido(g, p.monto, p.moneda, p.metodo, function() {
+      registrados++;
+      procesarSiguiente(idx + 1);
+    });
+    // Si hay error, enviarPagoRapido muestra alert — igual seguimos
+  }
+  procesarSiguiente(0);
 }
 
 function renderCobrosSemana(cont) {
@@ -1573,7 +1660,8 @@ function actualizarSeleccion() {
   document.getElementById('btn-registrar-seleccion').style.display = checks.length ? 'flex' : 'none';
 }
 
-function registrarSeleccion() {
+function registrarSeleccionChecks() {
+  // Registra cada responsable seleccionado por separado, automáticamente
   var checks = document.querySelectorAll('.cobro-check:checked');
   if (!checks.length) return;
   var grupos = {};
@@ -1586,17 +1674,45 @@ function registrarSeleccion() {
     grupos[resp].alumnos[aid].push(cid);
   });
   var responsables = Object.keys(grupos);
-  if (responsables.length > 1) {
-    alert('Seleccionaste clases de varios responsables. Registralos por separado para calcular el precio correcto.');
-    return;
+  // Construir lista de pagos a registrar, uno por responsable
+  var pagos = [];
+  var sinPrecio = [];
+  responsables.forEach(function(resp) {
+    var gData = cobrosData.find(function(x){ return x.responsable === resp; });
+    if (!gData) return;
+    var alumnos = Object.entries(grupos[resp].alumnos).map(function(e){
+      return {alumno_id: parseInt(e[0]), clase_ids: e[1]};
+    });
+    var totalClases = alumnos.reduce(function(s,a){return s+a.clase_ids.length;},0);
+    var monto = gData.precio_unitario ? Math.round(gData.precio_unitario * totalClases * 100) / 100 : null;
+    if (monto === null) { sinPrecio.push(resp); return; }
+    // Reconstruir g con solo las clases seleccionadas
+    var gMod = Object.assign({}, gData);
+    gMod.total_clases = totalClases;
+    gMod.clase_ids = alumnos.reduce(function(s,a){return s.concat(a.clase_ids);}, []);
+    gMod.alumnos = alumnos.map(function(a) {
+      var orig = gData.alumnos.find(function(x){ return x.alumno_id === a.alumno_id; }) || {};
+      return Object.assign({}, orig, {clases: a.clase_ids.map(function(id){return {id:id};}), cantidad: a.clase_ids.length});
+    });
+    pagos.push({g: gMod, monto: monto, moneda: grupos[resp].moneda, metodo: grupos[resp].metodo, resp: resp});
+  });
+  if (sinPrecio.length) {
+    alert('Sin precio cargado: ' + sinPrecio.join(', ') + '. Registralos manualmente desde "Por responsable".');
   }
-  var resp = responsables[0];
-  var gData = cobrosData.find(function(x){ return x.responsable === resp; });
-  if (!gData) return;
-  var alumnos = Object.entries(grupos[resp].alumnos).map(function(e){ return {alumno_id: parseInt(e[0]), clase_ids: e[1]}; });
-  var totalClases = alumnos.reduce(function(s,a){return s+a.clase_ids.length;},0);
-  var monto = gData.precio_unitario ? gData.precio_unitario * totalClases : null;
-  abrirModalDirecto(resp, alumnos, monto, gData.moneda, grupos[resp].metodo);
+  if (!pagos.length) return;
+  var registrados = 0;
+  function procesarSiguiente(idx) {
+    if (idx >= pagos.length) {
+      alert('\u2705 ' + registrados + ' pago(s) registrado(s) autom\u00e1ticamente.');
+      cargarCobros(); cargarTodo(); return;
+    }
+    var p = pagos[idx];
+    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function() {
+      registrados++;
+      procesarSiguiente(idx + 1);
+    });
+  }
+  procesarSiguiente(0);
 }
 
 function abrirPago(gi) {
