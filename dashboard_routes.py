@@ -854,7 +854,7 @@ function borrarPago(nombre) {
 }
 
 function borrarPagoDirecto(pagoId, resumen) {
-  if (!confirm('\u00bfBorrar este pago?\n' + resumen)) return;
+  if (!confirm('\u00bfBorrar este pago?\\n' + resumen)) return;
   fetch('/dashboard/api/borrar_pago_id', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
