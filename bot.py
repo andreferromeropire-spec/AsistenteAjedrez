@@ -272,8 +272,12 @@ def ejecutar_accion(accion, datos, numero):
         # Esto evita que "Carina" matchee silenciosamente con "Fiona" u otro nombre muy distinto
         if aviso and not datos.get("sugerencia_confirmada"):
             from difflib import SequenceMatcher
-            similitud = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
-            if similitud < 0.5:
+            # Comparar contra nombre del alumno Y contra su representante
+            sim_nombre = SequenceMatcher(None, nombre_buscado.lower(), alumno["nombre"].lower()).ratio()
+            rep = (alumno.get("representante") or "").lower()
+            sim_rep = SequenceMatcher(None, nombre_buscado.lower(), rep).ratio() if rep else 0
+            similitud = max(sim_nombre, sim_rep)
+            if similitud < 0.4:
                 acciones_pendientes[numero] = {
                     "accion": accion,
                     "datos": {**datos, "sugerencia_confirmada": True, "alumno_id_directo": alumno["id"]},
@@ -374,7 +378,9 @@ def ejecutar_accion(accion, datos, numero):
         if moneda_promo and not datos.get("moneda"):
             moneda = moneda_promo
 
-        monto_pagado = datos.get("monto")
+        # Normalizar monto: si viene vacío o None, tratarlo como None
+        monto_raw = datos.get("monto")
+        monto_pagado = float(monto_raw) if monto_raw not in (None, "", 0) else None
 
         # Solo comparar montos si la moneda es la misma que la promo
         moneda_pago_raw = datos.get("moneda")  # lo que dijo el usuario (puede ser None)

@@ -27,7 +27,8 @@ Tu trabajo es interpretar el mensaje y devolver SOLO un JSON con esta estructura
 
 Las acciones posibles son:
 
-1. "registrar_pago" - cuando alguien pagó
+1. "registrar_pago" - cuando alguien pagó o pago (sin tilde también)
+   Ejemplos: "jeff pagó", "jeff pago", "pagó lucas", "pago de isabella"
    datos necesarios: nombre_alumno, monto, moneda (Dólar/Pesos/Libra Esterlina), metodo (Wise/PayPal/Transferencia nacional), notas (opcional)
    Para la moneda, convertí siempre al nombre interno:
    - "pesos", "ARS", "pesos argentinos", "$" → "Pesos"
