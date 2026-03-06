@@ -132,6 +132,7 @@ def procesar_cambios(cambios):
     cursor = conn.cursor()
 
     # 1. EVENTOS NUEVOS
+    clases_nuevas = 0
     for evento in cambios["nuevos"]:
         alumno = buscar_alumno_en_evento(evento["titulo"])
 
@@ -144,6 +145,7 @@ def procesar_cambios(cambios):
                 origen="google_calendar",
                 google_event_id=evento["google_id"]
             )
+            clases_nuevas += 1
             mensajes.append(
                 f"📌 Clase nueva agregada: {alumno['nombre']} el {evento['fecha']} a las {evento['hora']}"
             )
@@ -213,7 +215,7 @@ def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True):
         enviar_mensaje(texto)
 
     return {
-        "nuevos": len(cambios["nuevos"]),
+        "nuevos": clases_nuevas,
         "cancelados": len(cambios["cancelados"]),
         "modificados": len(cambios["modificados"]),
         "mensajes": mensajes_info,
