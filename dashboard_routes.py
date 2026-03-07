@@ -209,7 +209,7 @@ def api_clases():
     alumno_filtro = request.args.get('alumno', '')
     conn = get_connection()
     query = """
-        SELECT c.fecha, c.hora, c.estado, c.origen, c.pago_id,
+        SELECT c.fecha, c.hora, c.estado, c.origen, c.pago_id, c.ausente,
                a.nombre, a.pais, a.moneda, a.modalidad
         FROM clases c
         JOIN alumnos a ON c.alumno_id = a.id
@@ -274,6 +274,30 @@ def api_borrar_pago_id():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+@dashboard_bp.route('/dashboard/api/marcar_ausente', methods=['POST'])
+@login_required
+def api_marcar_ausente():
+    data = request.get_json()
+    nombre = data.get('nombre_alumno', '').strip()
+    fecha = data.get('fecha', '').strip()
+    if not nombre or not fecha:
+        return jsonify({'ok': False, 'error': 'Faltan datos'})
+    conn = get_connection()
+    # Buscar la clase dada de ese alumno en esa fecha
+    clase = conn.execute("""
+        SELECT c.id FROM clases c
+        JOIN alumnos a ON c.alumno_id = a.id
+        WHERE a.nombre = ? AND c.fecha = ? AND c.estado = 'dada'
+    """, (nombre, fecha)).fetchone()
+    if not clase:
+        conn.close()
+        return jsonify({'ok': False, 'error': f'No se encontró clase dada de {nombre} el {fecha}'})
+    conn.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (clase['id'],))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @dashboard_bp.route('/dashboard/api/sincronizar', methods=['POST'])
 @login_required
 def api_sincronizar():
@@ -333,170 +357,6 @@ def api_ultima_sync():
     return jsonify(_ultima_sync)
 
 
-@dashboard_bp.route('/dashboard/api/clases_sin_pagar')
-@login_required
-def api_clases_sin_pagar():
-    """Devuelve clases sin pago_id del mes, agrupadas por responsable."""
-    mes = int(request.args.get('mes', date.today().month))
-    anio = int(request.args.get('anio', date.today().year))
-    conn = get_connection()
-    clases = conn.execute("""
-        SELECT c.id, c.fecha, c.hora, c.estado,
-               a.id as alumno_id, a.nombre, a.representante,
-               a.moneda, a.metodo_pago, a.modalidad
-        FROM clases c
-        JOIN alumnos a ON c.alumno_id = a.id
-        WHERE c.pago_id IS NULL
-        AND c.estado IN ('agendada', 'dada', 'cancelada_sin_anticipacion')
-        AND strftime('%m', c.fecha) = ?
-        AND strftime('%Y', c.fecha) = ?
-        AND a.activo = 1
-        ORDER BY a.representante, a.nombre, c.fecha
-    """, (f"{mes:02d}", str(anio))).fetchall()
-
-    # Agrupar por responsable
-    grupos = {}
-    for c in clases:
-        responsable = c['representante'] or c['nombre']
-        if responsable not in grupos:
-            grupos[responsable] = {
-                'responsable': responsable,
-                'es_representante': bool(c['representante']),
-                'moneda': c['moneda'],
-                'metodo_pago': c['metodo_pago'],
-                'alumnos': {},
-                'clases': []
-            }
-        nombre = c['nombre']
-        if nombre not in grupos[responsable]['alumnos']:
-            grupos[responsable]['alumnos'][nombre] = {'alumno_id': c['alumno_id'], 'clases': []}
-        grupos[responsable]['alumnos'][nombre]['clases'].append({
-            'id': c['id'], 'fecha': c['fecha'], 'hora': c['hora'], 'estado': c['estado']
-        })
-        grupos[responsable]['clases'].append(c['id'])
-
-    # Calcular precio combo para cada grupo
-    resultado = []
-    for responsable, grupo in grupos.items():
-        total_clases = sum(len(a['clases']) for a in grupo['alumnos'].values())
-        precio_unitario = None
-        moneda = grupo['moneda']
-        # Buscar promo usando total combinado (precio combo)
-        for alumno_nombre, adata in grupo['alumnos'].items():
-            rangos = conn.execute(
-                "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
-                (adata['alumno_id'],)).fetchall()
-            for r in rangos:
-                if r['clases_desde'] <= total_clases <= r['clases_hasta']:
-                    precio_unitario = r['precio_por_clase']
-                    moneda = r['moneda']
-                    break
-            if precio_unitario is None and rangos:
-                precio_unitario = rangos[-1]['precio_por_clase']
-                moneda = rangos[-1]['moneda']
-            if precio_unitario is not None:
-                break
-
-        monto_calculado = round(precio_unitario * total_clases, 2) if precio_unitario else None
-
-        # Buscar label de la promo que aplica
-        promo_label = None
-        for alumno_nombre, adata in grupo['alumnos'].items():
-            rangos = conn.execute(
-                "SELECT clases_desde, clases_hasta FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
-                (adata['alumno_id'],)).fetchall()
-            for r in rangos:
-                if r['clases_desde'] <= total_clases <= r['clases_hasta']:
-                    if r['clases_desde'] == r['clases_hasta'] == 1:
-                        promo_label = 'clase suelta'
-                    elif r['clases_desde'] == r['clases_hasta']:
-                        promo_label = f'{r["clases_desde"]} clases'
-                    else:
-                        promo_label = f'{r["clases_desde"]}-{r["clases_hasta"]} clases'
-                    break
-            if promo_label:
-                break
-
-        # Obtener todos los rangos de promo para mostrar indicador dinámico
-        rangos_promo = []
-        for alumno_nombre, adata in grupo['alumnos'].items():
-            rangos = conn.execute(
-                "SELECT clases_desde, clases_hasta, precio_por_clase FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
-                (adata['alumno_id'],)).fetchall()
-            if rangos:
-                rangos_promo = [{'desde': r['clases_desde'], 'hasta': r['clases_hasta'], 'precio': r['precio_por_clase']} for r in rangos]
-                break
-
-        resultado.append({
-            'responsable': responsable,
-            'es_representante': grupo['es_representante'],
-            'moneda': moneda,
-            'metodo_pago': grupo['metodo_pago'],
-            'alumnos': [
-                {'nombre': n, 'alumno_id': a['alumno_id'],
-                 'clases': a['clases'], 'cantidad': len(a['clases'])}
-                for n, a in grupo['alumnos'].items()
-            ],
-            'total_clases': total_clases,
-            'precio_unitario': precio_unitario,
-            'promo_label': promo_label,
-            'rangos_promo': rangos_promo,
-            'monto_calculado': monto_calculado,
-            'clase_ids': grupo['clases']
-        })
-
-    conn.close()
-    return jsonify(resultado)
-
-
-@dashboard_bp.route('/dashboard/api/registrar_pago_rapido', methods=['POST'])
-@login_required
-def api_registrar_pago_rapido():
-    """Registra un pago y vincula las clases indicadas."""
-    from pagos import registrar_pago
-    data = request.get_json()
-    alumno_id = data.get('alumno_id')
-    clase_ids = data.get('clase_ids', [])
-    monto = data.get('monto')
-    moneda = data.get('moneda')
-    metodo = data.get('metodo')
-
-    if not alumno_id or not clase_ids or monto is None:
-        return jsonify({'ok': False, 'error': 'Faltan datos'})
-
-    try:
-        conn = get_connection()
-        # Para representantes: registrar un pago por alumno con su proporción
-        alumnos_data = data.get('alumnos_ids', [{'alumno_id': alumno_id, 'clase_ids': clase_ids}])
-        pagos_registrados = 0
-        for item in alumnos_data:
-            aid = item['alumno_id']
-            cids = item['clase_ids']
-            if not cids:
-                continue
-            # Derivar fecha del pago del mes de la primera clase
-            primera_clase = conn.execute("SELECT fecha FROM clases WHERE id=?", (cids[0],)).fetchone()
-            if primera_clase:
-                partes = primera_clase['fecha'].split('-')
-                fecha_pago = f"{partes[0]}-{partes[1]}-01"
-            else:
-                fecha_pago = None
-            # Monto proporcional si son varios alumnos
-            monto_alumno = data.get('monto_proporcional', {}).get(str(aid), monto)
-            pago_id = registrar_pago(aid, monto_alumno, moneda, metodo,
-                                     notas='Registrado desde dashboard', fecha_pago=fecha_pago)
-            # Vincular clases
-            conn.execute(
-                f"UPDATE clases SET pago_id=? WHERE id IN ({','.join('?'*len(cids))})",
-                [pago_id] + list(cids))
-            pagos_registrados += 1
-        conn.commit()
-        conn.close()
-        return jsonify({'ok': True, 'pagos': pagos_registrados})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)})
-
-
 @dashboard_bp.route('/dashboard/api/deudores')
 @login_required
 def api_deudores():
@@ -512,65 +372,34 @@ def api_deudores():
             WHERE strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
         )
     """, (f"{mes:02d}", str(anio))).fetchall()
-
-    # Agrupar por representante para calcular precio combo
-    grupos = {}  # clave: representante o nombre si no tiene
-    for d in deudores:
-        clave = d['representante'] if d['representante'] else d['nombre']
-        if clave not in grupos:
-            grupos[clave] = {'representante': d['representante'], 'moneda': d['moneda'], 'alumnos': []}
-        grupos[clave]['alumnos'].append({'id': d['id'], 'nombre': d['nombre'], 'moneda': d['moneda']})
-
     resultado = []
-    for clave, grupo in grupos.items():
-        alumnos = grupo['alumnos']
-
-        # Contar clases de cada alumno en el mes
-        clases_por_alumno = {}
-        for a in alumnos:
-            n = conn.execute("""
-                SELECT COUNT(*) FROM clases
-                WHERE alumno_id=? AND estado='agendada'
-                AND strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
-            """, (a['id'], f"{mes:02d}", str(anio))).fetchone()[0]
-            clases_por_alumno[a['id']] = n
-
-        total_clases = sum(clases_por_alumno.values())
-
-        # Precio combo: buscar en las promos del primer alumno usando total combinado
-        # (asumimos que todos los alumnos del mismo representante tienen la misma escala)
-        precio_unitario = None
-        moneda = grupo['moneda']
-        for a in alumnos:
-            rangos = conn.execute(
-                "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
-                (a['id'],)).fetchall()
-            for r in rangos:
-                if r['clases_desde'] <= total_clases <= r['clases_hasta']:
-                    precio_unitario = r['precio_por_clase']
-                    moneda = r['moneda']
-                    break
-            if precio_unitario is None and rangos:
-                precio_unitario = rangos[-1]['precio_por_clase']
-                moneda = rangos[-1]['moneda']
-            if precio_unitario is not None:
+    for d in deudores:
+        clases = conn.execute("""
+            SELECT COUNT(*) FROM clases
+            WHERE alumno_id=? AND estado='agendada'
+            AND strftime('%m',fecha)=? AND strftime('%Y',fecha)=?
+        """, (d['id'], f"{mes:02d}", str(anio))).fetchone()[0]
+        rangos = conn.execute(
+            "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
+            (d['id'],)).fetchall()
+        precio = None
+        moneda = d['moneda']
+        for r in rangos:
+            if r['clases_desde'] <= clases <= r['clases_hasta']:
+                precio = r['precio_por_clase']
+                moneda = r['moneda']
                 break
-
-        total = round(precio_unitario * total_clases, 2) if precio_unitario else None
-
-        es_combo = len(alumnos) > 1
-        nombres = ", ".join([a['nombre'] for a in alumnos])
-
+        if precio is None and rangos:
+            precio = rangos[-1]['precio_por_clase']
+            moneda = rangos[-1]['moneda']
         resultado.append({
-            'nombre': nombres,
-            'representante': grupo['representante'] or None,
-            'clases': total_clases,
-            'precio_unitario': precio_unitario,
-            'total': total,
-            'moneda': moneda,
-            'es_combo': es_combo
+            'nombre': d['nombre'],
+            'representante': d['representante'] or '-',
+            'clases': clases,
+            'precio_unitario': precio,
+            'total': round(precio * clases, 2) if precio else None,
+            'moneda': moneda
         })
-
     conn.close()
     return jsonify(resultado)
 
@@ -629,40 +458,6 @@ def api_ingresos_anuales():
             monedas[m] = [0] * 12
         monedas[m][int(r['mes']) - 1] = r['total']
     return jsonify(monedas)
-
-
-@dashboard_bp.route('/dashboard/api/tipo_cambio')
-@login_required
-def api_tipo_cambio():
-    """Devuelve tipo de cambio del día: blue ARS/USD y GBP/USD."""
-    import urllib.request, json as _json
-    resultado = {'ars_usd': None, 'gbp_usd': None, 'error': None}
-    try:
-        # Dólar blue desde bluelytics
-        req = urllib.request.Request(
-            'https://api.bluelytics.com.ar/v2/latest',
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            data = _json.loads(r.read())
-        resultado['ars_usd'] = data['blue']['value_sell']
-    except Exception as e:
-        resultado['error'] = f"Blue no disponible: {e}"
-    try:
-        # GBP/USD desde frankfurter (oficial, suficiente para esterlinas)
-        req2 = urllib.request.Request(
-            'https://api.frankfurter.app/latest?from=GBP&to=USD',
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req2, timeout=5) as r2:
-            data2 = _json.loads(r2.read())
-        resultado['gbp_usd'] = data2['rates']['USD']
-    except Exception as e2:
-        if resultado['error']:
-            resultado['error'] += f" | GBP no disponible: {e2}"
-        else:
-            resultado['error'] = f"GBP no disponible: {e2}"
-    return jsonify(resultado)
 
 
 LOGIN_HTML = """<!DOCTYPE html>
@@ -893,7 +688,6 @@ tr:hover td{background:var(--gold-dim)}
     <div class="metric"><div class="metric-label">Cobrado USD</div><div class="metric-value green" id="m-usd">-</div></div>
     <div class="metric"><div class="metric-label">Cobrado GBP</div><div class="metric-value green" id="m-gbp">-</div></div>
     <div class="metric"><div class="metric-label">Cobrado ARS</div><div class="metric-value green" id="m-ars">-</div></div>
-    <div class="metric"><div class="metric-label">Total est. USD <span style="font-size:0.6rem;opacity:0.6">(blue)</span></div><div class="metric-value green" id="m-total-usd">-</div></div>
   </div>
 
   <div class="main-layout">
@@ -1025,18 +819,7 @@ tr:hover td{background:var(--gold-dim)}
             <canvas id="chart-anual" height="260"></canvas>
           </div>
           <div class="chart-box">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
-              <h3 style="margin:0">Ingresos mensuales</h3>
-              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
-                <select id="ingr-moneda-sel" onchange="renderIngresos()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.25rem 0.5rem;border-radius:4px;font-family:'DM Sans',sans-serif;font-size:0.78rem;outline:none">
-                  <option value="Dolar">Dólar</option>
-                  <option value="Libra Esterlina">Libra Esterlina</option>
-                  <option value="Pesos">Pesos</option>
-                  <option value="usd_total">Todo en USD (blue)</option>
-                </select>
-                <span id="ingr-tc-info" style="font-size:0.7rem;color:var(--text-muted)"></span>
-              </div>
-            </div>
+            <h3>Ingresos mensuales</h3>
             <canvas id="chart-ingresos" height="260"></canvas>
           </div>
         </div>
@@ -1217,13 +1000,6 @@ function api(ruta) {
 
 function fmt(n) { return Number(n).toLocaleString('es-AR'); }
 
-function monedaSimbolo(moneda) {
-  if (moneda === 'Dólar' || moneda === 'Dolar') return '$';
-  if (moneda === 'Libra Esterlina') return '£';
-  if (moneda === 'Pesos') return 'AR$';
-  return moneda;
-}
-
 function estadoBadge(e) {
   var map = {
     'agendada':'<span class="badge badge-gold">Agendada</span>',
@@ -1236,16 +1012,6 @@ function estadoBadge(e) {
 }
 
 function cargarTodo() {
-  // Cargar tipo de cambio primero para que las métricas ya lo tengan
-  if (!window._tipoCambio) {
-    fetch('/dashboard/api/tipo_cambio').then(function(r){ return r.json(); })
-    .then(function(tc) {
-      window._tipoCambio = tc;
-      var info = document.getElementById('ingr-tc-info');
-      if (info && tc.ars_usd) info.textContent = '\u00b7 Blue: $' + tc.ars_usd + ' ARS/USD';
-      cargarResumen(); // Re-cargar métricas con el TC ya disponible
-    }).catch(function(){ window._tipoCambio = {}; });
-  }
   cargarResumen();
   poblarFiltroAlumnos();
   cargarClases();
@@ -1262,19 +1028,9 @@ function cargarResumen() {
     document.getElementById('m-alumnos').textContent = d.total_alumnos;
     document.getElementById('m-clases').textContent = d.clases_agendadas;
     document.getElementById('m-canceladas').textContent = d.clases_canceladas;
-    var usd = d.pagos['Dolar'] || d.pagos['D\u00f3lar'] || 0;
-    var gbp = d.pagos['Libra Esterlina'] || 0;
-    var ars = d.pagos['Pesos'] || 0;
-    document.getElementById('m-usd').textContent = usd ? '$'+fmt(usd) : '-';
-    document.getElementById('m-gbp').textContent = gbp ? '\u00a3'+fmt(gbp) : '-';
-    document.getElementById('m-ars').textContent = ars ? '$'+fmt(ars) : '-';
-    // Calcular total en USD si hay tipo de cambio disponible
-    if (window._tipoCambio && window._tipoCambio.ars_usd) {
-      var tc = window._tipoCambio;
-      var totalUsd = usd + (gbp * (tc.gbp_usd || 1.27)) + (ars / tc.ars_usd);
-      var elTotal = document.getElementById('m-total-usd');
-      if (elTotal) elTotal.textContent = '~$' + fmt(Math.round(totalUsd));
-    }
+    document.getElementById('m-usd').textContent = d.pagos['Dolar'] ? '$'+fmt(d.pagos['Dolar']) : (d.pagos['D\u00f3lar'] ? '$'+fmt(d.pagos['D\u00f3lar']) : '-');
+    document.getElementById('m-gbp').textContent = d.pagos['Libra Esterlina'] ? '\u00a3'+fmt(d.pagos['Libra Esterlina']) : '-';
+    document.getElementById('m-ars').textContent = d.pagos['Pesos'] ? '$'+fmt(d.pagos['Pesos']) : '-';
   });
 }
 
@@ -1331,55 +1087,41 @@ function cargarClases() {
     }
     var html = datos.length ? datos.map(function(c) {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
-      return '<tr><td style="white-space:nowrap">'+formatFecha(c.fecha)+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td></tr>';
-    }).join('') : '<tr><td colspan="6" class="empty">Sin clases en este periodo</td></tr>';
+      var ausenteBadge = c.ausente ? ' <span title="No asistió">🪑</span>' : '';
+      var ausenteBtn = (!c.ausente && c.estado === 'dada')
+        ? '<button onclick="marcarAusenteDashboard('+JSON.stringify(c.nombre)+','+JSON.stringify(c.fecha)+')" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">🪑</button>'
+        : '';
+      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+ausenteBadge+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
     document.getElementById('t-clases').innerHTML = html;
+  });
+}
+
+function marcarAusenteDashboard(nombre, fecha) {
+  if (!confirm('Marcar a ' + nombre + ' como ausente el ' + fecha + '?')) return;
+  fetch('api/marcar_ausente', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
+  }).then(function(r){ return r.json(); }).then(function(r) {
+    if (r.ok) { cargarClases(); }
+    else { alert('Error: ' + (r.error || 'No se pudo marcar')); }
   });
 }
 
 function cargarPagos() {
   api('pagos').then(function(datos) {
     var monedas = {};
-    // Agrupar por responsable + fecha (un responsable puede tener pagos de distintas fechas)
-    var grupos = {};
-    var orden = [];
-    datos.forEach(function(p) {
+    var html = datos.length ? datos.map(function(p) {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
-      var key = p.responsable + '||' + p.fecha;
-      if (!grupos[key]) { grupos[key] = {responsable: p.responsable, fecha: p.fecha, items: [], monedas: {}}; orden.push(key); }
-      grupos[key].items.push(p);
-      grupos[key].monedas[p.moneda] = (grupos[key].monedas[p.moneda]||0) + p.monto;
-    });
-    var html = orden.length ? orden.map(function(key) {
-      var g = grupos[key];
-      var esGrupo = g.items.length > 1;
-      // Línea de nombre: responsable grande, representados abajo en gris
-      var nombreCell = '<strong>' + g.responsable + '</strong>';
-      if (esGrupo) {
-        var representados = g.items.map(function(p){ return p.nombre; }).join(', ');
-        nombreCell += '<br><span style="color:var(--text-muted);font-size:0.75rem">' + representados + '</span>';
-      }
-      // Monto: sumar todo del grupo
-      var montoCell = Object.keys(g.monedas).map(function(m) {
-        var s = m === 'Libra Esterlina' ? 'GBP' : m;
-        return s + fmt(g.monedas[m]);
-      }).join(' + ');
-      // Moneda badge
-      var monedaBadge = Object.keys(g.monedas).map(function(m){
-        return '<span class="badge badge-gold">'+monedaSimbolo(m)+'</span>';
-      }).join(' ');
-      // Clases resumen agrupado
-      var clasesCell = g.items.map(function(p){
-        var cr = p.clases_resumen ? p.clases_resumen : '';
-        return esGrupo ? '<span style="font-size:0.76rem"><strong>'+p.nombre+':</strong> '+cr+'</span>' : cr;
-      }).filter(Boolean).join('<br>');
-      // Notas
-      var notas = g.items.map(function(p){ return p.notas||''; }).filter(Boolean).join(', ') || '-';
-      // Botón borrar: borra todos los pagos del grupo en secuencia
-      var ids = g.items.map(function(p){ return p.id; });
-      var resumen = encodeURIComponent(g.fecha + ' ' + g.responsable + ' (' + g.items.length + ' pago(s))');
-      var borrar = '<button class="btn-icon danger btn-borrar-grupo" title="Borrar pago(s)" data-ids="'+ids.join(',')+'" data-resumen="'+resumen+'">&#128465;</button>';
-      return '<tr><td>'+g.fecha+'</td><td>'+nombreCell+'</td><td>'+montoCell+'</td><td>'+monedaBadge+'</td><td>'+(g.items[0].metodo||'-')+'</td><td style="font-size:0.78rem">'+clasesCell+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+notas+'</td><td>'+borrar+'</td></tr>';
+      var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
+      var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
+      var np = p.nombre.replace(/"/g, '&quot;');
+      var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
+      var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
+      var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
+      var clases_res = p.clases_resumen ? '<span style="color:var(--text-dim);font-size:0.78rem">'+p.clases_resumen+'</span>' : '-';
+      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
@@ -1397,7 +1139,7 @@ function cargarDeudores() {
     var grupos = {};
     var orden = [];
     datos.forEach(function(d) {
-      var resp = (d.representante && d.representante !== '-') ? d.representante : d.nombre;
+      var resp = d.representante || d.nombre;
       if (!grupos[resp]) { grupos[resp] = {responsable: resp, items: [], moneda: d.moneda}; orden.push(resp); }
       grupos[resp].items.push(d);
       if (d.total && d.moneda) {
@@ -1424,7 +1166,7 @@ function cargarDeudores() {
         + '<td>' + totalClases + '</td>'
         + '<td>' + (precioUnitario ? sim+fmt(precioUnitario) : '-') + '</td>'
         + '<td>' + (totalMonto ? '<strong>'+sim+fmt(totalMonto)+'</strong>' : '-') + '</td>'
-        + '<td><span class="badge badge-gold">' + monedaSimbolo(g.moneda) + '</span></td>'
+        + '<td><span class="badge badge-gold">' + g.moneda + '</span></td>'
         + '</tr>';
     }).join('') : '<tr><td colspan="5" class="empty" style="color:var(--green)">Todos pagaron este mes</td></tr>';
     document.getElementById('t-deuda').innerHTML = html;
@@ -1445,179 +1187,38 @@ function cargarAlumnos() {
         + '<button class="btn-icon btn-editar" title="Ver / editar" data-nombre="'+n+'">&#9998;</button>'
         + '<button class="btn-icon danger btn-borrar-alumno" title="Borrar" data-nombre="'+n+'">&#128465;</button>'
         + '</div>';
-      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+monedaSimbolo(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
+      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
     }).join('') || '<tr><td colspan="9" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
   });
 }
 
-var graficosSeriesVisibles = {total: true, dadas: true, canceladas: false};
-var graficosData = null;
-
 function cargarGraficos() {
   var isDark = ['dark','navy'].indexOf(document.documentElement.getAttribute('data-theme')) !== -1;
-  var tickColor = isDark ? '#8a9bb0' : '#6a8faa';
-  var gridColor = isDark ? '#1a2535' : '#e0eaf4';
-  var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-
-  // Gráfico 1: Clases por mes (anual)
-  fetch('/dashboard/api/grafico_anual?anio=' + anio).then(function(r){ return r.json(); })
-  .then(function(datos) {
-    graficosData = datos;
-    renderGraficoAnual(datos, meses, tickColor, gridColor);
-  });
-
-  // Gráfico 2: Ingresos mensuales
-  fetch('/dashboard/api/ingresos_anuales?anio=' + anio).then(function(r){ return r.json(); })
-  .then(function(data) {
-    window._ingresosData = data;
-    window._ingresosTickColor = tickColor;
-    window._ingresosGridColor = gridColor;
-    window._ingresosMeses = meses;
-    // Cargar tipo de cambio en paralelo
-    fetch('/dashboard/api/tipo_cambio').then(function(r){ return r.json(); })
-    .then(function(tc) {
-      window._tipoCambio = tc;
-      var info = document.getElementById('ingr-tc-info');
-      if (tc.ars_usd && !tc.error) {
-        info.textContent = '\u00b7 Blue: $' + tc.ars_usd + ' ARS/USD';
-      } else if (tc.error) {
-        info.textContent = '\u00b7 TC no disponible';
-        info.title = tc.error;
-      }
-      renderIngresos();
-    }).catch(function() {
-      window._tipoCambio = {};
-      renderIngresos();
-    });
-  });
-
-  // Activar toggles
-  document.querySelectorAll('.toggle-chip').forEach(function(chip) {
-    chip.onclick = function() {
-      var serie = chip.getAttribute('data-serie');
-      graficosSeriesVisibles[serie] = !graficosSeriesVisibles[serie];
-      chip.classList.toggle('active', graficosSeriesVisibles[serie]);
-      chip.querySelector('input').checked = graficosSeriesVisibles[serie];
-      if (graficosData) renderGraficoAnual(graficosData, meses, tickColor, gridColor);
-    };
-  });
-}
-
-function renderIngresos() {
-  var monedas = window._ingresosData;
-  var tickColor = window._ingresosTickColor || '#6a8faa';
-  var gridColor = window._ingresosGridColor || '#e0eaf4';
-  var meses = window._ingresosMeses || ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  var tc = window._tipoCambio || {};
-  if (!monedas) return;
-
-  var sel = document.getElementById('ingr-moneda-sel').value;
-  var colores = {'D\u00f3lar': '#4a9e7a', 'Libra Esterlina': '#5b8db8', 'Pesos': '#c0524a'};
-  var datasets = [];
-  var yLabel = '';
-
-  if (sel === 'usd_total') {
-    // Convertir todo a USD usando blue para ARS y frankfurter para GBP
-    var arsUsd = tc.ars_usd ? 1 / tc.ars_usd : null;
-    var gbpUsd = tc.gbp_usd || null;
-    var total = [0,0,0,0,0,0,0,0,0,0,0,0];
-    var ok = true;
-    Object.keys(monedas).forEach(function(m) {
-      monedas[m].forEach(function(v, i) {
-        if (!v) return;
-        if (m === 'D\u00f3lar' || m === 'Dolar') {
-          total[i] += v;
-        } else if ((m === 'Libra Esterlina') && gbpUsd) {
-          total[i] += v * gbpUsd;
-        } else if (m === 'Pesos' && arsUsd) {
-          total[i] += v * arsUsd;
-        } else {
-          ok = false; // Falta tipo de cambio
-        }
-      });
-    });
-    if (!ok) {
-      document.getElementById('ingr-tc-info').textContent = '\u00b7 Falta TC para convertir';
-    }
-    datasets.push({
-      label: 'Total USD (estimado)',
-      data: total.map(function(v){ return Math.round(v * 100) / 100; }),
-      borderColor: '#4a9e7a',
-      backgroundColor: '#4a9e7a22',
-      borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
-    });
-    yLabel = 'USD';
-  } else {
-    // Moneda específica — buscar con o sin tilde
-    var key = Object.keys(monedas).find(function(k){ return k === sel || k.replace('\u00f3','o') === sel.replace('\u00f3','o'); });
-    var hasData = key && monedas[key] && monedas[key].some(function(v){ return v > 0; });
-    var tcInfo = document.getElementById('ingr-tc-info');
-    if (hasData) {
-      datasets.push({
-        label: key,
-        data: monedas[key],
-        borderColor: colores[key] || '#b48c50',
-        backgroundColor: (colores[key] || '#b48c50') + '22',
-        borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.3, fill: true
-      });
-      if (tcInfo && sel !== 'usd_total') tcInfo.textContent = '';
-    } else if (tcInfo) {
-      tcInfo.textContent = '· Sin datos para este año';
-    }
-  }
-
-  if (charts.ingresos) charts.ingresos.destroy();
-  charts.ingresos = new Chart(document.getElementById('chart-ingresos').getContext('2d'), {
-    type: 'line',
-    data: { labels: meses, datasets: datasets },
-    options: {
-      plugins: {
-        legend: { labels: { color: tickColor, font: { size: 11 }, boxWidth: 12 } },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('es-AR');
-            }
-          }
-        }
+  var tickColor = isDark ? '#7a6f62' : '#9a8a78';
+  var gridColor = isDark ? '#1e1c1a' : '#ece6d8';
+  api('grafico_clases').then(function(datos) {
+    if (charts.alumnos) charts.alumnos.destroy();
+    charts.alumnos = new Chart(document.getElementById('chart-alumnos').getContext('2d'), {
+      type:'bar',
+      data:{
+        labels:datos.map(function(d){return d.nombre;}),
+        datasets:[{data:datos.map(function(d){return d.total;}),backgroundColor:'rgba(180,140,80,0.55)',borderColor:'#b48c50',borderWidth:1,borderRadius:3}]
       },
-      scales: {
-        x: { ticks: { color: tickColor }, grid: { color: gridColor } },
-        y: { ticks: { color: tickColor, callback: function(v){ return v.toLocaleString('es-AR'); } },
-             grid: { color: gridColor }, beginAtZero: true,
-             title: yLabel ? { display: true, text: yLabel, color: tickColor, font: { size: 10 } } : { display: false } }
-      }
-    }
+      options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{color:tickColor},grid:{color:gridColor}},y:{ticks:{color:tickColor},grid:{display:false}}}}
+    });
   });
-}
-
-
-function renderGraficoAnual(datos, meses, tickColor, gridColor) {
-  if (charts.anual) charts.anual.destroy();
-  var datasets = [];
-  if (graficosSeriesVisibles.total) datasets.push({
-    label: 'Agendadas', data: datos.map(function(d){return d.total;}),
-    backgroundColor: 'rgba(26,86,160,0.45)', borderColor: '#1a56a0', borderWidth: 1, borderRadius: 3
-  });
-  if (graficosSeriesVisibles.dadas) datasets.push({
-    label: 'Dadas', data: datos.map(function(d){return d.dadas;}),
-    backgroundColor: 'rgba(30,122,82,0.5)', borderColor: '#1e7a52', borderWidth: 1, borderRadius: 3
-  });
-  if (graficosSeriesVisibles.canceladas) datasets.push({
-    label: 'Canceladas', data: datos.map(function(d){return d.canceladas;}),
-    backgroundColor: 'rgba(176,48,48,0.45)', borderColor: '#b03030', borderWidth: 1, borderRadius: 3
-  });
-  charts.anual = new Chart(document.getElementById('chart-anual').getContext('2d'), {
-    type: 'bar',
-    data: { labels: meses, datasets: datasets },
-    options: {
-      plugins: { legend: { labels: { color: tickColor, font: { size: 11 }, boxWidth: 12 } } },
-      scales: {
-        x: { ticks: { color: tickColor }, grid: { color: gridColor } },
-        y: { ticks: { color: tickColor }, grid: { color: gridColor }, beginAtZero: true }
-      }
-    }
+  api('clases').then(function(clases) {
+    var paises = {};
+    clases.filter(function(c){return c.estado==='agendada';}).forEach(function(c){
+      var p = c.pais || 'Sin datos'; paises[p] = (paises[p]||0)+1;
+    });
+    if (charts.paises) charts.paises.destroy();
+    charts.paises = new Chart(document.getElementById('chart-paises').getContext('2d'), {
+      type:'doughnut',
+      data:{labels:Object.keys(paises),datasets:[{data:Object.values(paises),backgroundColor:['#b48c50','#4a9e7a','#c0524a','#5b8db8','#9b7fc8','#d4a853'],borderWidth:0}]},
+      options:{plugins:{legend:{labels:{color:tickColor,font:{size:11}}}},cutout:'58%'}
+    });
   });
 }
 
@@ -1691,24 +1292,41 @@ document.addEventListener('click', function(e) {
   }
   var btn = e.target.closest('button');
   if (!btn) return;
-  // Cancelar formulario inline de cobros (responsable)
+  // Cancelar formulario inline de cobros
   if (btn.classList.contains('cobro-cancelar-btn')) {
     var gi = btn.getAttribute('data-gi');
     var f = document.getElementById('cobro-form-' + gi);
     if (f) f.style.display = 'none';
     return;
   }
-  // Cancelar formulario inline de cobros (semana)
-  if (btn.classList.contains('cobros-sem-cancelar')) {
-    var si = btn.getAttribute('data-si');
-    var fs = document.getElementById('sem-form-' + si);
-    if (fs) fs.style.display = 'none';
-    return;
-  }
   if (btn.classList.contains('btn-borrar-pago')) {
     var pagoId = btn.getAttribute('data-pago-id');
     var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
     borrarPagoDirecto(pagoId, resumen);
+    return;
+  }
+  if (btn.classList.contains('btn-borrar-grupo')) {
+    var ids = btn.getAttribute('data-ids').split(',').map(Number);
+    var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
+    if (!confirm('¿Borrar ' + ids.length + ' pago(s)? ' + resumen)) return;
+    var borrados = 0;
+    var borrarSiguiente = function(i) {
+      if (i >= ids.length) {
+        alert('✅ ' + borrados + ' pago(s) borrado(s).');
+        cargarTodo();
+        poblarFiltroAlumnos();
+        return;
+      }
+      fetch('/dashboard/api/borrar_pago_id', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pago_id: ids[i]})
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if (d.ok) borrados++;
+        borrarSiguiente(i + 1);
+      }).catch(function(){ borrarSiguiente(i + 1); });
+    };
+    borrarSiguiente(0);
     return;
   }
   if (btn.classList.contains('btn-borrar-grupo')) {
@@ -1797,7 +1415,7 @@ function renderCobrosResponsable(cont) {
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:0.75rem">'
       + '<span class="cobros-grupo-monto">' + montoStr + '</span>'
-      + '<button class="btn" onclick="abrirPago(' + gi + ')">Abrir formulario</button>'
+      + '<button class="btn" onclick="abrirPago(' + gi + ')">Registrar pago</button>'
       + '</div></div>'
       + alumnos
       + '<div class="cobros-inline-form" id="cobro-form-' + gi + '" style="display:none"></div>'
@@ -1854,7 +1472,7 @@ function registrarTodosAbiertos() {
   var procesarSiguiente = function(idx) {
     if (idx >= pendientes.length) {
       var msg = '\u2705 ' + registrados + ' pago(s) registrado(s).';
-      if (errores.length) msg += ' \u26a0\ufe0f Errores: ' + errores.join(', ');
+      if (errores.length) msg += '\n\u26a0\ufe0f Errores: ' + errores.join(', ');
       alert(msg);
       document.getElementById('btn-registrar-abiertos').style.display = 'none';
       document.getElementById('btn-abrir-formularios').style.display = 'none';
@@ -2047,7 +1665,7 @@ function renderCobrosChecks(cont) {
           + '<td><strong>' + a.nombre + '</strong>'
           + (g.es_representante ? '<br><span style="font-size:0.74rem;color:var(--text-muted)">' + g.responsable + '</span>' : '')
           + '</td>'
-          + '<td><span class="badge badge-gold">' + monedaSimbolo(g.moneda) + '</span></td>'
+          + '<td><span class="badge badge-gold">' + g.moneda + '</span></td>'
           + '</tr>');
       });
     });
@@ -2120,115 +1738,25 @@ function registrarSeleccionChecks() {
   procesarSiguiente(0);
 }
 
-function promoParaPrecio(rangos, precio) {
-  // Dada un precio/clase, devuelve el label de la promo que corresponde
-  if (!rangos || !rangos.length) return null;
-  for (var i = 0; i < rangos.length; i++) {
-    if (Math.abs(rangos[i].precio - precio) < 0.01) {
-      var r = rangos[i];
-      if (r.desde === r.hasta && r.desde === 1) return 'clase suelta';
-      if (r.desde === r.hasta) return r.desde + ' clases';
-      return r.desde + '-' + r.hasta + ' clases';
-    }
-  }
-  return '⚠️ no corresponde a ninguna promo';
-}
-
-function promoParaClases(rangos, n) {
-  // Dado un número de clases, devuelve {precio, label}
-  if (!rangos || !rangos.length) return null;
-  for (var i = 0; i < rangos.length; i++) {
-    if (rangos[i].desde <= n && n <= rangos[i].hasta) {
-      var r = rangos[i];
-      var lbl = (r.desde === r.hasta && r.desde === 1) ? 'clase suelta' :
-                (r.desde === r.hasta) ? r.desde + ' clases' : r.desde + '-' + r.hasta + ' clases';
-      return {precio: r.precio, label: lbl};
-    }
-  }
-  // Fuera de rango: usar el último
-  var last = rangos[rangos.length - 1];
-  return {precio: last.precio, label: '⚠️ fuera de promo'};
-}
-
-function abrirPago(gi, noCloseOthers) {
+function abrirPago(gi) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  if (!noCloseOthers) {
-    if (form.style.display !== 'none') { form.style.display = 'none'; return; }
-    document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
-  }
-  var cantidadDefault = g.total_clases || 0;
-  var montoUnitario = g.precio_unitario || 0;
+  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
+  document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
   var montoStr = g.monto_calculado || '';
-  var rangos = g.rangos_promo || [];
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
     return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
   }).join('');
-  var monedaOptions = ['Dólar','Libra Esterlina','Pesos'].map(function(m){
+  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
     return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
   }).join('');
-
-  form.innerHTML = '<div><label>Clases</label>'
-    + '<input type="number" min="1" class="cobro-clases-input" value="' + cantidadDefault + '" style="width:4rem">'
-    + '</div>'
-    + '<div><label>$/clase</label>'
-    + '<input type="number" step="0.01" class="cobro-precio-input" value="' + (montoUnitario||'') + '" style="width:5rem">'
-    + '<span class="cobro-promo-label" style="font-size:0.74rem;color:var(--text-muted);margin-left:0.4rem"></span>'
-    + '</div>'
-    + '<div><label>Total</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
+  form.innerHTML = '<div><label>Monto</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
     + '<div><label>Moneda</label><select class="cobro-moneda-input">' + monedaOptions + '</select></div>'
-    + '<div><label>Método</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
+    + '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
     + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">✓ Registrar pago</button>'
-    + '<button class="btn cobro-cancelar-btn" data-gi="' + gi + '">Cancelar</button>'
+    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
+    + '<button class="btn" onclick="document.getElementById(\'cobro-form-' + gi + '\').style.display=\'none\'">Cancelar</button>'
     + '</div>';
-
-  var clasesInput = form.querySelector('.cobro-clases-input');
-  var precioInput = form.querySelector('.cobro-precio-input');
-  var montoInput  = form.querySelector('.cobro-monto-input');
-  var promoLabel  = form.querySelector('.cobro-promo-label');
-
-  var actualizarPromoLabel = function(precio) {
-    if (!promoLabel) return;
-    if (!precio || !rangos.length) { promoLabel.textContent = ''; return; }
-    promoLabel.textContent = promoParaPrecio(rangos, precio);
-  }
-
-  // Inicializar label con el precio default
-  actualizarPromoLabel(montoUnitario);
-
-  // Clases cambia → recalcula total y actualiza promo
-  clasesInput.addEventListener('input', function() {
-    var n = parseInt(this.value) || 0;
-    var info = promoParaClases(rangos, n);
-    if (info) {
-      precioInput.value = info.precio;
-      montoInput.value = Math.round(info.precio * n * 100) / 100;
-      promoLabel.textContent = info.label;
-    } else if (precioInput.value) {
-      montoInput.value = Math.round(parseFloat(precioInput.value) * n * 100) / 100;
-    }
-  });
-
-  // Precio/clase cambia → recalcula total y actualiza indicador de promo
-  precioInput.addEventListener('input', function() {
-    var precio = parseFloat(this.value) || 0;
-    var n = parseInt(clasesInput.value) || 0;
-    if (n) montoInput.value = Math.round(precio * n * 100) / 100;
-    actualizarPromoLabel(precio);
-  });
-
-  // Total cambia → recalcula precio/clase y actualiza promo
-  montoInput.addEventListener('input', function() {
-    var total = parseFloat(this.value) || 0;
-    var n = parseInt(clasesInput.value) || 0;
-    if (n && total) {
-      var precioCalculado = Math.round(total / n * 100) / 100;
-      precioInput.value = precioCalculado;
-      actualizarPromoLabel(precioCalculado);
-    }
-  });
-
   form.style.display = 'flex';
   if (!noCloseOthers) {
     var btnReg = document.getElementById('btn-registrar-abiertos');
@@ -2393,4 +1921,216 @@ cargarTodo();
 setInterval(cargarTodo, 60000);
 </script>
 </body>
-</html>"""
+</htmif (sinPrecio.length) {
+    alert('Sin precio: ' + sinPrecio.join(', ') + '. Registralos desde Por responsable.');
+  }
+  if (!pagos.length) return;
+  val>""
+function registrarSeleccionChecks() {
+  var checks = document.querySelectorAll('.cobro-check:checked');
+  if (!checks.length) return;
+  var grupos = {};
+  checks.forEach(function(c) {
+    var resp = c.getAttribute('data-responsable');
+    var aid = c.getAttribute('data-alumno-id');
+    var cid = parseInt(c.getAttribute('data-clase-id'));
+    if (!grupos[resp]) grupos[resp] = {alumnos: {}, moneda: c.getAttribute('data-moneda'), metodo: c.getAttribute('data-metodo')};
+    if (!grupos[resp].alumnos[aid]) grupos[resp].alumnos[aid] = [];
+    grupos[resp].alumnos[aid].push(cid);
+  });
+  var responsables = Object.keys(grupos);
+  var pagos = [];
+  var sinPrecio = [];
+  responsables.forEach(function(resp) {
+    var gData = cobrosData.find(function(x){ return x.responsable === resp; });
+    if (!gData) return;
+    var alumnos = Object.entries(grupos[resp].alumnos).map(function(e){
+      return {alumno_id: parseInt(e[0]), clase_ids: e[1]};
+    });
+    var totalClases = alumnos.reduce(function(s,a){return s+a.clase_ids.length;},0);
+    var monto = gData.precio_unitario ? Math.round(gData.precio_unitario * totalClases * 100) / 100 : null;
+    if (monto === null) { sinPrecio.push(resp); return; }
+    var gMod = Object.assign({}, gData);
+    gMod.total_clases = totalClases;
+    gMod.clase_ids = alumnos.reduce(function(s,a){return s.concat(a.clase_ids);}, []);
+    gMod.alumnos = alumnos.map(function(a) {
+      var orig = gData.alumnos.find(function(x){ return x.alumno_id === a.alumno_id; }) || {};
+      return Object.assign({}, orig, {clases: a.clase_ids.map(function(id){return {id:id};}), cantidad: a.clase_ids.length});
+    });
+    pagos.push({g: gMod, monto: monto, moneda: grupos[resp].moneda, metodo: grupos[resp].metodo, resp: resp});
+  });
+  if (sinPrecio.length) {
+    alert('Sin precio: ' + sinPrecio.join(', ') + '. Registralos desde Por responsable.');
+  }
+  if (!pagos.length) return;
+  var registrados = 0;
+  var procesarSiguiente = function(idx) {
+    if (idx >= pagos.length) {
+      alert('✅ ' + registrados + ' pago(s) registrado(s).');
+      cargarCobros(); cargarTodo(); return;
+    }
+    var p = pagos[idx];
+    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function() {
+      registrados++;
+      procesarSiguiente(idx + 1);
+    });
+  }
+  procesarSiguiente(0);
+}
+
+function renderCobrosSemana(cont) {
+  var semanas = {};
+  cobrosData.forEach(function(g) {
+    g.alumnos.forEach(function(a) {
+      a.clases.forEach(function(c) {
+        var partes = c.fecha.split('-');
+        var d = new Date(+partes[0], +partes[1]-1, +partes[2]);
+        var lunes = new Date(d);
+        lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        var key = lunes.toISOString().slice(0,10);
+        if (!semanas[key]) semanas[key] = {lunes: lunes, grupos: {}};
+        var resp = g.responsable;
+        if (!semanas[key].grupos[resp]) {
+          semanas[key].grupos[resp] = {
+            gi: cobrosData.indexOf(g),
+            responsable: resp, moneda: g.moneda,
+            metodo: g.metodo_pago,
+            monto_calculado: g.monto_calculado,
+            precio_unitario: g.precio_unitario,
+            items: []
+          };
+        }
+        semanas[key].grupos[resp].items.push({
+          alumno: a.nombre, alumno_id: a.alumno_id,
+          clase_id: c.id, fecha: c.fecha, hora: c.hora,
+          es_representante: g.es_representante
+        });
+      });
+    });
+  });
+
+  var keys = Object.keys(semanas).sort();
+  if (!keys.length) { cont.innerHTML = '<div class="empty">Todo cobrado</div>'; return; }
+
+  var html = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">'
+    + '<input type="checkbox" id="sem-master" onchange="selectAllSemana(this)" style="width:15px;height:15px;cursor:pointer">'
+    + '<label for="sem-master" style="cursor:pointer">Seleccionar todos</label></div>';
+
+  var semIdx = 0;
+  html += keys.map(function(key) {
+    var si = semIdx++;
+    var sem = semanas[key];
+    var domingo = new Date(sem.lunes); domingo.setDate(sem.lunes.getDate() + 6);
+    var titulo = 'Semana del ' + sem.lunes.getDate() + '/' + (sem.lunes.getMonth()+1)
+               + ' al ' + domingo.getDate() + '/' + (domingo.getMonth()+1);
+    var respKeys = Object.keys(sem.grupos);
+    var totalItems = respKeys.reduce(function(s,r){ return s + sem.grupos[r].items.length; }, 0);
+
+    var gruposHtml = respKeys.map(function(resp) {
+      var grp = sem.grupos[resp];
+      var sim = simMoneda(grp.moneda);
+      var n = grp.items.length;
+      var monto = grp.precio_unitario ? Math.round(grp.precio_unitario * n * 100) / 100 : null;
+      var montoStr = monto ? sim + fmt(monto) + ' ' + grp.moneda : 'sin precio';
+      var filas = grp.items.map(function(it) {
+        return '<div class="cobros-grupo-clases">' + formatFecha(it.fecha) + ' ' + (it.hora||'')
+          + ' &mdash; <strong>' + it.alumno + '</strong></div>';
+      }).join('');
+      return '<div style="border-top:1px solid var(--border);padding:0.5rem 1rem">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.25rem 0">'
+        + '<span style="font-size:0.85rem;font-weight:500">' + resp + '</span>'
+        + '<span class="cobros-grupo-monto" style="font-size:0.85rem">' + montoStr + '</span>'
+        + '</div>' + filas + '</div>';
+    }).join('');
+
+    var safeKey = key.replace(/-/g, '_');
+    return '<div class="cobros-grupo" id="sem-grupo-' + si + '">'
+      + '<div class="cobros-grupo-header">'
+      + '<div style="display:flex;align-items:center;gap:0.6rem">'
+      + '<input type="checkbox" class="sem-check" data-si="' + si + '" data-key="' + key + '" onchange="actualizarBotonesSemana()" style="width:15px;height:15px;cursor:pointer">'
+      + '<div><div class="cobros-grupo-titulo">' + titulo + '</div>'
+      + '<div class="cobros-grupo-sub">' + totalItems + ' clase(s) &mdash; ' + respKeys.length + ' responsable(s)</div>'
+      + '</div></div>'
+      + '<button class="btn sem-registrar-btn" data-si="' + si + '" data-key="' + key + '">Registrar semana</button>'
+      + '</div>'
+      + gruposHtml
+      + '<div class="cobros-inline-form cobros-sem-form" id="sem-form-' + si + '" style="display:none"></div>'
+      + '</div>';
+  }).join('');
+  cont.innerHTML = html;
+}
+
+function selectAllSemana(master) {
+  document.querySelectorAll('.sem-check').forEach(function(c){ c.checked = master.checked; });
+  actualizarBotonesSemana();
+}
+
+function actualizarBotonesSemana() {
+  var checks = document.querySelectorAll('.sem-check:checked');
+  var btnAbrir = document.getElementById('btn-abrir-formularios');
+  btnAbrir.style.display = checks.length ? 'flex' : 'none';
+}
+
+function abrirFormularioSemana(si, key) {
+  var semanas_data = window._semanas_data;
+  if (!semanas_data || !semanas_data[key]) return;
+  var form = document.getElementById('sem-form-' + si);
+  if (!form) return;
+  if (form.style.display === 'flex') { form.style.display = 'none'; return; }
+  document.querySelectorAll('.cobros-sem-form').forEach(function(f){ f.style.display = 'none'; });
+  var grp = semanas_data[key];
+  var totalItems = Object.values(grp.grupos).reduce(function(s,g){ return s + g.items.length; }, 0);
+  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
+    var firstGrp = Object.values(grp.grupos)[0];
+    return '<option' + (firstGrp && m === firstGrp.moneda ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
+    var firstGrp = Object.values(grp.grupos)[0];
+    return '<option' + (firstGrp && m === firstGrp.metodo ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  form.innerHTML = '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
+    + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
+    + '<button class="btn sem-confirmar-btn" data-si="' + si + '" data-key="' + key + '">\u2713 Confirmar</button>'
+    + '<button class="btn sem-cancelar-btn" data-si="' + si + '">Cancelar</button>'
+    + '</div>';
+  form.style.display = 'flex';
+}
+
+function confirmarPagoSemana(si, key) {
+  if (!window._semanas_data || !window._semanas_data[key]) return;
+  var form = document.getElementById('sem-form-' + si);
+  var metodo = form.querySelector('.cobro-metodo-input').value;
+  var semGrupos = window._semanas_data[key].grupos;
+  var pendientes = Object.values(semGrupos).map(function(grp) {
+    var n = grp.items.length;
+    var monto = grp.precio_unitario ? Math.round(grp.precio_unitario * n * 100) / 100 : null;
+    if (!monto) return null;
+    var gData = cobrosData[grp.gi];
+    if (!gData) return null;
+    var gMod = Object.assign({}, gData);
+    gMod.total_clases = n;
+    gMod.clase_ids = grp.items.map(function(it){ return it.clase_id; });
+    gMod.alumnos = [{
+      alumno_id: grp.items[0].alumno_id,
+      clases: grp.items.map(function(it){ return {id: it.clase_id}; }),
+      cantidad: n
+    }];
+    return {g: gMod, monto: monto, moneda: grp.moneda, metodo: metodo};
+  }).filter(Boolean);
+  if (!pendientes.length) { alert('Sin precio configurado para esta semana.'); return; }
+  var registrados = 0;
+  var siguiente = function(i) {
+    if (i >= pendientes.length) {
+      alert('\u2705 ' + registrados + ' pago(s) registrado(s).');
+      form.style.display = 'none';
+      cargarCobros(); cargarTodo(); return;
+    }
+    var p = pendientes[i];
+    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function() {
+      registrados++; siguiente(i+1);
+    });
+  }
+  siguiente(0);
+}
+
+"
