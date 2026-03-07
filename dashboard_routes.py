@@ -1755,7 +1755,7 @@ function abrirPago(gi) {
     + '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
     + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
     + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
-    + '<button class="btn" onclick="document.getElementById(\'cobro-form-' + gi + '\').style.display=\'none\'">Cancelar</button>'
+    + '<button class="btn" onclick="document.getElementById(&quot;cobro-form-' + gi + '&quot;).style.display=&quot;none&quot;">Cancelar</button>'
     + '</div>';
   form.style.display = 'flex';
   if (!noCloseOthers) {
