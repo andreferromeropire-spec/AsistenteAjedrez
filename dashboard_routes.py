@@ -1263,7 +1263,7 @@ function borrarPago(nombre) {
 }
 
 function borrarPagoDirecto(pagoId, resumen) {
-  if (!confirm('\u00bfBorrar este pago?\\n' + resumen)) return;
+  if (!confirm('¿Borrar este pago? ' + resumen)) return;
   fetch('/dashboard/api/borrar_pago_id', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -1472,7 +1472,7 @@ function registrarTodosAbiertos() {
   var procesarSiguiente = function(idx) {
     if (idx >= pendientes.length) {
       var msg = 'OK: ' + registrados + ' pago(s) registrado(s).';
-      if (errores.length) msg += '\nErrores: ' + errores.join(', ');
+      if (errores.length) msg += ' | Errores: ' + errores.join(', ');
       alert(msg);
       document.getElementById('btn-registrar-abiertos').style.display = 'none';
       document.getElementById('btn-abrir-formularios').style.display = 'none';
