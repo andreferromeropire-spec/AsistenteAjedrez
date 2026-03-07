@@ -30,7 +30,7 @@ def login():
             return redirect('/dashboard')
         error = '<p class="error">Contraseña incorrecta</p>'
     html = LOGIN_HTML.replace('ERRORBLOCK', error)
-    return Response(html, mimetype='text/html')
+    return Response(html, mimetype='text/html; charset=utf-8')
 
 
 @dashboard_bp.route('/dashboard/logout')
@@ -51,7 +51,7 @@ def dashboard():
         for i, m in enumerate(meses)
     )
     html = DASHBOARD_HTML.replace('{MES_OPTIONS}', mes_options)
-    return Response(html, mimetype='text/html')
+    return Response(html, mimetype='text/html; charset=utf-8')
 
 
 @dashboard_bp.route('/dashboard/api/chat', methods=['POST'])
