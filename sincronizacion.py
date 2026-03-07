@@ -205,7 +205,7 @@ def procesar_cambios(cambios):
 # También se puede llamar manualmente con un mes/año específico.
 # - Sin parámetros: sincroniza el mes actual, envía WhatsApp si hay cambios
 # - Con mes/anio: sincroniza ese mes y devuelve el resultado (para dashboard/bot)
-def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True):
+def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True, es_sync_nocturna=False):
     hoy = date.today()
     mes = mes or hoy.month
     anio = anio or hoy.year
