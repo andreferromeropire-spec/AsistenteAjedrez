@@ -1087,9 +1087,9 @@ function cargarClases() {
     }
     var html = datos.length ? datos.map(function(c) {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
-      var ausenteBadge = c.ausente ? ' <span title="No asistió">🪑</span>' : '';
+      var ausenteBadge = c.ausente ? ' <span title="No asistió">&#x1FA91;</span>' : '';
       var ausenteBtn = (!c.ausente && c.estado === 'dada')
-        ? '<button onclick="marcarAusenteDashboard('+JSON.stringify(c.nombre)+','+JSON.stringify(c.fecha)+')" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">🪑</button>'
+        ? '<button onclick="marcarAusenteDashboard('+JSON.stringify(c.nombre)+','+JSON.stringify(c.fecha)+')" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">&#x1FA91;</button>'
         : '';
       return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+ausenteBadge+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
@@ -1312,7 +1312,7 @@ document.addEventListener('click', function(e) {
     var borrados = 0;
     var borrarSiguiente = function(i) {
       if (i >= ids.length) {
-        alert('✅ ' + borrados + ' pago(s) borrado(s).');
+        alert('OK: ' + borrados + ' pago(s) borrado(s).');
         cargarTodo();
         poblarFiltroAlumnos();
         return;
@@ -1336,7 +1336,7 @@ document.addEventListener('click', function(e) {
     var borrados = 0;
     var borrarSiguiente = function(i) {
       if (i >= ids.length) {
-        alert('✅ ' + borrados + ' pago(s) borrado(s).');
+        alert('OK: ' + borrados + ' pago(s) borrado(s).');
         cargarTodo();
         poblarFiltroAlumnos();
         return;
@@ -1471,8 +1471,8 @@ function registrarTodosAbiertos() {
   var errores = [];
   var procesarSiguiente = function(idx) {
     if (idx >= pendientes.length) {
-      var msg = '\u2705 ' + registrados + ' pago(s) registrado(s).';
-      if (errores.length) msg += '\n\u26a0\ufe0f Errores: ' + errores.join(', ');
+      var msg = 'OK: ' + registrados + ' pago(s) registrado(s).';
+      if (errores.length) msg += '\nErrores: ' + errores.join(', ');
       alert(msg);
       document.getElementById('btn-registrar-abiertos').style.display = 'none';
       document.getElementById('btn-abrir-formularios').style.display = 'none';
@@ -1726,7 +1726,7 @@ function registrarSeleccionChecks() {
   var registrados = 0;
   var procesarSiguiente = function(idx) {
     if (idx >= pagos.length) {
-      alert('✅ ' + registrados + ' pago(s) registrado(s).');
+      alert('OK: ' + registrados + ' pago(s) registrado(s).');
       cargarCobros(); cargarTodo(); return;
     }
     var p = pagos[idx];
@@ -1966,7 +1966,7 @@ function registrarSeleccionChecks() {
   var registrados = 0;
   var procesarSiguiente = function(idx) {
     if (idx >= pagos.length) {
-      alert('✅ ' + registrados + ' pago(s) registrado(s).');
+      alert('OK: ' + registrados + ' pago(s) registrado(s).');
       cargarCobros(); cargarTodo(); return;
     }
     var p = pagos[idx];
