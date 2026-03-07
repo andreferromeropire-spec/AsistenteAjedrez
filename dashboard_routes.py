@@ -460,6 +460,137 @@ def api_ingresos_anuales():
     return jsonify(monedas)
 
 
+@dashboard_bp.route('/dashboard/api/clases_sin_pagar')
+@login_required
+def api_clases_sin_pagar():
+    """Devuelve clases sin pagar agrupadas por responsable, con precio calculado."""
+    mes = int(request.args.get('mes', date.today().month))
+    anio = int(request.args.get('anio', date.today().year))
+    conn = get_connection()
+    # Traer clases sin pago del mes
+    clases = conn.execute("""
+        SELECT c.id, c.fecha, c.hora, c.estado,
+               a.id as alumno_id, a.nombre, a.representante, a.moneda,
+               a.metodo_pago, a.modalidad
+        FROM clases c
+        JOIN alumnos a ON c.alumno_id = a.id
+        WHERE c.pago_id IS NULL
+          AND c.estado IN ('agendada', 'dada')
+          AND a.activo = 1
+          AND strftime('%m', c.fecha) = ?
+          AND strftime('%Y', c.fecha) = ?
+        ORDER BY a.representante, a.nombre, c.fecha
+    """, (f"{mes:02d}", str(anio))).fetchall()
+
+    # Agrupar por responsable
+    grupos = {}
+    orden = []
+    for c in clases:
+        resp = c['representante'] or c['nombre']
+        if resp not in grupos:
+            grupos[resp] = {
+                'responsable': resp,
+                'es_representante': bool(c['representante']),
+                'moneda': c['moneda'],
+                'metodo_pago': c['metodo_pago'] or 'Wise',
+                'alumnos': {},
+                'alumnos_orden': []
+            }
+            orden.append(resp)
+        aid = c['alumno_id']
+        if aid not in grupos[resp]['alumnos']:
+            grupos[resp]['alumnos'][aid] = {
+                'alumno_id': aid,
+                'nombre': c['nombre'],
+                'clases': []
+            }
+            grupos[resp]['alumnos_orden'].append(aid)
+        grupos[resp]['alumnos'][aid]['clases'].append({
+            'id': c['id'],
+            'fecha': c['fecha'],
+            'hora': c['hora'],
+            'estado': c['estado']
+        })
+
+    # Calcular precio por grupo
+    resultado = []
+    for resp in orden:
+        g = grupos[resp]
+        alumnos_list = [g['alumnos'][aid] for aid in g['alumnos_orden']]
+        total_clases = sum(len(a['clases']) for a in alumnos_list)
+
+        # Buscar precio según promo del primer alumno del grupo
+        primer_alumno_id = g['alumnos_orden'][0]
+        rangos = conn.execute(
+            "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
+            (primer_alumno_id,)
+        ).fetchall()
+        precio = None
+        for r in rangos:
+            if r['clases_desde'] <= total_clases <= r['clases_hasta']:
+                precio = r['precio_por_clase']
+                break
+        if precio is None and rangos:
+            precio = rangos[-1]['precio_por_clase']
+
+        resultado.append({
+            'responsable': resp,
+            'es_representante': g['es_representante'],
+            'moneda': g['moneda'],
+            'metodo_pago': g['metodo_pago'],
+            'total_clases': total_clases,
+            'precio_unitario': precio,
+            'monto_calculado': round(precio * total_clases, 2) if precio else None,
+            'alumnos': alumnos_list,
+            'clase_ids': [c['id'] for a in alumnos_list for c in a['clases']]
+        })
+
+    conn.close()
+    return jsonify(resultado)
+
+
+@dashboard_bp.route('/dashboard/api/registrar_pago_rapido', methods=['POST'])
+@login_required
+def api_registrar_pago_rapido():
+    """Registra un pago y vincula las clases correspondientes."""
+    data = request.get_json()
+    monto = data.get('monto')
+    moneda = data.get('moneda')
+    metodo = data.get('metodo')
+    alumnos_ids = data.get('alumnos_ids', [])  # [{alumno_id, clase_ids}]
+
+    if not monto or not moneda or not alumnos_ids:
+        return jsonify({'ok': False, 'error': 'Faltan datos'})
+
+    conn = get_connection()
+    try:
+        total_clases = sum(len(a.get('clase_ids', [])) for a in alumnos_ids)
+        for a in alumnos_ids:
+            aid = a['alumno_id']
+            clase_ids = a.get('clase_ids', [])
+            if not clase_ids:
+                continue
+            # Monto proporcional
+            n = len(clase_ids)
+            monto_alumno = round(monto * n / total_clases, 2) if total_clases > 0 else monto
+            cursor = conn.execute(
+                "INSERT INTO pagos (alumno_id, fecha, monto, moneda, metodo, notas) VALUES (?,?,?,?,?,?)",
+                (aid, date.today().isoformat(), monto_alumno, moneda, metodo, '')
+            )
+            pago_id = cursor.lastrowid
+            for cid in clase_ids:
+                conn.execute(
+                    "UPDATE clases SET pago_id=?, estado=CASE WHEN estado='agendada' THEN 'agendada' ELSE estado END WHERE id=?",
+                    (pago_id, cid)
+                )
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True})
+    except Exception as e:
+        conn.close()
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1738,7 +1869,7 @@ function registrarSeleccionChecks() {
   procesarSiguiente(0);
 }
 
-function abrirPago(gi) {
+function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
   if (form.style.display !== 'none') { form.style.display = 'none'; return; }
@@ -1921,216 +2052,5 @@ cargarTodo();
 setInterval(cargarTodo, 60000);
 </script>
 </body>
-</htmif (sinPrecio.length) {
-    alert('Sin precio: ' + sinPrecio.join(', ') + '. Registralos desde Por responsable.');
-  }
-  if (!pagos.length) return;
-  val>""
-function registrarSeleccionChecks() {
-  var checks = document.querySelectorAll('.cobro-check:checked');
-  if (!checks.length) return;
-  var grupos = {};
-  checks.forEach(function(c) {
-    var resp = c.getAttribute('data-responsable');
-    var aid = c.getAttribute('data-alumno-id');
-    var cid = parseInt(c.getAttribute('data-clase-id'));
-    if (!grupos[resp]) grupos[resp] = {alumnos: {}, moneda: c.getAttribute('data-moneda'), metodo: c.getAttribute('data-metodo')};
-    if (!grupos[resp].alumnos[aid]) grupos[resp].alumnos[aid] = [];
-    grupos[resp].alumnos[aid].push(cid);
-  });
-  var responsables = Object.keys(grupos);
-  var pagos = [];
-  var sinPrecio = [];
-  responsables.forEach(function(resp) {
-    var gData = cobrosData.find(function(x){ return x.responsable === resp; });
-    if (!gData) return;
-    var alumnos = Object.entries(grupos[resp].alumnos).map(function(e){
-      return {alumno_id: parseInt(e[0]), clase_ids: e[1]};
-    });
-    var totalClases = alumnos.reduce(function(s,a){return s+a.clase_ids.length;},0);
-    var monto = gData.precio_unitario ? Math.round(gData.precio_unitario * totalClases * 100) / 100 : null;
-    if (monto === null) { sinPrecio.push(resp); return; }
-    var gMod = Object.assign({}, gData);
-    gMod.total_clases = totalClases;
-    gMod.clase_ids = alumnos.reduce(function(s,a){return s.concat(a.clase_ids);}, []);
-    gMod.alumnos = alumnos.map(function(a) {
-      var orig = gData.alumnos.find(function(x){ return x.alumno_id === a.alumno_id; }) || {};
-      return Object.assign({}, orig, {clases: a.clase_ids.map(function(id){return {id:id};}), cantidad: a.clase_ids.length});
-    });
-    pagos.push({g: gMod, monto: monto, moneda: grupos[resp].moneda, metodo: grupos[resp].metodo, resp: resp});
-  });
-  if (sinPrecio.length) {
-    alert('Sin precio: ' + sinPrecio.join(', ') + '. Registralos desde Por responsable.');
-  }
-  if (!pagos.length) return;
-  var registrados = 0;
-  var procesarSiguiente = function(idx) {
-    if (idx >= pagos.length) {
-      alert('OK: ' + registrados + ' pago(s) registrado(s).');
-      cargarCobros(); cargarTodo(); return;
-    }
-    var p = pagos[idx];
-    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function() {
-      registrados++;
-      procesarSiguiente(idx + 1);
-    });
-  }
-  procesarSiguiente(0);
-}
-
-function renderCobrosSemana(cont) {
-  var semanas = {};
-  cobrosData.forEach(function(g) {
-    g.alumnos.forEach(function(a) {
-      a.clases.forEach(function(c) {
-        var partes = c.fecha.split('-');
-        var d = new Date(+partes[0], +partes[1]-1, +partes[2]);
-        var lunes = new Date(d);
-        lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-        var key = lunes.toISOString().slice(0,10);
-        if (!semanas[key]) semanas[key] = {lunes: lunes, grupos: {}};
-        var resp = g.responsable;
-        if (!semanas[key].grupos[resp]) {
-          semanas[key].grupos[resp] = {
-            gi: cobrosData.indexOf(g),
-            responsable: resp, moneda: g.moneda,
-            metodo: g.metodo_pago,
-            monto_calculado: g.monto_calculado,
-            precio_unitario: g.precio_unitario,
-            items: []
-          };
-        }
-        semanas[key].grupos[resp].items.push({
-          alumno: a.nombre, alumno_id: a.alumno_id,
-          clase_id: c.id, fecha: c.fecha, hora: c.hora,
-          es_representante: g.es_representante
-        });
-      });
-    });
-  });
-
-  var keys = Object.keys(semanas).sort();
-  if (!keys.length) { cont.innerHTML = '<div class="empty">Todo cobrado</div>'; return; }
-
-  var html = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">'
-    + '<input type="checkbox" id="sem-master" onchange="selectAllSemana(this)" style="width:15px;height:15px;cursor:pointer">'
-    + '<label for="sem-master" style="cursor:pointer">Seleccionar todos</label></div>';
-
-  var semIdx = 0;
-  html += keys.map(function(key) {
-    var si = semIdx++;
-    var sem = semanas[key];
-    var domingo = new Date(sem.lunes); domingo.setDate(sem.lunes.getDate() + 6);
-    var titulo = 'Semana del ' + sem.lunes.getDate() + '/' + (sem.lunes.getMonth()+1)
-               + ' al ' + domingo.getDate() + '/' + (domingo.getMonth()+1);
-    var respKeys = Object.keys(sem.grupos);
-    var totalItems = respKeys.reduce(function(s,r){ return s + sem.grupos[r].items.length; }, 0);
-
-    var gruposHtml = respKeys.map(function(resp) {
-      var grp = sem.grupos[resp];
-      var sim = simMoneda(grp.moneda);
-      var n = grp.items.length;
-      var monto = grp.precio_unitario ? Math.round(grp.precio_unitario * n * 100) / 100 : null;
-      var montoStr = monto ? sim + fmt(monto) + ' ' + grp.moneda : 'sin precio';
-      var filas = grp.items.map(function(it) {
-        return '<div class="cobros-grupo-clases">' + formatFecha(it.fecha) + ' ' + (it.hora||'')
-          + ' &mdash; <strong>' + it.alumno + '</strong></div>';
-      }).join('');
-      return '<div style="border-top:1px solid var(--border);padding:0.5rem 1rem">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.25rem 0">'
-        + '<span style="font-size:0.85rem;font-weight:500">' + resp + '</span>'
-        + '<span class="cobros-grupo-monto" style="font-size:0.85rem">' + montoStr + '</span>'
-        + '</div>' + filas + '</div>';
-    }).join('');
-
-    var safeKey = key.replace(/-/g, '_');
-    return '<div class="cobros-grupo" id="sem-grupo-' + si + '">'
-      + '<div class="cobros-grupo-header">'
-      + '<div style="display:flex;align-items:center;gap:0.6rem">'
-      + '<input type="checkbox" class="sem-check" data-si="' + si + '" data-key="' + key + '" onchange="actualizarBotonesSemana()" style="width:15px;height:15px;cursor:pointer">'
-      + '<div><div class="cobros-grupo-titulo">' + titulo + '</div>'
-      + '<div class="cobros-grupo-sub">' + totalItems + ' clase(s) &mdash; ' + respKeys.length + ' responsable(s)</div>'
-      + '</div></div>'
-      + '<button class="btn sem-registrar-btn" data-si="' + si + '" data-key="' + key + '">Registrar semana</button>'
-      + '</div>'
-      + gruposHtml
-      + '<div class="cobros-inline-form cobros-sem-form" id="sem-form-' + si + '" style="display:none"></div>'
-      + '</div>';
-  }).join('');
-  cont.innerHTML = html;
-}
-
-function selectAllSemana(master) {
-  document.querySelectorAll('.sem-check').forEach(function(c){ c.checked = master.checked; });
-  actualizarBotonesSemana();
-}
-
-function actualizarBotonesSemana() {
-  var checks = document.querySelectorAll('.sem-check:checked');
-  var btnAbrir = document.getElementById('btn-abrir-formularios');
-  btnAbrir.style.display = checks.length ? 'flex' : 'none';
-}
-
-function abrirFormularioSemana(si, key) {
-  var semanas_data = window._semanas_data;
-  if (!semanas_data || !semanas_data[key]) return;
-  var form = document.getElementById('sem-form-' + si);
-  if (!form) return;
-  if (form.style.display === 'flex') { form.style.display = 'none'; return; }
-  document.querySelectorAll('.cobros-sem-form').forEach(function(f){ f.style.display = 'none'; });
-  var grp = semanas_data[key];
-  var totalItems = Object.values(grp.grupos).reduce(function(s,g){ return s + g.items.length; }, 0);
-  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
-    var firstGrp = Object.values(grp.grupos)[0];
-    return '<option' + (firstGrp && m === firstGrp.moneda ? ' selected' : '') + '>' + m + '</option>';
-  }).join('');
-  var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
-    var firstGrp = Object.values(grp.grupos)[0];
-    return '<option' + (firstGrp && m === firstGrp.metodo ? ' selected' : '') + '>' + m + '</option>';
-  }).join('');
-  form.innerHTML = '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
-    + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    + '<button class="btn sem-confirmar-btn" data-si="' + si + '" data-key="' + key + '">\u2713 Confirmar</button>'
-    + '<button class="btn sem-cancelar-btn" data-si="' + si + '">Cancelar</button>'
-    + '</div>';
-  form.style.display = 'flex';
-}
-
-function confirmarPagoSemana(si, key) {
-  if (!window._semanas_data || !window._semanas_data[key]) return;
-  var form = document.getElementById('sem-form-' + si);
-  var metodo = form.querySelector('.cobro-metodo-input').value;
-  var semGrupos = window._semanas_data[key].grupos;
-  var pendientes = Object.values(semGrupos).map(function(grp) {
-    var n = grp.items.length;
-    var monto = grp.precio_unitario ? Math.round(grp.precio_unitario * n * 100) / 100 : null;
-    if (!monto) return null;
-    var gData = cobrosData[grp.gi];
-    if (!gData) return null;
-    var gMod = Object.assign({}, gData);
-    gMod.total_clases = n;
-    gMod.clase_ids = grp.items.map(function(it){ return it.clase_id; });
-    gMod.alumnos = [{
-      alumno_id: grp.items[0].alumno_id,
-      clases: grp.items.map(function(it){ return {id: it.clase_id}; }),
-      cantidad: n
-    }];
-    return {g: gMod, monto: monto, moneda: grp.moneda, metodo: metodo};
-  }).filter(Boolean);
-  if (!pendientes.length) { alert('Sin precio configurado para esta semana.'); return; }
-  var registrados = 0;
-  var siguiente = function(i) {
-    if (i >= pendientes.length) {
-      alert('\u2705 ' + registrados + ' pago(s) registrado(s).');
-      form.style.display = 'none';
-      cargarCobros(); cargarTodo(); return;
-    }
-    var p = pendientes[i];
-    enviarPagoRapido(p.g, p.monto, p.moneda, p.metodo, function() {
-      registrados++; siguiente(i+1);
-    });
-  }
-  siguiente(0);
-}
-
+</html>
 """
