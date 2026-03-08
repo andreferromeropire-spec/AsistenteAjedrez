@@ -509,31 +509,6 @@ def ejecutar_accion(accion, datos, numero):
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "marcar_ausente":
-        # Si ya está en flujo de confirmacion ausente/cancelar
-        if _in_pendiente(numero):
-            pendiente = _get_pendiente(numero)
-            if pendiente.get('esperando') == 'ausente_o_cancelar':
-                _del_pendiente(numero)
-                clase_id = pendiente['clase_id']
-                nombre_alumno = pendiente['nombre_alumno']
-                fecha_fmt = pendiente['fecha']
-                hora_fmt = pendiente.get('hora_fmt', '')
-                resp_lower = datos.get('nombre_alumno', '') or ''
-                # también capturar si viene como texto libre
-                texto_orig = datos.get('_texto_original', resp_lower).lower()
-                if '1' in texto_orig or 'ausente' in texto_orig or 'no asistio' in texto_orig or 'falto' in texto_orig or 'falt' in texto_orig:
-                    conn = __import__('database').get_connection()
-                    conn.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (clase_id,))
-                    conn.commit()
-                    conn.close()
-                    return f"🪑 Marcado: {nombre_alumno} no asistió a la clase del {fecha_fmt}{hora_fmt}."
-                elif '2' in texto_orig or 'cancel' in texto_orig:
-                    from clases import cancelar_clase
-                    cancelar_clase(clase_id, cancelada_por='profesora')
-                    return f"✅ Clase de {nombre_alumno} el {fecha_fmt} cancelada (no se cobra)."
-                else:
-                    return "Respondé 1 para marcar ausente o 2 para cancelar la clase."
-
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
             return aviso
@@ -541,15 +516,25 @@ def ejecutar_accion(accion, datos, numero):
         cursor = conn.cursor()
         fecha_especifica = datos.get("fecha")
         if fecha_especifica:
-            # Buscar la clase en esa fecha (dada o agendada pasada)
+            # Buscar clase en esa fecha (dada o agendada)
             clase = cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND fecha = ?
                 AND estado IN ('dada', 'agendada')
             """, (alumno["id"], fecha_especifica)).fetchone()
             if not clase:
+                # Sugerir la clase más reciente
+                sug = cursor.execute("""
+                    SELECT id, fecha, hora FROM clases
+                    WHERE alumno_id = ? AND fecha <= date('now')
+                    AND estado IN ('dada','agendada')
+                    ORDER BY fecha DESC LIMIT 1
+                """, (alumno["id"],)).fetchone()
                 conn.close()
-                return f"No encontré una clase de {alumno['nombre']} el {fecha_especifica}."
+                if sug:
+                    hora_sug = f" a las {sug['hora']}" if sug['hora'] else ""
+                    return f"No encontré una clase de {alumno['nombre']} el {fecha_especifica}. La última que tengo es del {sug['fecha']}{hora_sug}. ¿Es esa? Si es, reenvía con esa fecha."
+                return f"No encontré ninguna clase de {alumno['nombre']} el {fecha_especifica}."
         else:
             # Última clase pasada (dada o agendada)
             clase = cursor.execute("""
@@ -564,9 +549,7 @@ def ejecutar_accion(accion, datos, numero):
         conn.close()
         fecha_fmt = clase["fecha"]
         hora_fmt = f" a las {clase['hora']}" if clase["hora"] else ""
-        # Preguntar: ¿ausente o cancelar?
         _set_pendiente(numero, {
-            'accion': 'marcar_ausente',
             'esperando': 'ausente_o_cancelar',
             'clase_id': clase['id'],
             'nombre_alumno': alumno['nombre'],
@@ -574,10 +557,10 @@ def ejecutar_accion(accion, datos, numero):
             'hora_fmt': hora_fmt
         })
         return (
-            f"🪑 {alumno['nombre']} no asistió a la clase del {fecha_fmt}{hora_fmt}.\n"
+            f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
             f"¿Cómo la registramos?\n"
             f"1 - Ausente (se cobra igual)\n"
-            f"2 - Cancelada por el alumno (no se cobra)"
+            f"2 - Cancelada (no se cobra)"
         )
 
 
@@ -1094,8 +1077,9 @@ def ejecutar_accion(accion, datos, numero):
             "pagos_candidatos": [dict(p) for p in pagos]
         }
         texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
-        texto += "\n0. Cancelar (no borrar nada)"
-        texto += "\n\n¿Cuál querés borrar? Respondé con el número."
+        texto += "\nT. Borrar todos"
+        texto += "\n0. Cancelar"
+        texto += "\n\nRespondé con un número, varios separados por coma (ej: 1,3), o T para todos."
         return (aviso + "\n" + texto) if aviso else texto
 
     elif accion == "ignorar_evento":
@@ -1153,6 +1137,51 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
 
     accion = "no_entiendo"
     datos = {}
+
+    # Respuesta a ausente_o_cancelar (acepta "1", "2" o texto libre)
+    if numero in acciones_pendientes:
+        _p = _get_pendiente(numero)
+        if _p and _p.get('esperando') == 'ausente_o_cancelar':
+            _del_pendiente(numero)
+            _cid = _p['clase_id']; _nom = _p['nombre_alumno']
+            _fec = _p['fecha']; _hor = _p.get('hora_fmt', '')
+            _t = mensaje_entrante.strip().lower()
+            if _t == '1' or 'ausent' in _t or 'falt' in _t or 'no asistio' in _t:
+                _c = __import__('database').get_connection()
+                _c.execute('UPDATE clases SET ausente = 1 WHERE id = ?', (_cid,))
+                _c.commit(); _c.close()
+                return f'🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
+            elif _t == '2' or 'cancel' in _t:
+                cancelar_clase(_cid, cancelada_por='profesora')
+                return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
+            else:
+                _set_pendiente(numero, _p)
+                return '1 para ausente (se cobra) o 2 para cancelar (no se cobra).'
+
+    # Borrar pagos con T (todos) o "1,2" (múltiples)
+    if numero in acciones_pendientes:
+        _p2 = _get_pendiente(numero)
+        if _p2 and _p2.get('accion') == 'borrar_pago' and 'pagos_candidatos' in _p2:
+            _tx = mensaje_entrante.strip().upper()
+            _ids = []
+            if _tx == 'T':
+                _ids = [p['id'] for p in _p2['pagos_candidatos']]
+            elif ',' in _tx:
+                try:
+                    _nums = [int(x.strip()) for x in _tx.split(',') if x.strip().isdigit()]
+                    _ids = [_p2['pagos_candidatos'][n-1]['id'] for n in _nums if 1 <= n <= len(_p2['pagos_candidatos'])]
+                except: pass
+            if _ids:
+                _del_pendiente(numero)
+                _cb = __import__('database').get_connection()
+                _tcl = 0
+                for _pid in _ids:
+                    _cls = _cb.execute('SELECT id FROM clases WHERE pago_id=?', (_pid,)).fetchall()
+                    for _cl in _cls: _cb.execute('UPDATE clases SET pago_id=NULL WHERE id=?', (_cl['id'],))
+                    _cb.execute('DELETE FROM pagos WHERE id=?', (_pid,))
+                    _tcl += len(_cls)
+                _cb.commit(); _cb.close()
+                return f'🗑️ {len(_ids)} pago(s) borrado(s). {_tcl} clase(s) marcadas como no pagas.'
 
     if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
         pendiente = acciones_pendientes[numero]

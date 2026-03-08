@@ -285,19 +285,17 @@ def api_marcar_ausente():
     conn = get_connection()
     # Buscar la clase dada de ese alumno en esa fecha
     clase = conn.execute("""
-        SELECT c.id, COALESCE(c.ausente, 0) as ausente FROM clases c
+        SELECT c.id FROM clases c
         JOIN alumnos a ON c.alumno_id = a.id
-        WHERE a.nombre = ? AND c.fecha = ?
-        AND c.estado IN ('dada', 'agendada')
+        WHERE a.nombre = ? AND c.fecha = ? AND c.estado = 'dada'
     """, (nombre, fecha)).fetchone()
     if not clase:
         conn.close()
-        return jsonify({'ok': False, 'error': f'No se encontró clase de {nombre} el {fecha}'})
-    nuevo_valor = 0 if clase['ausente'] else 1
-    conn.execute("UPDATE clases SET ausente = ? WHERE id = ?", (nuevo_valor, clase['id']))
+        return jsonify({'ok': False, 'error': f'No se encontró clase dada de {nombre} el {fecha}'})
+    conn.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (clase['id'],))
     conn.commit()
     conn.close()
-    return jsonify({'ok': True, 'ausente': nuevo_valor})
+    return jsonify({'ok': True})
 
 
 @dashboard_bp.route('/dashboard/api/sincronizar', methods=['POST'])
@@ -469,25 +467,20 @@ def api_clases_sin_pagar():
     mes = int(request.args.get('mes', date.today().month))
     anio = int(request.args.get('anio', date.today().year))
     conn = get_connection()
-    import calendar as _cal
-    ultimo_dia = _cal.monthrange(anio, mes)[1]
-    fecha_limite = f"{anio}-{mes:02d}-{ultimo_dia:02d}"
-    fecha_inicio_mes = f"{anio}-{mes:02d}-01"
-    # Trae: clases sin pagar acumuladas hasta el mes + clases del mes (pagas o no)
+    # Traer clases sin pago del mes
     clases = conn.execute("""
-        SELECT c.id, c.fecha, c.hora, c.estado, c.pago_id,
+        SELECT c.id, c.fecha, c.hora, c.estado,
                a.id as alumno_id, a.nombre, a.representante, a.moneda,
                a.metodo_pago, a.modalidad
         FROM clases c
         JOIN alumnos a ON c.alumno_id = a.id
-        WHERE a.activo = 1
+        WHERE c.pago_id IS NULL
           AND c.estado IN ('agendada', 'dada')
-          AND (
-              (c.pago_id IS NULL AND c.fecha <= ?)
-              OR (c.fecha >= ? AND c.fecha <= ?)
-          )
+          AND a.activo = 1
+          AND strftime('%m', c.fecha) = ?
+          AND strftime('%Y', c.fecha) = ?
         ORDER BY a.representante, a.nombre, c.fecha
-    """, (fecha_limite, fecha_inicio_mes, fecha_limite)).fetchall()
+    """, (f"{mes:02d}", str(anio))).fetchall()
 
     # Agrupar por responsable
     grupos = {}
@@ -509,16 +502,15 @@ def api_clases_sin_pagar():
             grupos[resp]['alumnos'][aid] = {
                 'alumno_id': aid,
                 'nombre': c['nombre'],
-                'modalidad': c['modalidad'],
-                'clases': [],
-                'clases_pagas': []
+                'clases': []
             }
             grupos[resp]['alumnos_orden'].append(aid)
-        clase_item = {'id': c['id'], 'fecha': c['fecha'], 'hora': c['hora'], 'estado': c['estado']}
-        if c['pago_id']:
-            grupos[resp]['alumnos'][aid]['clases_pagas'].append(clase_item)
-        else:
-            grupos[resp]['alumnos'][aid]['clases'].append(clase_item)
+        grupos[resp]['alumnos'][aid]['clases'].append({
+            'id': c['id'],
+            'fecha': c['fecha'],
+            'hora': c['hora'],
+            'estado': c['estado']
+        })
 
     # Calcular precio por grupo
     resultado = []
@@ -527,67 +519,32 @@ def api_clases_sin_pagar():
         alumnos_list = [g['alumnos'][aid] for aid in g['alumnos_orden']]
         total_clases = sum(len(a['clases']) for a in alumnos_list)
 
+        # Buscar precio según promo del primer alumno del grupo
         primer_alumno_id = g['alumnos_orden'][0]
         rangos = conn.execute(
             "SELECT * FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
             (primer_alumno_id,)
         ).fetchall()
-
-        for a in alumnos_list:
-            a['clases_dadas'] = [c for c in a['clases'] if c['estado'] == 'dada']
-            a['clases_agendadas'] = [c for c in a['clases'] if c['estado'] == 'agendada']
-
-        modalidad = alumnos_list[0].get('modalidad') if alumnos_list else None
-        es_mensual = modalidad == 'Mensual'
-
-        # Clases sin pagar a cobrar (segun modalidad)
-        for a in alumnos_list:
-            a['clases_a_cobrar_default'] = len(a['clases']) if es_mensual else len(a['clases_dadas'])
-        clases_a_cobrar = sum(a['clases_a_cobrar_default'] for a in alumnos_list)
-        al_dia = clases_a_cobrar == 0
-
-        def buscar_precio(n):
-            for r in rangos:
-                if r['clases_desde'] <= n <= r['clases_hasta']:
-                    return r['precio_por_clase']
-            return rangos[-1]['precio_por_clase'] if rangos else None
-
-        # Si al dia: precio de 1 clase (cobro adicional posible)
-        precio_cobro = buscar_precio(clases_a_cobrar) if clases_a_cobrar > 0 else buscar_precio(1)
-
-        # Separar deuda anterior vs mes actual (solo clases sin pagar)
-        clases_mes_actual = [c for a in alumnos_list for c in a['clases']
-                              if int(c['fecha'].split('-')[0]) == anio and int(c['fecha'].split('-')[1]) == mes]
-        clases_meses_anteriores = [c for a in alumnos_list for c in a['clases']
-                                    if not (int(c['fecha'].split('-')[0]) == anio and int(c['fecha'].split('-')[1]) == mes)]
-        monto_mes_actual = round(precio_cobro * len(clases_mes_actual), 2) if precio_cobro and clases_mes_actual else 0
-        monto_anterior = round(precio_cobro * len(clases_meses_anteriores), 2) if precio_cobro and clases_meses_anteriores else 0
-
-        clases_cobrar_final = clases_a_cobrar if not al_dia else 1
-        monto_final = round(precio_cobro * clases_cobrar_final, 2) if precio_cobro else None
+        precio = None
+        for r in rangos:
+            if r['clases_desde'] <= total_clases <= r['clases_hasta']:
+                precio = r['precio_por_clase']
+                break
+        if precio is None and rangos:
+            precio = rangos[-1]['precio_por_clase']
 
         resultado.append({
             'responsable': resp,
             'es_representante': g['es_representante'],
             'moneda': g['moneda'],
             'metodo_pago': g['metodo_pago'],
-            'modalidad': modalidad,
-            'es_mensual': es_mensual,
-            'al_dia': al_dia,
             'total_clases': total_clases,
-            'clases_a_cobrar_default': clases_cobrar_final,
-            'clases_mes_actual': len(clases_mes_actual),
-            'clases_meses_anteriores': len(clases_meses_anteriores),
-            'monto_mes_actual': monto_mes_actual,
-            'monto_anterior': monto_anterior,
-            'precio_unitario': precio_cobro,
-            'monto_calculado': monto_final,
-            'promociones': [dict(r) for r in rangos],
+            'precio_unitario': precio,
+            'monto_calculado': round(precio * total_clases, 2) if precio else None,
             'alumnos': alumnos_list,
             'clase_ids': [c['id'] for a in alumnos_list for c in a['clases']]
         })
 
-    resultado.sort(key=lambda x: x['al_dia'])
     conn.close()
     return jsonify(resultado)
 
@@ -633,28 +590,6 @@ def api_registrar_pago_rapido():
         conn.close()
         return jsonify({'ok': False, 'error': str(e)})
 
-
-
-@dashboard_bp.route('/dashboard/api/agregar_credito', methods=['POST'])
-@login_required
-def api_agregar_credito():
-    data = request.get_json()
-    alumno_id = data.get('alumno_id')
-    clases = int(data.get('clases', 0))
-    if not alumno_id or clases <= 0:
-        return jsonify({'ok': False, 'error': 'Datos invalidos'})
-    conn = get_connection()
-    try:
-        conn.execute(
-            "UPDATE alumnos SET clases_credito = COALESCE(clases_credito, 0) + ? WHERE id = ?",
-            (clases, alumno_id)
-        )
-        conn.commit()
-        conn.close()
-        return jsonify({'ok': True})
-    except Exception as e:
-        conn.close()
-        return jsonify({'ok': False, 'error': str(e)})
 
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
@@ -1294,15 +1229,21 @@ function cargarClases() {
 }
 
 function marcarAusenteDashboard(nombre, fecha) {
-  if (!confirm('Marcar a ' + nombre + ' como ausente el ' + fecha + '?')) return;
-  fetch('api/marcar_ausente', {
+  fetch('/dashboard/api/marcar_ausente', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
-  }).then(function(r){ return r.json(); }).then(function(r) {
-    if (r.ok) { cargarClases(); }
-    else { alert('Error: ' + (r.error || 'No se pudo marcar')); }
-  });
+    body: JSON.stringify({nombre: nombre, fecha: fecha})
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.ok) {
+      document.querySelectorAll('.btn-marcar-ausente').forEach(function(btn) {
+        if (btn.getAttribute('data-nombre') === nombre && btn.getAttribute('data-fecha') === fecha) {
+          var esAusente = d.ausente === 1;
+          btn.style.opacity = esAusente ? '1' : '0.3';
+          btn.title = esAusente ? 'Desmarcar ausente' : 'Marcar ausente';
+        }
+      });
+    } else { alert('Error: ' + (d.error||'desconocido')); }
+  }).catch(function(e){ alert('Error de red: '+e); });
 }
 
 function cargarPagos() {
@@ -1310,14 +1251,13 @@ function cargarPagos() {
     var monedas = {};
     var html = datos.length ? datos.map(function(p) {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
-      var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
+      var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : (p.moneda === 'Pesos' ? 'AR$' : '$');
       var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
       var np = p.nombre.replace(/"/g, '&quot;');
-      var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
       var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
       var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
       var clases_res = p.clases_resumen ? '<span style="color:var(--text-dim);font-size:0.78rem">'+p.clases_resumen+'</span>' : '-';
-      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
+      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+sim+'</td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
@@ -1489,18 +1429,10 @@ document.addEventListener('click', function(e) {
   var btn = e.target.closest('button');
   if (!btn) return;
   // Cancelar formulario inline de cobros
-  if (btn.classList.contains('cobro-cancelar-btn') || btn.classList.contains('cobro-cancelar-btn2')) {
+  if (btn.classList.contains('cobro-cancelar-btn')) {
     var gi = btn.getAttribute('data-gi');
     var f = document.getElementById('cobro-form-' + gi);
-    if (f) { f.style.display = 'none'; f._abierto = false; }
-    return;
-  }
-  if (btn.classList.contains('cobro-confirmar-btn')) {
-    confirmarPagoInline(parseInt(btn.getAttribute('data-gi')));
-    return;
-  }
-  if (btn.classList.contains('btn-marcar-ausente')) {
-    marcarAusenteDashboard(btn.getAttribute('data-nombre'), btn.getAttribute('data-fecha'));
+    if (f) f.style.display = 'none';
     return;
   }
   if (btn.classList.contains('btn-borrar-pago')) {
@@ -1595,39 +1527,20 @@ function renderCobros() {
   else renderCobrosChecks(cont);
 }
 
-function simMoneda(m) { return m === 'Libra Esterlina' ? '\u00a3' : '$'; }
+function simMoneda(m) { return m === 'Libra Esterlina' ? '\u00a3' : (m === 'Pesos' ? 'AR$' : '$'); }
 
 function renderCobrosResponsable(cont) {
   var html = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">'
     + '<input type="checkbox" id="resp-master" onchange="selectAllResponsable(this)" style="width:15px;height:15px;cursor:pointer">'
     + '<label for="resp-master" style="cursor:pointer">Seleccionar todos</label>'
     + '</div>';
-  var giMap = {};
-  cobrosData.forEach(function(g, gi){ giMap[g.responsable] = gi; });
-  html += cobrosData.map(function(g) {
-    var gi = giMap[g.responsable];
+  html += cobrosData.map(function(g, gi) {
     var sim = simMoneda(g.moneda);
-    // Monto azul = solo del mes actual
-    var montoMes = g.monto_mes_actual || g.monto_calculado;
-    var montoStr = g.al_dia
-      ? '<span style="color:var(--green);font-weight:500">Al d\u00eda</span>'
-      : (montoMes ? sim + fmt(montoMes) + ' ' + g.moneda : 'sin precio');
-    var sublinea = g.modalidad ? g.modalidad : (g.es_representante ? 'Representante' : 'Alumno');
-    if (g.al_dia) sublinea += ' &bull; <span style="color:var(--green);font-size:0.78rem">Sin saldo pendiente</span>';
-    // Deuda anterior: separada debajo del monto
-    var deudaAnteriorHtml = '';
-    if (!g.al_dia && g.clases_meses_anteriores && g.clases_meses_anteriores > 0) {
-      deudaAnteriorHtml = '<div style="font-size:0.72rem;color:#c0524a;margin-top:0.15rem">+ Deuda anterior: '
-        + g.clases_meses_anteriores + ' clase(s)'
-        + (g.monto_anterior ? ' (' + sim + fmt(g.monto_anterior) + ')' : '') + '</div>';
-    }
+    var montoStr = g.monto_calculado ? sim + fmt(g.monto_calculado) + ' ' + g.moneda : 'sin precio';
+    var sublinea = g.es_representante ? 'Representante' : 'Alumno';
     var alumnos = g.alumnos.map(function(a) {
-      var todasClases = (a.clases || []).concat(a.clases_pagas || []);
-      todasClases.sort(function(x,y){ return x.fecha < y.fecha ? -1 : 1; });
-      var fechas = todasClases.map(function(c){ return formatFecha(c.fecha); }).join(', ');
-      var nSinPagar = (a.clases || []).length;
-      var label = g.al_dia ? todasClases.length + ' clase(s) este mes' : nSinPagar + ' sin pagar';
-      return '<div class="cobros-grupo-clases"><strong>' + a.nombre + '</strong> \u2014 ' + label + ': <span style="color:var(--text-muted)">' + fechas + '</span></div>';
+      var fechas = a.clases.map(function(c){ return formatFecha(c.fecha); }).join(', ');
+      return '<div class="cobros-grupo-clases"><strong>' + a.nombre + '</strong> \u2014 ' + a.cantidad + ' clase(s): <span style="color:var(--text-muted)">' + fechas + '</span></div>';
     }).join('');
     return '<div class="cobros-grupo" id="cobro-grupo-' + gi + '">'
       + '<div class="cobros-grupo-header">'
@@ -1637,7 +1550,7 @@ function renderCobrosResponsable(cont) {
       + '<div class="cobros-grupo-sub">' + sublinea + ' &bull; ' + g.total_clases + ' clase(s) sin pagar</div></div>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:0.75rem">'
-      + '<div><span class="cobros-grupo-monto">' + montoStr + '</span>' + deudaAnteriorHtml + '</div>'
+      + '<span class="cobros-grupo-monto">' + montoStr + '</span>'
       + '<button class="btn" onclick="abrirPago(' + gi + ')">Registrar pago</button>'
       + '</div></div>'
       + alumnos
@@ -1962,29 +1875,27 @@ function registrarSeleccionChecks() {
 }
 
 function getPrecioParaClases(g, n) {
-  if (!g.promociones || !g.promociones.length) return {precio: g.precio_unitario || null};
+  if (!g.promociones || !g.promociones.length) return g.precio_unitario || null;
   for (var i = 0; i < g.promociones.length; i++) {
     var r = g.promociones[i];
-    if (r.clases_desde <= n && n <= r.clases_hasta) return {precio: r.precio_por_clase};
+    if (Number(r.clases_desde) <= n && n <= Number(r.clases_hasta)) return Number(r.precio_por_clase);
   }
-  return {precio: g.promociones[g.promociones.length-1].precio_por_clase};
+  return Number(g.promociones[g.promociones.length-1].precio_por_clase);
 }
 
 function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  if (!noCloseOthers) {
-    document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display='none'; f._abierto=false; });
-  }
+  if (!noCloseOthers) document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display='none'; f._abierto=false; });
   if (form._abierto) { form.style.display='none'; form._abierto=false; return; }
 
-  // Tipo default segun modalidad
   var tipoDefault = g.es_mensual ? 'combo' : 'suelta';
-  // Clases default: si semanal (suelta) siempre 1; si mensual usa clases_a_cobrar
-  var cantDefault = tipoDefault === 'suelta' ? 1 : (g.clases_a_cobrar_default || 1);
-  // Precio: siempre para 1 clase si suelta, para cantDefault si combo
-  var precioInfo = getPrecioParaClases(g, tipoDefault === 'suelta' ? 1 : cantDefault);
-  var precioDefault = precioInfo.precio || '';
+  // Semanal: default = clases dadas sin pagar. Mensual: todas sin pagar
+  var clasesDadasSP = (g.alumnos||[]).reduce(function(s,a){
+    return s + (a.clases||[]).filter(function(c){return c.estado==='dada';}).length;
+  }, 0);
+  var cantDefault = g.al_dia ? 1 : (tipoDefault==='suelta' ? (clasesDadasSP||1) : (g.total_clases||1));
+  var precioDefault = getPrecioParaClases(g, tipoDefault==='suelta' ? 1 : cantDefault) || '';
   var totalDefault = precioDefault ? Math.round(precioDefault * cantDefault * 100) / 100 : '';
 
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
@@ -1993,80 +1904,60 @@ function abrirPago(gi, noCloseOthers) {
   var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
     return '<option'+(m===g.moneda?' selected':'')+'>'+m+'</option>';
   }).join('');
-
-  var totalDadas = g.alumnos.reduce(function(s,a){return s+(a.clases_dadas?a.clases_dadas.length:0);},0);
-  var totalAgendadas = g.alumnos.reduce(function(s,a){return s+(a.clases_agendadas?a.clases_agendadas.length:0);},0);
-  var infoClases = g.al_dia ? 'Al d\u00eda &mdash; cobro adicional'
-    : (totalDadas+' dada(s) sin pagar'+(totalAgendadas?', '+totalAgendadas+' agendada(s) sin pagar':''));
+  var infoClases = g.al_dia ? 'Al d\u00eda \u2014 cobro adicional' : (clasesDadasSP+' dada(s) sin pagar');
 
   form.innerHTML =
     '<div style="width:100%;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem">'
-    +(g.es_mensual?'Mensual &mdash; cobra dadas+agendadas':'Semanal &mdash; cobra solo dadas')
-    +' &bull; '+infoClases+'</div>'
-    +'<div><label>Clases a cobrar</label>'
-    +'<input type="number" min="1" step="1" class="cobro-cant-input" data-gi="'+gi+'" value="'+cantDefault+'" style="width:70px"></div>'
-    +'<div><label>Tipo</label><select class="cobro-tipo-input" data-gi="'+gi+'">'
-    +'<option value="suelta"'+(tipoDefault==='suelta'?' selected':'')+'>Clase suelta</option>'
+    +(g.es_mensual?'Mensual':'Semanal')+' \u00b7 '+infoClases+'</div>'
+    +'<div><label>Clases</label><input type="number" min="1" step="1" class="cobro-cant-input" value="'+cantDefault+'" style="width:65px"></div>'
+    +'<div><label>Tipo</label><select class="cobro-tipo-input">'
+    +'<option value="suelta"'+(tipoDefault==='suelta'?' selected':'')+'>Suelta</option>'
     +'<option value="combo"'+(tipoDefault==='combo'?' selected':'')+'>Combo</option>'
     +'</select></div>'
-    +'<div><label>Precio/clase</label>'
-    +'<input type="number" step="1" min="0" class="cobro-precio-input" data-gi="'+gi+'" value="'+precioDefault+'" style="width:80px">'
-    +'<span class="cobro-promo-aviso" style="font-size:0.72rem;color:var(--gold);margin-left:0.3rem"></span></div>'
-    +'<div><label>Total</label>'
-    +'<input type="number" step="1" min="0" class="cobro-monto-input" data-gi="'+gi+'" value="'+totalDefault+'" style="width:90px"></div>'
+    +'<div><label>$/clase</label><input type="number" step="1" min="0" class="cobro-precio-input" value="'+precioDefault+'" style="width:75px"></div>'
+    +'<div><label>Total</label><input type="number" step="1" min="0" class="cobro-monto-input" value="'+totalDefault+'" style="width:85px"></div>'
     +'<div><label>Moneda</label><select class="cobro-moneda-input">'+monedaOptions+'</select></div>'
     +'<div><label>M\u00e9todo</label><select class="cobro-metodo-input">'+metodosOptions+'</select></div>'
     +'<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    +'<button class="btn cobro-confirmar-btn" data-gi="'+gi+'">\u2713 Confirmar</button>'
-    +'<button class="btn cobro-cancelar-btn2" data-gi="'+gi+'">Cancelar</button>'
+    +'<button class="btn" onclick="confirmarPagoInline('+gi+')">\u2713 Confirmar</button>'
+    +'<button class="btn" onclick="var f=document.getElementById(\'cobro-form-'+gi+'\');f.style.display=\'none\';f._abierto=false;">Cancelar</button>'
     +'</div>';
 
-  var cantInput = form.querySelector('.cobro-cant-input');
-  var precioInput = form.querySelector('.cobro-precio-input');
-  var totalInput = form.querySelector('.cobro-monto-input');
-  var tipoInput = form.querySelector('.cobro-tipo-input');
-  var avisoSpan = form.querySelector('.cobro-promo-aviso');
+  var cantI=form.querySelector('.cobro-cant-input'), precI=form.querySelector('.cobro-precio-input');
+  var totI=form.querySelector('.cobro-monto-input'), tipI=form.querySelector('.cobro-tipo-input');
 
-  function recalcular() {
-    var n = parseInt(cantInput.value)||0;
-    var tipo = tipoInput ? tipoInput.value : tipoDefault;
-    // Si suelta: precio siempre de 1 clase. Si combo: precio segun n clases
-    var nParaPrecio = tipo === 'suelta' ? 1 : n;
-    var p = getPrecioParaClases(cobrosData[gi], nParaPrecio);
-    if (p.precio) precioInput.value = p.precio;
-    var precio = parseFloat(precioInput.value)||0;
-    var total = precio ? Math.round(precio*n*100)/100 : 0;
-    totalInput.value = total||'';
-    avisoSpan.textContent = '';
-    if (total) actualizarMontoHeader(total);
+  function recalc() {
+    var n=parseInt(cantI.value)||0, tipo=tipI.value;
+    // Suelta: precio siempre de 1 clase. Combo: precio según n clases
+    var pr=getPrecioParaClases(cobrosData[gi], tipo==='suelta'?1:n);
+    if(pr) precI.value=pr;
+    var p=parseFloat(precI.value)||0;
+    totI.value = p ? Math.round(p*n*100)/100 : '';
+    actualizarMontoHeader(parseFloat(totI.value)||0, gi);
   }
-  function actualizarMontoHeader(total) {
-    var gd = cobrosData[gi];
-    var hm = document.querySelector('#cobro-grupo-'+gi+' .cobros-grupo-monto');
-    if (!hm) return;
-    var s = simMoneda(gd.moneda);
-    var editado = (gd.monto_calculado===null||Math.abs(total-(gd.monto_calculado||0))>0.01);
-    hm.innerHTML = '<span style="color:'+(editado?'var(--gold)':'')+'">'+s+fmt(total)+' '+gd.moneda+(editado?' *':'')+' </span>';
+  function actualizarMontoHeader(total, gidx) {
+    var hm=document.querySelector('#cobro-grupo-'+gidx+' .cobros-grupo-monto');
+    if(!hm||!total) return;
+    var s=simMoneda(cobrosData[gidx].moneda), esp=cobrosData[gidx].monto_calculado;
+    var ed=!esp||Math.abs(total-esp)>0.01;
+    hm.innerHTML='<span style="color:'+(ed?'var(--gold)':'')+'">'+s+fmt(total)+' '+cobrosData[gidx].moneda+(ed?' *':'')+' </span>';
   }
-  tipoInput.addEventListener('change', recalcular);
-  cantInput.addEventListener('input', recalcular);
-  precioInput.addEventListener('input', function() {
-    var n = parseInt(cantInput.value)||0;
-    var precio = parseFloat(precioInput.value)||0;
-    var total = precio ? Math.round(precio*n*100)/100 : 0;
-    totalInput.value = total||''; if (total) actualizarMontoHeader(total);
+  tipI.addEventListener('change',recalc);
+  cantI.addEventListener('input',recalc);
+  precI.addEventListener('input',function(){
+    var n=parseInt(cantI.value)||0,p=parseFloat(precI.value)||0;
+    totI.value=p&&n?Math.round(p*n*100)/100:'';
+    actualizarMontoHeader(parseFloat(totI.value)||0,gi);
   });
-  totalInput.addEventListener('input', function() {
-    var n = parseInt(cantInput.value)||0;
-    var total = parseFloat(totalInput.value)||0;
-    var precio = (n>0&&total) ? Math.round(total/n*100)/100 : 0;
-    if (precio) precioInput.value = precio;
-    if (total) actualizarMontoHeader(total);
+  totI.addEventListener('input',function(){
+    var n=parseInt(cantI.value)||0,t=parseFloat(totI.value)||0;
+    if(n&&t) precI.value=Math.round(t/n*100)/100;
+    actualizarMontoHeader(t,gi);
   });
-
   form.style.display='flex'; form._abierto=true;
-  if (!noCloseOthers) { var br=document.getElementById('btn-registrar-abiertos'); if(br) br.style.display='none'; }
+  if(!noCloseOthers){var br=document.getElementById('btn-registrar-abiertos');if(br)br.style.display='none';}
 }
+
 
 function confirmarPagoInline(gi) {
   var g = cobrosData[gi];
@@ -2078,20 +1969,6 @@ function confirmarPagoInline(gi) {
   var clasesInput = form.querySelector('.cobro-clases-input');
   var nClases = cantInputConf ? parseInt(cantInputConf.value) : (clasesInput ? parseInt(clasesInput.value) : null);
   if (!monto || isNaN(monto)) { alert('Ingresá un monto válido.'); return; }
-  var precioInfoConf = (nClases&&g.promociones) ? getPrecioParaClases(g,nClases) : {precio:g.precio_unitario};
-  var montoEsperado = precioInfoConf.precio&&nClases ? Math.round(precioInfoConf.precio*nClases*100)/100 : null;
-  if (montoEsperado && monto > montoEsperado+0.01) {
-    var exceso = Math.round((monto-montoEsperado)*100)/100;
-    var clasesExtra = precioInfoConf.precio ? Math.round(exceso/precioInfoConf.precio) : 0;
-    var msgC = 'El monto $'+monto+' supera lo esperado ($'+montoEsperado+') por $'+exceso+'.';
-    if (clasesExtra>0) msgC += ' Equivale a '+clasesExtra+' clase(s) de credito.';
-    msgC += ' OK confirma y registra credito. Cancelar para corregir.';
-    if (!confirm(msgC)) return;
-    if (clasesExtra>0) {
-      fetch('/dashboard/api/agregar_credito',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({alumno_id:g.alumnos[0].alumno_id,clases:clasesExtra})}).catch(function(){});
-    }
-  }
   // Si se editó la cantidad de clases, ajustar el g para enviar solo esas
   var gFinal = g;
   if (nClases !== null && nClases !== g.total_clases) {
