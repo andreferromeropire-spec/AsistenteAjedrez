@@ -167,6 +167,30 @@ def ejecutar_accion(accion, datos, numero):
             nuevos_datos["candidato_elegido"] = elegido
             return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
+        # Guard: si el pendiente es de ausente_o_cancelar, no tiene candidatos
+        if pendiente.get("esperando") == "ausente_o_cancelar":
+            _del_pendiente(numero)
+            _cid = pendiente['clase_id']
+            _nom = pendiente['nombre_alumno']
+            _fec = pendiente['fecha']
+            _hor = pendiente.get('hora_fmt', '')
+            _op = datos.get("numero_opcion")
+            if _op == 1:
+                _c = __import__('database').get_connection()
+                _c.execute('UPDATE clases SET ausente = 1 WHERE id = ?', (_cid,))
+                _c.commit()
+                _c.close()
+                return f'\U0001fa91 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
+            elif _op == 2:
+                cancelar_clase(_cid, cancelada_por='profesora')
+                return f'\u2705 Clase de {_nom} del {_fec} cancelada. No se cobra.'
+            else:
+                _set_pendiente(numero, pendiente)
+                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+
+        if "candidatos" not in pendiente:
+            return "No tenía candidatos pendientes. \u00bfQué querés hacer?"
+
         candidatos = pendiente["candidatos"]
         alumno_elegido = None
         if numero_opcion and 1 <= numero_opcion <= len(candidatos):
