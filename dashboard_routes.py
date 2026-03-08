@@ -1229,15 +1229,22 @@ function cargarClases() {
 }
 
 function marcarAusenteDashboard(nombre, fecha) {
-  if (!confirm('Marcar a ' + nombre + ' como ausente el ' + fecha + '?')) return;
-  fetch('api/marcar_ausente', {
+  fetch('/dashboard/api/marcar_ausente', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
-  }).then(function(r){ return r.json(); }).then(function(r) {
-    if (r.ok) { cargarClases(); }
-    else { alert('Error: ' + (r.error || 'No se pudo marcar')); }
-  });
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.ok) {
+      // Toggle visual sin recargar toda la tabla
+      document.querySelectorAll('.btn-marcar-ausente').forEach(function(btn) {
+        if (btn.getAttribute('data-nombre') === nombre && btn.getAttribute('data-fecha') === fecha) {
+          var esAusente = d.ausente === 1;
+          btn.style.opacity = esAusente ? '1' : '0.3';
+          btn.title = esAusente ? 'Desmarcar ausente' : 'Marcar ausente';
+        }
+      });
+    } else { alert('Error: ' + (d.error || 'No se pudo marcar')); }
+  }).catch(function(e){ alert('Error de red: ' + e); });
 }
 
 function cargarPagos() {
