@@ -1517,7 +1517,7 @@ function renderCobrosResponsable(cont) {
     var sublinea = g.es_representante ? 'Representante' : 'Alumno';
     var alumnos = g.alumnos.map(function(a) {
       var fechas = a.clases.map(function(c){ return formatFecha(c.fecha); }).join(', ');
-      return '<div class="cobros-grupo-clases"><strong>' + a.nombre + '</strong> \u2014 ' + a.cantidad + ' clase(s): <span style="color:var(--text-muted)">' + fechas + '</span></div>';
+      return '<div class="cobros-grupo-clases"><strong>' + a.nombre + '</strong> \u2014 ' + a.clases.length + ' clase(s): <span style="color:var(--text-muted)">' + fechas + '</span></div>';
     }).join('');
     return '<div class="cobros-grupo" id="cobro-grupo-' + gi + '">'
       + '<div class="cobros-grupo-header">'
