@@ -1920,7 +1920,7 @@ function abrirPago(gi, noCloseOthers) {
     +'<div><label>M\u00e9todo</label><select class="cobro-metodo-input">'+metodosOptions+'</select></div>'
     +'<div style="display:flex;gap:0.4rem;align-self:flex-end">'
     +'<button class="btn" onclick="confirmarPagoInline('+gi+')">\u2713 Confirmar</button>'
-    +'<button class="btn" onclick="var f=document.getElementById(\'cobro-form-'+gi+'\');f.style.display=\'none\';f._abierto=false;">Cancelar</button>'
+    +'<button class="btn" onclick="abrirPago('+gi+')">Cancelar</button>'
     +'</div>';
 
   var cantI=form.querySelector('.cobro-cant-input'), precI=form.querySelector('.cobro-precio-input');
