@@ -1218,9 +1218,9 @@ function cargarClases() {
     }
     var html = datos.length ? datos.map(function(c) {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
-      var ausenteBadge = '';
-      var ausenteBtn = (c.estado === 'dada')
-        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="'+(c.ausente?'Desmarcar ausente':'Marcar ausente')+'" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0 4px;opacity:'+(c.ausente?'1':'0.3')+'">&#x1FA91;</button>'
+      var ausenteBadge = c.ausente ? ' <span title="No asistió">&#x1FA91;</span>' : '';
+      var ausenteBtn = (!c.ausente && c.estado === 'dada')
+        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">&#x1FA91;</button>'
         : '';
       return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+ausenteBadge+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
@@ -1229,21 +1229,15 @@ function cargarClases() {
 }
 
 function marcarAusenteDashboard(nombre, fecha) {
-  fetch('/dashboard/api/marcar_ausente', {
+  if (!confirm('Marcar a ' + nombre + ' como ausente el ' + fecha + '?')) return;
+  fetch('api/marcar_ausente', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nombre: nombre, fecha: fecha})
-  }).then(function(r){ return r.json(); }).then(function(d) {
-    if (d.ok) {
-      document.querySelectorAll('.btn-marcar-ausente').forEach(function(btn) {
-        if (btn.getAttribute('data-nombre') === nombre && btn.getAttribute('data-fecha') === fecha) {
-          var esAusente = d.ausente === 1;
-          btn.style.opacity = esAusente ? '1' : '0.3';
-          btn.title = esAusente ? 'Desmarcar ausente' : 'Marcar ausente';
-        }
-      });
-    } else { alert('Error: ' + (d.error||'desconocido')); }
-  }).catch(function(e){ alert('Error de red: '+e); });
+    body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
+  }).then(function(r){ return r.json(); }).then(function(r) {
+    if (r.ok) { cargarClases(); }
+    else { alert('Error: ' + (r.error || 'No se pudo marcar')); }
+  });
 }
 
 function cargarPagos() {
@@ -1251,13 +1245,14 @@ function cargarPagos() {
     var monedas = {};
     var html = datos.length ? datos.map(function(p) {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
-      var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : (p.moneda === 'Pesos' ? 'AR$' : '$');
+      var sim = p.moneda === 'Libra Esterlina' ? '\u00a3' : '$';
       var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
       var np = p.nombre.replace(/"/g, '&quot;');
+      var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
       var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
       var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
       var clases_res = p.clases_resumen ? '<span style="color:var(--text-dim);font-size:0.78rem">'+p.clases_resumen+'</span>' : '-';
-      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+sim+'</td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
+      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+sim+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
@@ -1441,28 +1436,8 @@ document.addEventListener('click', function(e) {
     borrarPagoDirecto(pagoId, resumen);
     return;
   }
-  if (btn.classList.contains('btn-borrar-grupo')) {
-    var ids = btn.getAttribute('data-ids').split(',').map(Number);
-    var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
-    if (!confirm('¿Borrar ' + ids.length + ' pago(s)? ' + resumen)) return;
-    var borrados = 0;
-    var borrarSiguiente = function(i) {
-      if (i >= ids.length) {
-        alert('OK: ' + borrados + ' pago(s) borrado(s).');
-        cargarTodo();
-        poblarFiltroAlumnos();
-        return;
-      }
-      fetch('/dashboard/api/borrar_pago_id', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pago_id: ids[i]})
-      }).then(function(r){ return r.json(); }).then(function(d){
-        if (d.ok) borrados++;
-        borrarSiguiente(i + 1);
-      }).catch(function(){ borrarSiguiente(i + 1); });
-    };
-    borrarSiguiente(0);
+  if (btn.classList.contains('btn-marcar-ausente')) {
+    marcarAusenteDashboard(btn.getAttribute('data-nombre'), btn.getAttribute('data-fecha'));
     return;
   }
   if (btn.classList.contains('btn-borrar-grupo')) {
@@ -1527,7 +1502,7 @@ function renderCobros() {
   else renderCobrosChecks(cont);
 }
 
-function simMoneda(m) { return m === 'Libra Esterlina' ? '\u00a3' : (m === 'Pesos' ? 'AR$' : '$'); }
+function simMoneda(m) { return m === 'Libra Esterlina' ? '\u00a3' : '$'; }
 
 function renderCobrosResponsable(cont) {
   var html = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">'
@@ -1874,90 +1849,31 @@ function registrarSeleccionChecks() {
   procesarSiguiente(0);
 }
 
-function getPrecioParaClases(g, n) {
-  if (!g.promociones || !g.promociones.length) return g.precio_unitario || null;
-  for (var i = 0; i < g.promociones.length; i++) {
-    var r = g.promociones[i];
-    if (Number(r.clases_desde) <= n && n <= Number(r.clases_hasta)) return Number(r.precio_por_clase);
-  }
-  return Number(g.promociones[g.promociones.length-1].precio_por_clase);
-}
-
 function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  if (!noCloseOthers) document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display='none'; f._abierto=false; });
-  if (form._abierto) { form.style.display='none'; form._abierto=false; return; }
-
-  var tipoDefault = g.es_mensual ? 'combo' : 'suelta';
-  // Semanal: default = clases dadas sin pagar. Mensual: todas sin pagar
-  var clasesDadasSP = (g.alumnos||[]).reduce(function(s,a){
-    return s + (a.clases||[]).filter(function(c){return c.estado==='dada';}).length;
-  }, 0);
-  var cantDefault = g.al_dia ? 1 : (tipoDefault==='suelta' ? (clasesDadasSP||1) : (g.total_clases||1));
-  var precioDefault = getPrecioParaClases(g, tipoDefault==='suelta' ? 1 : cantDefault) || '';
-  var totalDefault = precioDefault ? Math.round(precioDefault * cantDefault * 100) / 100 : '';
-
+  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
+  document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  var montoStr = g.monto_calculado || '';
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
-    return '<option'+(m===g.metodo_pago?' selected':'')+'>'+m+'</option>';
+    return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
   }).join('');
   var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
-    return '<option'+(m===g.moneda?' selected':'')+'>'+m+'</option>';
+    return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
   }).join('');
-  var infoClases = g.al_dia ? 'Al d\u00eda \u2014 cobro adicional' : (clasesDadasSP+' dada(s) sin pagar');
-
-  form.innerHTML =
-    '<div style="width:100%;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem">'
-    +(g.es_mensual?'Mensual':'Semanal')+' \u00b7 '+infoClases+'</div>'
-    +'<div><label>Clases</label><input type="number" min="1" step="1" class="cobro-cant-input" value="'+cantDefault+'" style="width:65px"></div>'
-    +'<div><label>Tipo</label><select class="cobro-tipo-input">'
-    +'<option value="suelta"'+(tipoDefault==='suelta'?' selected':'')+'>Suelta</option>'
-    +'<option value="combo"'+(tipoDefault==='combo'?' selected':'')+'>Combo</option>'
-    +'</select></div>'
-    +'<div><label>$/clase</label><input type="number" step="1" min="0" class="cobro-precio-input" value="'+precioDefault+'" style="width:75px"></div>'
-    +'<div><label>Total</label><input type="number" step="1" min="0" class="cobro-monto-input" value="'+totalDefault+'" style="width:85px"></div>'
-    +'<div><label>Moneda</label><select class="cobro-moneda-input">'+monedaOptions+'</select></div>'
-    +'<div><label>M\u00e9todo</label><select class="cobro-metodo-input">'+metodosOptions+'</select></div>'
-    +'<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    +'<button class="btn" onclick="confirmarPagoInline('+gi+')">\u2713 Confirmar</button>'
-    +'<button class="btn" onclick="abrirPago('+gi+')">Cancelar</button>'
-    +'</div>';
-
-  var cantI=form.querySelector('.cobro-cant-input'), precI=form.querySelector('.cobro-precio-input');
-  var totI=form.querySelector('.cobro-monto-input'), tipI=form.querySelector('.cobro-tipo-input');
-
-  function recalc() {
-    var n=parseInt(cantI.value)||0, tipo=tipI.value;
-    // Suelta: precio siempre de 1 clase. Combo: precio según n clases
-    var pr=getPrecioParaClases(cobrosData[gi], tipo==='suelta'?1:n);
-    if(pr) precI.value=pr;
-    var p=parseFloat(precI.value)||0;
-    totI.value = p ? Math.round(p*n*100)/100 : '';
-    actualizarMontoHeader(parseFloat(totI.value)||0, gi);
+  form.innerHTML = '<div><label>Monto</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
+    + '<div><label>Moneda</label><select class="cobro-moneda-input">' + monedaOptions + '</select></div>'
+    + '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
+    + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
+    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
+    + '<button class="btn" onclick="document.getElementById(&quot;cobro-form-' + gi + '&quot;).style.display=&quot;none&quot;">Cancelar</button>'
+    + '</div>';
+  form.style.display = 'flex';
+  if (!noCloseOthers) {
+    var btnReg = document.getElementById('btn-registrar-abiertos');
+    if (btnReg) btnReg.style.display = 'none';
   }
-  function actualizarMontoHeader(total, gidx) {
-    var hm=document.querySelector('#cobro-grupo-'+gidx+' .cobros-grupo-monto');
-    if(!hm||!total) return;
-    var s=simMoneda(cobrosData[gidx].moneda), esp=cobrosData[gidx].monto_calculado;
-    var ed=!esp||Math.abs(total-esp)>0.01;
-    hm.innerHTML='<span style="color:'+(ed?'var(--gold)':'')+'">'+s+fmt(total)+' '+cobrosData[gidx].moneda+(ed?' *':'')+' </span>';
-  }
-  tipI.addEventListener('change',recalc);
-  cantI.addEventListener('input',recalc);
-  precI.addEventListener('input',function(){
-    var n=parseInt(cantI.value)||0,p=parseFloat(precI.value)||0;
-    totI.value=p&&n?Math.round(p*n*100)/100:'';
-    actualizarMontoHeader(parseFloat(totI.value)||0,gi);
-  });
-  totI.addEventListener('input',function(){
-    var n=parseInt(cantI.value)||0,t=parseFloat(totI.value)||0;
-    if(n&&t) precI.value=Math.round(t/n*100)/100;
-    actualizarMontoHeader(t,gi);
-  });
-  form.style.display='flex'; form._abierto=true;
-  if(!noCloseOthers){var br=document.getElementById('btn-registrar-abiertos');if(br)br.style.display='none';}
 }
-
 
 function confirmarPagoInline(gi) {
   var g = cobrosData[gi];
@@ -1965,9 +1881,8 @@ function confirmarPagoInline(gi) {
   var monto = parseFloat(form.querySelector('.cobro-monto-input').value);
   var moneda = form.querySelector('.cobro-moneda-input').value;
   var metodo = form.querySelector('.cobro-metodo-input').value;
-  var cantInputConf = form.querySelector('.cobro-cant-input');
   var clasesInput = form.querySelector('.cobro-clases-input');
-  var nClases = cantInputConf ? parseInt(cantInputConf.value) : (clasesInput ? parseInt(clasesInput.value) : null);
+  var nClases = clasesInput ? parseInt(clasesInput.value) : null;
   if (!monto || isNaN(monto)) { alert('Ingresá un monto válido.'); return; }
   // Si se editó la cantidad de clases, ajustar el g para enviar solo esas
   var gFinal = g;

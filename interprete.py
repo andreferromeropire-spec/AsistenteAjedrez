@@ -42,8 +42,17 @@ Las acciones posibles son:
 3. "registrar_clases_multiple" - cuando se dieron clases con VARIOS alumnos
    datos necesarios: nombres_alumnos (lista), fecha (YYYY-MM-DD), hora (opcional)
 
-4. "cancelar_clase" - cuando se cancela una clase
+4. "cancelar_clase" - cuando el alumno avisa con anticipación que no puede venir (cancela, no falta)
+   SOLO usar cuando hay intención de cancelar o reprogramar, NO cuando la clase ya pasó.
    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD), cancelada_por (alumno/profesora)
+   Ejemplos: "henry canceló el jueves", "fiona no puede el lunes", "yo cancelo la clase de jeff del 5"
+
+4b. "marcar_ausente" - cuando un alumno no asistió a una clase que YA PASÓ (faltó, no vino, ausente)
+    USAR cuando la clase ya ocurrió y el alumno simplemente no apareció.
+    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, opcional — si no se menciona, tomar la última clase pasada)
+    Ejemplos: "henry cutler faltó la clase del 2", "jeff no vino hoy", "fiona faltó",
+              "henry estuvo ausente el lunes", "marco no asistió a la clase del 3 de marzo",
+              "jeff faltó a la clase de marzo", "fiona no apareció"
 
 5. "quien_debe" - quiere saber quién no pagó este mes
    datos necesarios: ninguno
