@@ -1219,11 +1219,10 @@ function cargarClases() {
     }
     var html = datos.length ? datos.map(function(c) {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
-      var ausenteBadge = c.ausente ? ' <span title="No asistió">&#x1FA91;</span>' : '';
-      var ausenteBtn = (!c.ausente && c.estado === 'dada')
-        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">&#x1FA91;</button>'
+      var ausenteBtn = (c.estado === 'dada')
+        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="'+(c.ausente ? 'Quitar ausencia' : 'Marcar ausente')+'" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0;opacity:'+(c.ausente ? '1' : '0.25')+'">&#x1FA91;</button>'
         : '';
-      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+ausenteBadge+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
+      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
     document.getElementById('t-clases').innerHTML = html;
   });
@@ -2032,7 +2031,13 @@ function ejecutarSync(mesesLista) {
 }
 
 cargarTodo();
-setInterval(cargarTodo, 60000);
+// Auto-refresh liviano: solo recarga clases cada 30s si esa pestaña está activa
+setInterval(function() {
+  var tabClases = document.getElementById('tab-clases');
+  if (tabClases && tabClases.classList.contains('active')) {
+    cargarClases();
+  }
+}, 30000);
 </script>
 </body>
 </html>
