@@ -1944,7 +1944,7 @@ function abrirPago(gi, noCloseOthers) {
 
   form.innerHTML =
     '<div style="width:100%;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem">'
-    + (g.es_mensual ? '\uD83D\uDCC5 Mensual &mdash; cobra dadas + agendadas' : '\u23F1 Semanal &mdash; cobra solo dadas')
+    + (g.es_mensual ? 'Mensual &mdash; cobra dadas + agendadas' : 'Semanal &mdash; cobra solo dadas')
     + ' &bull; ' + infoClases + '</div>'
     + '<div><label>Clases a cobrar</label>'
     + '<input type="number" min="1" step="1" class="cobro-cant-input" data-gi="' + gi + '" value="' + cantDefault + '" style="width:70px"></div>'
