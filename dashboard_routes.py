@@ -1220,7 +1220,7 @@ function cargarClases() {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
       var ausenteBadge = c.ausente ? ' <span title="No asistió">&#x1FA91;</span>' : '';
       var ausenteBtn = (!c.ausente && c.estado === 'dada')
-        ? '<button onclick="marcarAusenteDashboard('+JSON.stringify(c.nombre)+','+JSON.stringify(c.fecha)+')" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">&#x1FA91;</button>'
+        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">&#x1FA91;</button>'
         : '';
       return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+ausenteBadge+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
@@ -1482,6 +1482,12 @@ document.addEventListener('click', function(e) {
       }).catch(function(){ borrarSiguiente(i + 1); });
     };
     borrarSiguiente(0);
+    return;
+  }
+  if (btn.classList.contains('btn-marcar-ausente')) {
+    var nombre = btn.getAttribute('data-nombre');
+    var fecha = btn.getAttribute('data-fecha');
+    marcarAusenteDashboard(nombre, fecha);
     return;
   }
   var nombre = btn.getAttribute('data-nombre');
