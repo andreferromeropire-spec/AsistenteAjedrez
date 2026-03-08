@@ -502,6 +502,7 @@ def api_clases_sin_pagar():
             grupos[resp]['alumnos'][aid] = {
                 'alumno_id': aid,
                 'nombre': c['nombre'],
+                'modalidad': c['modalidad'],
                 'clases': []
             }
             grupos[resp]['alumnos_orden'].append(aid)
@@ -533,14 +534,42 @@ def api_clases_sin_pagar():
         if precio is None and rangos:
             precio = rangos[-1]['precio_por_clase']
 
+        # Desglose dadas vs agendadas por alumno
+        for a in alumnos_list:
+            a['clases_dadas'] = [c for c in a['clases'] if c['estado'] == 'dada']
+            a['clases_agendadas'] = [c for c in a['clases'] if c['estado'] == 'agendada']
+
+        modalidad = alumnos_list[0]['modalidad'] if alumnos_list else None
+        es_mensual = modalidad == 'Mensual'
+
+        for a in alumnos_list:
+            if es_mensual:
+                a['clases_a_cobrar_default'] = len(a['clases'])
+            else:
+                a['clases_a_cobrar_default'] = len(a['clases_dadas'])
+
+        clases_a_cobrar = sum(a['clases_a_cobrar_default'] for a in alumnos_list)
+
+        precio_cobro = None
+        for r in rangos:
+            if r['clases_desde'] <= clases_a_cobrar <= r['clases_hasta']:
+                precio_cobro = r['precio_por_clase']
+                break
+        if precio_cobro is None and rangos:
+            precio_cobro = rangos[-1]['precio_por_clase']
+
         resultado.append({
             'responsable': resp,
             'es_representante': g['es_representante'],
             'moneda': g['moneda'],
             'metodo_pago': g['metodo_pago'],
+            'modalidad': modalidad,
+            'es_mensual': es_mensual,
             'total_clases': total_clases,
-            'precio_unitario': precio,
-            'monto_calculado': round(precio * total_clases, 2) if precio else None,
+            'clases_a_cobrar_default': clases_a_cobrar,
+            'precio_unitario': precio_cobro,
+            'monto_calculado': round(precio_cobro * clases_a_cobrar, 2) if precio_cobro else None,
+            'promociones': [dict(r) for r in rangos],
             'alumnos': alumnos_list,
             'clase_ids': [c['id'] for a in alumnos_list for c in a['clases']]
         })
@@ -1230,7 +1259,7 @@ function cargarClases() {
 
 function marcarAusenteDashboard(nombre, fecha) {
   if (!confirm('Marcar a ' + nombre + ' como ausente el ' + fecha + '?')) return;
-  fetch('api/marcar_ausente', {
+  fetch('/dashboard/api/marcar_ausente', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
@@ -1427,7 +1456,17 @@ document.addEventListener('click', function(e) {
   if (btn.classList.contains('cobro-cancelar-btn')) {
     var gi = btn.getAttribute('data-gi');
     var f = document.getElementById('cobro-form-' + gi);
-    if (f) f.style.display = 'none';
+    if (f) { f.style.display = 'none'; f._abierto = false; }
+    return;
+  }
+  if (btn.classList.contains('cobro-cancelar-btn2')) {
+    var gi = btn.getAttribute('data-gi');
+    var f = document.getElementById('cobro-form-' + gi);
+    if (f) { f.style.display = 'none'; f._abierto = false; }
+    return;
+  }
+  if (btn.classList.contains('cobro-confirmar-btn')) {
+    confirmarPagoInline(parseInt(btn.getAttribute('data-gi')));
     return;
   }
   if (btn.classList.contains('btn-borrar-pago')) {
@@ -1482,12 +1521,6 @@ document.addEventListener('click', function(e) {
       }).catch(function(){ borrarSiguiente(i + 1); });
     };
     borrarSiguiente(0);
-    return;
-  }
-  if (btn.classList.contains('btn-marcar-ausente')) {
-    var nombre = btn.getAttribute('data-nombre');
-    var fecha = btn.getAttribute('data-fecha');
-    marcarAusenteDashboard(nombre, fecha);
     return;
   }
   var nombre = btn.getAttribute('data-nombre');
@@ -1875,26 +1908,94 @@ function registrarSeleccionChecks() {
   procesarSiguiente(0);
 }
 
+function getPrecioParaClases(g, n) {
+  if (!g.promociones || !g.promociones.length) return {precio: g.precio_unitario || null, esPromo: !!g.precio_unitario};
+  for (var i = 0; i < g.promociones.length; i++) {
+    var r = g.promociones[i];
+    if (r.clases_desde <= n && n <= r.clases_hasta) return {precio: r.precio_por_clase, esPromo: true};
+  }
+  return {precio: g.promociones[g.promociones.length-1].precio_por_clase, esPromo: false};
+}
+
 function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
-  document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
-  var montoStr = g.monto_calculado || '';
+  if (!noCloseOthers) {
+    document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; f._abierto = false; });
+  }
+  if (form._abierto) { form.style.display = 'none'; form._abierto = false; return; }
+
+  var cantDefault = g.clases_a_cobrar_default || g.total_clases;
+  var tipoDefault = g.es_mensual ? 'combo' : 'suelta';
+  var precioInfo = getPrecioParaClases(g, cantDefault);
+  var precioDefault = precioInfo.precio || '';
+  var totalDefault = precioDefault ? Math.round(precioDefault * cantDefault * 100) / 100 : '';
+
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
     return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
   }).join('');
   var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
     return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
   }).join('');
-  form.innerHTML = '<div><label>Monto</label><input type="number" step="0.01" class="cobro-monto-input" value="' + montoStr + '"></div>'
+
+  var totalDadas = g.alumnos.reduce(function(s,a){ return s + (a.clases_dadas ? a.clases_dadas.length : 0); }, 0);
+  var totalAgendadas = g.alumnos.reduce(function(s,a){ return s + (a.clases_agendadas ? a.clases_agendadas.length : 0); }, 0);
+  var infoClases = totalDadas + ' dada(s)' + (totalAgendadas ? ', ' + totalAgendadas + ' agendada(s)' : '');
+
+  form.innerHTML =
+    '<div style="width:100%;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem">'
+    + (g.es_mensual ? '\uD83D\uDCC5 Mensual &mdash; cobra dadas + agendadas' : '\u23F1 Semanal &mdash; cobra solo dadas')
+    + ' &bull; ' + infoClases + '</div>'
+    + '<div><label>Clases a cobrar</label>'
+    + '<input type="number" min="1" step="1" class="cobro-cant-input" data-gi="' + gi + '" value="' + cantDefault + '" style="width:70px"></div>'
+    + '<div><label>Tipo</label><select class="cobro-tipo-input" data-gi="' + gi + '">'
+    + '<option value="suelta"' + (tipoDefault==='suelta'?' selected':'') + '>Clase suelta</option>'
+    + '<option value="combo"' + (tipoDefault==='combo'?' selected':'') + '>Combo</option>'
+    + '</select></div>'
+    + '<div><label>Precio/clase</label>'
+    + '<input type="number" step="0.01" class="cobro-precio-input" data-gi="' + gi + '" value="' + precioDefault + '" style="width:80px">'
+    + '<span class="cobro-promo-aviso" style="font-size:0.72rem;color:var(--gold);margin-left:0.3rem"></span></div>'
+    + '<div><label>Total</label>'
+    + '<input type="number" step="0.01" class="cobro-monto-input" data-gi="' + gi + '" value="' + totalDefault + '" style="width:90px"></div>'
     + '<div><label>Moneda</label><select class="cobro-moneda-input">' + monedaOptions + '</select></div>'
     + '<div><label>M\u00e9todo</label><select class="cobro-metodo-input">' + metodosOptions + '</select></div>'
     + '<div style="display:flex;gap:0.4rem;align-self:flex-end">'
-    + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
-    + '<button class="btn" onclick="document.getElementById(&quot;cobro-form-' + gi + '&quot;).style.display=&quot;none&quot;">Cancelar</button>'
+    + '<button class="btn cobro-confirmar-btn" data-gi="' + gi + '">\u2713 Confirmar</button>'
+    + '<button class="btn cobro-cancelar-btn2" data-gi="' + gi + '">Cancelar</button>'
     + '</div>';
+
+  var cantInput = form.querySelector('.cobro-cant-input');
+  var precioInput = form.querySelector('.cobro-precio-input');
+  var totalInput = form.querySelector('.cobro-monto-input');
+  var avisoSpan = form.querySelector('.cobro-promo-aviso');
+
+  function verificarPromo(cant, precio) {
+    var p = getPrecioParaClases(cobrosData[gi], cant);
+    avisoSpan.textContent = (p.precio && Math.abs(precio - p.precio) > 0.01) ? '(difiere de promo)' : '';
+  }
+  cantInput.addEventListener('input', function() {
+    var n = parseInt(cantInput.value) || 0;
+    var p = getPrecioParaClases(cobrosData[gi], n);
+    if (p.precio) precioInput.value = p.precio;
+    var precio = parseFloat(precioInput.value) || 0;
+    totalInput.value = precio ? Math.round(precio * n * 100) / 100 : '';
+    verificarPromo(n, precio);
+  });
+  precioInput.addEventListener('input', function() {
+    var n = parseInt(cantInput.value) || 0;
+    var precio = parseFloat(precioInput.value) || 0;
+    totalInput.value = precio ? Math.round(precio * n * 100) / 100 : '';
+    verificarPromo(n, precio);
+  });
+  totalInput.addEventListener('input', function() {
+    var n = parseInt(cantInput.value) || 0;
+    var total = parseFloat(totalInput.value) || 0;
+    var precio = (n > 0 && total) ? Math.round(total / n * 100) / 100 : 0;
+    if (precio) { precioInput.value = precio; verificarPromo(n, precio); }
+  });
+
   form.style.display = 'flex';
+  form._abierto = true;
   if (!noCloseOthers) {
     var btnReg = document.getElementById('btn-registrar-abiertos');
     if (btnReg) btnReg.style.display = 'none';
