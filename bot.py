@@ -1193,6 +1193,26 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
         pendiente = acciones_pendientes[numero]
         opcion = int(mensaje_entrante.strip())
 
+        # Si el pendiente es de ausente_o_cancelar, procesarlo aquí también como fallback
+        if pendiente.get("esperando") == "ausente_o_cancelar":
+            _del_pendiente(numero)
+            _cid = pendiente['clase_id']
+            _nom = pendiente['nombre_alumno']
+            _fec = pendiente['fecha']
+            _hor = pendiente.get('hora_fmt', '')
+            if opcion == 1:
+                _c = __import__('database').get_connection()
+                _c.execute('UPDATE clases SET ausente = 1 WHERE id = ?', (_cid,))
+                _c.commit()
+                _c.close()
+                return f'🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
+            elif opcion == 2:
+                cancelar_clase(_cid, cancelada_por='profesora')
+                return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
+            else:
+                _set_pendiente(numero, pendiente)
+                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+
         if pendiente.get("accion") == "confirmar_borrado":
             accion = "confirmar_borrado"
             datos = {"numero_opcion": opcion}
