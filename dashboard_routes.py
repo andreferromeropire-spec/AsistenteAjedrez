@@ -620,6 +620,28 @@ def api_registrar_pago_rapido():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+
+@dashboard_bp.route('/dashboard/api/agregar_credito', methods=['POST'])
+@login_required
+def api_agregar_credito():
+    data = request.get_json()
+    alumno_id = data.get('alumno_id')
+    clases = int(data.get('clases', 0))
+    if not alumno_id or clases <= 0:
+        return jsonify({'ok': False, 'error': 'Datos invalidos'})
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE alumnos SET clases_credito = COALESCE(clases_credito, 0) + ? WHERE id = ?",
+            (clases, alumno_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True})
+    except Exception as e:
+        conn.close()
+        return jsonify({'ok': False, 'error': str(e)})
+
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1247,9 +1269,9 @@ function cargarClases() {
     }
     var html = datos.length ? datos.map(function(c) {
       var pagoBadge = c.pago_id ? '<span title="Pago registrado" style="color:var(--green)">&#10003;</span>' : '';
-      var ausenteBadge = c.ausente ? ' <span title="No asistió">&#x1FA91;</span>' : '';
-      var ausenteBtn = (!c.ausente && c.estado === 'dada')
-        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="Marcar ausente" style="background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0;opacity:0.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">&#x1FA91;</button>'
+      var ausenteBadge = '';
+      var ausenteBtn = (c.estado === 'dada')
+        ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="'+(c.ausente?'Desmarcar ausente':'Marcar ausente')+'" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0 4px;opacity:'+(c.ausente?'1':'0.3')+'">&#x1FA91;</button>'
         : '';
       return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+ausenteBadge+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
@@ -1571,7 +1593,10 @@ function renderCobrosResponsable(cont) {
   html += cobrosData.map(function(g, gi) {
     var sim = simMoneda(g.moneda);
     var montoStr = g.monto_calculado ? sim + fmt(g.monto_calculado) + ' ' + g.moneda : 'sin precio';
-    var sublinea = g.es_representante ? 'Representante' : 'Alumno';
+    var sublinea = g.modalidad ? g.modalidad : (g.es_representante ? 'Representante' : 'Alumno');
+    if (g.clases_meses_anteriores && g.clases_meses_anteriores > 0) {
+      sublinea += ' &bull; <span style="color:#c0524a;font-size:0.78rem">Deuda anterior: ' + g.clases_meses_anteriores + ' clase(s)' + (g.monto_anterior ? ' (' + sim + fmt(g.monto_anterior) + ')' : '') + '</span>';
+    }
     var alumnos = g.alumnos.map(function(a) {
       var fechas = a.clases.map(function(c){ return formatFecha(c.fecha); }).join(', ');
       return '<div class="cobros-grupo-clases"><strong>' + a.nombre + '</strong> \u2014 ' + a.cantidad + ' clase(s): <span style="color:var(--text-muted)">' + fechas + '</span></div>';
@@ -1953,7 +1978,7 @@ function abrirPago(gi, noCloseOthers) {
     + '<option value="combo"' + (tipoDefault==='combo'?' selected':'') + '>Combo</option>'
     + '</select></div>'
     + '<div><label>Precio/clase</label>'
-    + '<input type="number" step="0.01" class="cobro-precio-input" data-gi="' + gi + '" value="' + precioDefault + '" style="width:80px">'
+    + '<input type="number" step="1" min="0" class="cobro-precio-input" data-gi="' + gi + '" value="' + precioDefault + '" style="width:80px">'
     + '<span class="cobro-promo-aviso" style="font-size:0.72rem;color:var(--gold);margin-left:0.3rem"></span></div>'
     + '<div><label>Total</label>'
     + '<input type="number" step="0.01" class="cobro-monto-input" data-gi="' + gi + '" value="' + totalDefault + '" style="width:90px"></div>'
@@ -1973,25 +1998,38 @@ function abrirPago(gi, noCloseOthers) {
     var p = getPrecioParaClases(cobrosData[gi], cant);
     avisoSpan.textContent = (p.precio && Math.abs(precio - p.precio) > 0.01) ? '(difiere de promo)' : '';
   }
+  function actualizarMontoHeader(total) {
+    var gd = cobrosData[gi];
+    var headerMonto = document.querySelector('#cobro-grupo-' + gi + ' .cobros-grupo-monto');
+    if (!headerMonto) return;
+    var s = simMoneda(gd.moneda);
+    var esEditado = (gd.monto_calculado === null || Math.abs(total - gd.monto_calculado) > 0.01);
+    headerMonto.innerHTML = '<span style="color:' + (esEditado ? 'var(--gold)' : '') + '">' + s + fmt(total) + ' ' + gd.moneda + (esEditado ? ' *' : '') + '</span>';
+  }
   cantInput.addEventListener('input', function() {
     var n = parseInt(cantInput.value) || 0;
     var p = getPrecioParaClases(cobrosData[gi], n);
     if (p.precio) precioInput.value = p.precio;
     var precio = parseFloat(precioInput.value) || 0;
-    totalInput.value = precio ? Math.round(precio * n * 100) / 100 : '';
+    var total = precio ? Math.round(precio * n * 100) / 100 : 0;
+    totalInput.value = total || '';
     verificarPromo(n, precio);
+    if (total) actualizarMontoHeader(total);
   });
   precioInput.addEventListener('input', function() {
     var n = parseInt(cantInput.value) || 0;
     var precio = parseFloat(precioInput.value) || 0;
-    totalInput.value = precio ? Math.round(precio * n * 100) / 100 : '';
+    var total = precio ? Math.round(precio * n * 100) / 100 : 0;
+    totalInput.value = total || '';
     verificarPromo(n, precio);
+    if (total) actualizarMontoHeader(total);
   });
   totalInput.addEventListener('input', function() {
     var n = parseInt(cantInput.value) || 0;
     var total = parseFloat(totalInput.value) || 0;
     var precio = (n > 0 && total) ? Math.round(total / n * 100) / 100 : 0;
     if (precio) { precioInput.value = precio; verificarPromo(n, precio); }
+    if (total) actualizarMontoHeader(total);
   });
 
   form.style.display = 'flex';
@@ -2008,9 +2046,29 @@ function confirmarPagoInline(gi) {
   var monto = parseFloat(form.querySelector('.cobro-monto-input').value);
   var moneda = form.querySelector('.cobro-moneda-input').value;
   var metodo = form.querySelector('.cobro-metodo-input').value;
+  var cantInputConf = form.querySelector('.cobro-cant-input');
   var clasesInput = form.querySelector('.cobro-clases-input');
-  var nClases = clasesInput ? parseInt(clasesInput.value) : null;
+  var nClases = cantInputConf ? parseInt(cantInputConf.value) : (clasesInput ? parseInt(clasesInput.value) : null);
   if (!monto || isNaN(monto)) { alert('Ingresá un monto válido.'); return; }
+  // Verificar pago de mas
+  var precioInfoConf = (nClases && g.promociones) ? getPrecioParaClases(g, nClases) : {precio: g.precio_unitario};
+  var montoEsperado = precioInfoConf.precio && nClases ? Math.round(precioInfoConf.precio * nClases * 100) / 100 : null;
+  if (montoEsperado && monto > montoEsperado + 0.01) {
+    var exceso = Math.round((monto - montoEsperado) * 100) / 100;
+    var clasesExtra = precioInfoConf.precio ? Math.round(exceso / precioInfoConf.precio) : 0;
+    var msgCredito = 'El monto $' + monto + ' supera lo esperado ($' + montoEsperado + ') por $' + exceso + '.';
+    if (clasesExtra > 0) msgCredito += ' Equivale a ' + clasesExtra + ' clase(s) extra.';
+    msgCredito += ' Confirmar registra ese credito. OK para confirmar, Cancelar para corregir el monto.';
+    if (!confirm(msgCredito)) return;
+    if (clasesExtra > 0) {
+      var aidCredito = g.alumnos[0].alumno_id;
+      fetch('/dashboard/api/agregar_credito', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({alumno_id: aidCredito, clases: clasesExtra})
+      }).catch(function(){});
+    }
+  }
   // Si se editó la cantidad de clases, ajustar el g para enviar solo esas
   var gFinal = g;
   if (nClases !== null && nClases !== g.total_clases) {

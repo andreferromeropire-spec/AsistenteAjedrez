@@ -101,6 +101,16 @@ def crear_tablas():
         pass  # Ya existe, ignorar
 
     try:
+        cursor.execute("ALTER TABLE alumnos ADD COLUMN clases_credito INTEGER DEFAULT 0")
+    except:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE clases ADD COLUMN ausente INTEGER DEFAULT 0")
+    except:
+        pass
+
+    try:
         cursor.execute("ALTER TABLE clases ADD COLUMN pago_id INTEGER")
     except:
         pass  # Ya existe, ignorar
