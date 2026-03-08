@@ -283,19 +283,20 @@ def api_marcar_ausente():
     if not nombre or not fecha:
         return jsonify({'ok': False, 'error': 'Faltan datos'})
     conn = get_connection()
-    # Buscar la clase dada de ese alumno en esa fecha
     clase = conn.execute("""
-        SELECT c.id FROM clases c
+        SELECT c.id, c.ausente FROM clases c
         JOIN alumnos a ON c.alumno_id = a.id
-        WHERE a.nombre = ? AND c.fecha = ? AND c.estado = 'dada'
+        WHERE a.nombre = ? AND c.fecha = ?
+        AND c.estado IN ('dada', 'agendada')
     """, (nombre, fecha)).fetchone()
     if not clase:
         conn.close()
-        return jsonify({'ok': False, 'error': f'No se encontró clase dada de {nombre} el {fecha}'})
-    conn.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (clase['id'],))
+        return jsonify({'ok': False, 'error': f'No se encontro clase de {nombre} el {fecha}'})
+    nuevo_ausente = 0 if clase['ausente'] else 1
+    conn.execute("UPDATE clases SET ausente = ? WHERE id = ?", (nuevo_ausente, clase['id']))
     conn.commit()
     conn.close()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'ausente': nuevo_ausente})
 
 
 @dashboard_bp.route('/dashboard/api/sincronizar', methods=['POST'])
@@ -1235,15 +1236,10 @@ function marcarAusenteDashboard(nombre, fecha) {
     body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
   }).then(function(r){ return r.json(); }).then(function(d) {
     if (d.ok) {
-      // Toggle visual sin recargar toda la tabla
-      document.querySelectorAll('.btn-marcar-ausente').forEach(function(btn) {
-        if (btn.getAttribute('data-nombre') === nombre && btn.getAttribute('data-fecha') === fecha) {
-          var esAusente = d.ausente === 1;
-          btn.style.opacity = esAusente ? '1' : '0.3';
-          btn.title = esAusente ? 'Desmarcar ausente' : 'Marcar ausente';
-        }
-      });
-    } else { alert('Error: ' + (d.error || 'No se pudo marcar')); }
+      cargarClases();
+    } else {
+      alert('Error: ' + (d.error || 'No se pudo marcar'));
+    }
   }).catch(function(e){ alert('Error de red: ' + e); });
 }
 

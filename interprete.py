@@ -42,17 +42,24 @@ Las acciones posibles son:
 3. "registrar_clases_multiple" - cuando se dieron clases con VARIOS alumnos
    datos necesarios: nombres_alumnos (lista), fecha (YYYY-MM-DD), hora (opcional)
 
-4. "cancelar_clase" - cuando el alumno avisa con anticipación que NO va a poder venir (cancela, reprograma)
+4. "cancelar_clase" - cuando el alumno avisa con anticipación que NO va a poder venir
    SOLO usar cuando hay intención de cancelar ANTES de que ocurra la clase.
    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD), cancelada_por (alumno/profesora)
    Ejemplos: "henry canceló el jueves", "fiona no puede el lunes", "cancelo la de jeff del 5"
 
 4b. "marcar_ausente" - cuando un alumno NO asistió a una clase que YA PASÓ (faltó, no vino, no apareció)
     Usar cuando la clase ya ocurrió y el alumno simplemente no se presentó.
-    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD opcional — si no se menciona, omitir el campo)
+    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, opcional)
     Ejemplos: "henry cutler faltó la clase del 2", "jeff no vino hoy", "fiona faltó",
-              "ilay estuvo ausente el lunes", "marco no asistió a la clase del 3 de marzo",
+              "ilay estuvo ausente el lunes", "marco no asistió el 3 de marzo",
               "jeff faltó a la clase de marzo", "fiona no apareció", "henry no vino ayer"
+
+4c. "desmarcar_ausente" - para quitar una ausencia registrada por error (el alumno SÍ vino)
+    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, opcional)
+    Ejemplos: "ilay sí vino el 2", "ilay estuvo presente la clase del 2",
+              "desmarcar ausente ilay", "quita la ausencia de ilay el 2",
+              "ilay no estuvo ausente el 2", "ilay si estuvo la clase del 2",
+              "ilay sí asistió", "error, henry sí vino"
 
 5. "quien_debe" - quiere saber quién no pagó este mes
    datos necesarios: ninguno

@@ -516,30 +516,80 @@ def ejecutar_accion(accion, datos, numero):
         cursor = conn.cursor()
         fecha_especifica = datos.get("fecha")
         if fecha_especifica:
-            # Marcar la clase de una fecha específica
             clase = cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND fecha = ? AND estado = 'dada'
+                WHERE alumno_id = ? AND fecha = ?
+                AND estado IN ('dada', 'agendada')
             """, (alumno["id"], fecha_especifica)).fetchone()
             if not clase:
+                sug = cursor.execute("""
+                    SELECT id, fecha, hora FROM clases
+                    WHERE alumno_id = ? AND fecha <= date('now')
+                    AND estado IN ('dada','agendada')
+                    ORDER BY fecha DESC LIMIT 1
+                """, (alumno["id"],)).fetchone()
                 conn.close()
-                return f"No encontré una clase dada de {alumno['nombre']} el {fecha_especifica}."
+                if sug:
+                    hora_sug = f" a las {sug['hora']}" if sug['hora'] else ""
+                    return f"No encontré una clase de {alumno['nombre']} el {fecha_especifica}. La última que tengo es del {sug['fecha']}{hora_sug}. ¿Es esa? Si es, reenvía con esa fecha."
+                return f"No encontré ninguna clase de {alumno['nombre']} el {fecha_especifica}."
         else:
-            # Marcar la última clase dada
             clase = cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'dada' AND fecha <= date('now')
+                WHERE alumno_id = ? AND fecha < date('now')
+                AND estado IN ('dada', 'agendada')
                 ORDER BY fecha DESC, hora DESC LIMIT 1
             """, (alumno["id"],)).fetchone()
             if not clase:
                 conn.close()
-                return f"No encontré ninguna clase dada de {alumno['nombre']}."
-        cursor.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (clase["id"],))
+                return f"No encontré ninguna clase pasada de {alumno['nombre']}."
+        conn.close()
+        fecha_fmt = clase["fecha"]
+        hora_fmt = f" a las {clase['hora']}" if clase["hora"] else ""
+        _set_pendiente(numero, {
+            'esperando': 'ausente_o_cancelar',
+            'clase_id': clase['id'],
+            'nombre_alumno': alumno['nombre'],
+            'fecha': fecha_fmt,
+            'hora_fmt': hora_fmt
+        })
+        return (
+            f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
+            f"¿Cómo la registramos?\n"
+            f"1 - Ausente (se cobra igual)\n"
+            f"2 - Cancelada (no se cobra)"
+        )
+
+    elif accion == "desmarcar_ausente":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        if not alumno:
+            return aviso
+        conn = __import__('database').get_connection()
+        cursor = conn.cursor()
+        fecha_especifica = datos.get("fecha")
+        if fecha_especifica:
+            clase = cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND fecha = ? AND ausente = 1
+            """, (alumno["id"], fecha_especifica)).fetchone()
+            if not clase:
+                conn.close()
+                return f"No encontré ninguna ausencia de {alumno['nombre']} el {fecha_especifica}."
+        else:
+            clase = cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND ausente = 1
+                ORDER BY fecha DESC LIMIT 1
+            """, (alumno["id"],)).fetchone()
+            if not clase:
+                conn.close()
+                return f"No encontré ninguna ausencia registrada de {alumno['nombre']}."
+        cursor.execute("UPDATE clases SET ausente = 0 WHERE id = ?", (clase["id"],))
         conn.commit()
         conn.close()
         fecha_fmt = clase["fecha"]
         hora_fmt = f" a las {clase['hora']}" if clase["hora"] else ""
-        respuesta = f"🪑 Marcado: {alumno['nombre']} no asistió a la clase del {fecha_fmt}{hora_fmt}."
+        respuesta = f"✅ Listo, {alumno['nombre']} figura como presente en la clase del {fecha_fmt}{hora_fmt}."
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
 
@@ -1116,8 +1166,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
     accion = "no_entiendo"
     datos = {}
 
-    # ── Caso especial: respuesta a pregunta ausente/cancelar ──
-    # Debe ir ANTES del bloque isdigit para que "1" y "2" lleguen aquí
+    # Caso especial: respuesta 1/2 a pregunta ausente vs cancelar
     if numero in acciones_pendientes:
         _p = _get_pendiente(numero)
         if _p and _p.get('esperando') == 'ausente_o_cancelar':
