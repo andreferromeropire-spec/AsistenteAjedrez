@@ -634,9 +634,15 @@ def api_registrar_pago_rapido():
             conn.close()
             return jsonify({'ok': False, 'error': 'No hay clases para vincular'})
 
+        # Fecha del pago = primer día del mes de las clases que cubre
+        fecha_clase_row = conn.execute(
+            "SELECT fecha FROM clases WHERE id = ? LIMIT 1", (todas_clase_ids[0],)
+        ).fetchone()
+        fecha_pago = (fecha_clase_row["fecha"][:7] + "-01") if fecha_clase_row else date.today().isoformat()
+
         cursor = conn.execute(
             "INSERT INTO pagos (alumno_id, fecha, monto, moneda, metodo, notas) VALUES (?,?,?,?,?,?)",
-            (primer_alumno_id, date.today().isoformat(), monto, moneda, metodo, notas or '')
+            (primer_alumno_id, fecha_pago, monto, moneda, metodo, notas or '')
         )
         pago_id = cursor.lastrowid
         for cid in todas_clase_ids:

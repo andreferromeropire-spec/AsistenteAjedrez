@@ -282,8 +282,12 @@ def ejecutar_accion(accion, datos, numero):
                     continue
                 n = len(clases)
                 monto_alumno = round(precio_unit * n, 2)
+                # Fecha del pago = primer día del mes de las clases
+                _fecha_clase = clases[0]["fecha"]  # "2026-01-06"
+                _fecha_pago = _fecha_clase[:7] + "-01"  # "2026-01-01"
                 pago_id = registrar_pago(alumno_id=alumno_rep["id"], monto=monto_alumno,
-                                         moneda=moneda, metodo=metodo, notas=datos.get("notas"))
+                                         moneda=moneda, metodo=metodo, notas=datos.get("notas"),
+                                         fecha_pago=_fecha_pago)
                 conn = __import__("database").get_connection()
                 for c in clases:
                     conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, c["id"]))
@@ -325,14 +329,25 @@ def ejecutar_accion(accion, datos, numero):
 
         # Si viene marcado como "confirmado", el usuario ya aprobó la diferencia de monto
         if datos.get("confirmado"):
+            clases_ids = datos.get("clases_ids", [])
+            # Fecha del pago = primer día del mes de las clases que cubre
+            _fecha_pago_conf = None
+            if clases_ids:
+                _conn_f = __import__("database").get_connection()
+                _row = _conn_f.execute(
+                    "SELECT fecha FROM clases WHERE id = ? LIMIT 1", (clases_ids[0],)
+                ).fetchone()
+                _conn_f.close()
+                if _row:
+                    _fecha_pago_conf = _row["fecha"][:7] + "-01"
             pago_id = registrar_pago(
                 alumno_id=alumno["id"],
                 monto=datos["monto"],
                 moneda=datos["moneda"],
                 metodo=datos["metodo"],
-                notas=datos.get("notas")
+                notas=datos.get("notas"),
+                fecha_pago=_fecha_pago_conf
             )
-            clases_ids = datos.get("clases_ids", [])
             if clases_ids:
                 conn = __import__("database").get_connection()
                 for clase_id in clases_ids:
@@ -484,8 +499,11 @@ def ejecutar_accion(accion, datos, numero):
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
         # ── Registrar el pago y marcar clases ──
+        # Fecha del pago = primer día del mes de las clases que cubre
+        _fecha_pago_n = (fechas_clases[0][:7] + "-01") if fechas_clases else None
         pago_id = registrar_pago(alumno_id=alumno["id"], monto=monto_final,
-                                  moneda=moneda, metodo=metodo, notas=datos.get("notas"))
+                                  moneda=moneda, metodo=metodo, notas=datos.get("notas"),
+                                  fecha_pago=_fecha_pago_n)
 
         conn = __import__("database").get_connection()
         for clase_id in clases_ids:
