@@ -1370,7 +1370,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
 
     if numero in acciones_pendientes and _es_respuesta_pendiente(mensaje_entrante, acciones_pendientes[numero]):
         pendiente = acciones_pendientes[numero]
-        opcion = int(mensaje_entrante.strip())
+        opcion = int(mensaje_entrante.strip()) if mensaje_entrante.strip().isdigit() else None
 
         # Si el pendiente es de ausente_o_cancelar, procesarlo aquí también como fallback
         if pendiente.get("esperando") == "ausente_o_cancelar":
