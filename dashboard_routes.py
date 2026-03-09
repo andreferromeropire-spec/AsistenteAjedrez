@@ -902,7 +902,7 @@ tr:hover td{background:var(--gold-dim)}
           <div style="display:flex;gap:0.5rem;align-items:center">
             <button class="btn" id="btn-registrar-seleccion" style="display:none" onclick="registrarSeleccionChecks()">&#10003; Registrar seleccionadas</button>
             <button class="btn" id="btn-abrir-formularios" style="display:none" onclick="abrirFormulariosSeleccionados()">&#10003; Abrir formularios</button>
-            <button class="btn" id="btn-registrar-abiertos" style="display:none" onclick="registrarTodosAbiertos()">&#10003; Registrar todos</button>
+            <button class="btn" id="btn-registrar-abiertos" style="display:none" onclick="registrarTodosAbiertos()">&#10003; Registrar <span id="btn-registrar-count"></span></button>
           </div>
         </div>
         <div id="cobros-content"><div class="empty" style="padding:2.5rem;text-align:center;color:var(--text-muted)">Cargando...</div></div>
@@ -943,8 +943,8 @@ tr:hover td{background:var(--gold-dim)}
           <div class="section-title">Pagos registrados</div>
           <div class="filters"><input type="text" placeholder="Buscar..." oninput="filtrarTabla('t-pagos',this.value)"></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Fecha</th><th>Responsable</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Clases</th><th>Notas</th><th></th></tr></thead>
-            <tbody id="t-pagos"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+            <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem"><button class="btn danger" id="btn-borrar-pagos-sel" style="display:none" onclick="borrarPagosSeleccionados()">&#128465; Borrar <span id="btn-borrar-pagos-count"></span></button></div><table><thead><tr><th style="width:32px"><input type="checkbox" id="pagos-master" onchange="toggleTodosPagos(this)" title="Seleccionar todos"></th><th>Fecha</th><th>Responsable</th><th>Monto</th><th>Moneda</th><th>Metodo</th><th>Clases</th><th>Notas</th><th></th></tr></thead>
+            <tbody id="t-pagos"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody></table>
           </div>
           <div class="totals-row" id="totales-pagos"></div>
         </div>
@@ -1286,8 +1286,8 @@ function cargarPagos() {
       var resumen = encodeURIComponent(p.fecha + ' ' + fmt(p.monto) + ' ' + sim + ' ' + p.nombre);
       var borrar = '<button class="btn-icon danger btn-borrar-pago" title="Borrar pago" data-pago-id="'+p.id+'" data-resumen="'+resumen+'">&#128465;</button>';
       var clases_res = p.clases_resumen ? '<span style="color:var(--text-dim);font-size:0.78rem">'+p.clases_resumen+'</span>' : '-';
-      return '<tr><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+simM+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
-    }).join('') : '<tr><td colspan="7" class="empty">Sin pagos registrados</td></tr>';
+      return '<tr><td><input type="checkbox" class="pago-check" data-pago-id="'+p.id+'" data-resumen="'+resumen+'" onchange="actualizarBorrarPagos()"></td><td>'+p.fecha+'</td><td><strong>'+p.nombre+'</strong>'+rep+'</td><td>'+simM+fmt(p.monto)+'</td><td><span class="badge badge-gold">'+p.moneda+'</span></td><td>'+(p.metodo||'-')+'</td><td>'+clases_res+'</td><td style="color:var(--text-muted);font-size:0.78rem">'+(p.notas||'-')+'</td><td>'+borrar+'</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="empty">Sin pagos registrados</td></tr>';
     document.getElementById('t-pagos').innerHTML = html;
     var chips = Object.keys(monedas).map(function(m) {
       var s = m === 'Libra Esterlina' ? '\u00a3' : '$';
@@ -1420,6 +1420,56 @@ function borrarAlumno(nombre) {
   if (!confirm('\u00bfBorrar a ' + nombre + '? Esto abrira el flujo de confirmacion en el chat.')) return;
   enviarAlChat('borra a ' + nombre);
   setTimeout(enviarMensaje, 100);
+}
+
+function actualizarBorrarPagos() {
+  var checks = document.querySelectorAll('.pago-check:checked');
+  var btn = document.getElementById('btn-borrar-pagos-sel');
+  var countEl = document.getElementById('btn-borrar-pagos-count');
+  var master = document.getElementById('pagos-master');
+  if (checks.length > 0) {
+    btn.style.display = 'inline-flex';
+    if (countEl) countEl.textContent = checks.length + ' pago' + (checks.length > 1 ? 's' : '');
+  } else {
+    btn.style.display = 'none';
+  }
+  // Actualizar estado del master checkbox
+  var todos = document.querySelectorAll('.pago-check');
+  if (master) master.indeterminate = checks.length > 0 && checks.length < todos.length;
+  if (master) master.checked = todos.length > 0 && checks.length === todos.length;
+}
+
+function toggleTodosPagos(master) {
+  document.querySelectorAll('.pago-check').forEach(function(c){ c.checked = master.checked; });
+  actualizarBorrarPagos();
+}
+
+function borrarPagosSeleccionados() {
+  var checks = document.querySelectorAll('.pago-check:checked');
+  if (!checks.length) return;
+  var ids = Array.from(checks).map(function(c){ return parseInt(c.getAttribute('data-pago-id')); });
+  var n = ids.length;
+  if (!confirm('\u00bfBorrar ' + n + ' pago' + (n > 1 ? 's' : '') + '? Esta acci\u00f3n no se puede deshacer.')) return;
+  var borrados = 0;
+  var errores = [];
+  var procesarSiguiente = function(idx) {
+    if (idx >= ids.length) {
+      if (errores.length) alert('Errores al borrar: ' + errores.join(', '));
+      cargarPagos(); cargarTodo();
+      return;
+    }
+    fetch('/dashboard/api/borrar_pago_id', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pago_id: ids[idx]})
+    }).then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.ok) borrados++;
+      else errores.push('ID ' + ids[idx]);
+      procesarSiguiente(idx + 1);
+    }).catch(function(){ errores.push('ID ' + ids[idx]); procesarSiguiente(idx + 1); });
+  };
+  procesarSiguiente(0);
 }
 
 function borrarPago(nombre) {
@@ -1588,8 +1638,15 @@ function actualizarBotonesResponsable() {
       form.style.display = 'none';
     }
   });
-  var hayAbiertos = document.querySelectorAll('.cobros-inline-form[style*="flex"]').length > 0;
-  document.getElementById('btn-registrar-abiertos').style.display = hayAbiertos ? 'flex' : 'none';
+  var marcados = document.querySelectorAll('.resp-check:checked').length;
+  var btnReg = document.getElementById('btn-registrar-abiertos');
+  var countEl = document.getElementById('btn-registrar-count');
+  if (marcados > 0) {
+    btnReg.style.display = 'flex';
+    if (countEl) countEl.textContent = marcados + ' pago' + (marcados > 1 ? 's' : '');
+  } else {
+    btnReg.style.display = 'none';
+  }
   document.getElementById('btn-abrir-formularios').style.display = 'none';
 }
 
@@ -1608,11 +1665,14 @@ function abrirFormulariosSeleccionados() {
 }
 
 function registrarTodosAbiertos() {
-  var forms = document.querySelectorAll('.cobros-inline-form[style*="flex"]');
-  if (!forms.length) return;
+  // Solo registrar los que tienen checkbox marcado (no los que quedaron abiertos pero se desmarcaron)
+  var checked = document.querySelectorAll('.resp-check:checked');
+  if (!checked.length) return;
   var pendientes = [];
-  forms.forEach(function(form) {
-    var gi = parseInt(form.id.replace('cobro-form-', ''));
+  checked.forEach(function(chk) {
+    var gi = parseInt(chk.getAttribute('data-gi'));
+    var form = document.getElementById('cobro-form-' + gi);
+    if (!form || form.style.display === 'none' || form.style.display === '') return;
     var monto = parseFloat(form.querySelector('.cobro-monto-input').value);
     var moneda = form.querySelector('.cobro-moneda-input').value;
     var metodo = form.querySelector('.cobro-metodo-input').value;
