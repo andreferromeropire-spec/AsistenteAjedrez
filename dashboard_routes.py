@@ -562,7 +562,12 @@ def api_clases_sin_pagar():
             "SELECT clases_desde, clases_hasta, precio_por_clase FROM promociones WHERE alumno_id=? ORDER BY clases_desde",
             (primer_alumno_id,)
         ).fetchall()
-        rangos = [{'desde': r['clases_desde'], 'hasta': r['clases_hasta'], 'precio': r['precio_por_clase']} for r in rangos_raw]
+        rangos = []
+        for r in rangos_raw:
+            d, h = r['clases_desde'], r['clases_hasta']
+            if h is None or h < d:
+                h = 9999
+            rangos.append({'desde': d, 'hasta': h, 'precio': r['precio_por_clase']})
 
         # Precio suelta = rango de 1 clase
         precio_suelta = rangos[0]['precio'] if rangos else None
@@ -2006,14 +2011,17 @@ function calcularPrecioDesdeRangos(rangos, nClases) {
   if (!rangos || !rangos.length) return null;
   var n = Number(nClases);
   if (isNaN(n) || n < 1) return null;
-  var ordenados = rangos.slice().sort(function(a, b) { return (Number(a.desde) || 0) - (Number(b.desde) || 0); });
+  var getDesde = function(r) { return Number(r.desde !== undefined ? r.desde : r.clases_desde) || 0; };
+  var getHasta = function(r) { var h = r.hasta !== undefined ? r.hasta : r.clases_hasta; return (h !== undefined && h !== null && h !== '') ? Number(h) : Infinity; };
+  var getPrecio = function(r) { return r.precio !== undefined ? r.precio : r.precio_por_clase; };
+  var ordenados = rangos.slice().sort(function(a, b) { return getDesde(a) - getDesde(b); });
   for (var i = 0; i < ordenados.length; i++) {
-    var d = Number(ordenados[i].desde);
-    var h = ordenados[i].hasta;
-    var hastaVal = (h !== undefined && h !== null && h !== '') ? Number(h) : Infinity;
-    if (!isNaN(d) && n >= d && n <= hastaVal) return ordenados[i].precio;
+    var d = getDesde(ordenados[i]);
+    var hastaVal = getHasta(ordenados[i]);
+    if (hastaVal < d) hastaVal = Infinity;
+    if (!isNaN(d) && n >= d && n <= hastaVal) return getPrecio(ordenados[i]);
   }
-  return ordenados[ordenados.length - 1].precio;
+  return getPrecio(ordenados[ordenados.length - 1]);
 }
 
 function abrirPago(gi, noCloseOthers) {
