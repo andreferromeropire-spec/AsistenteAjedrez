@@ -352,15 +352,16 @@ def ejecutar_accion(accion, datos, numero):
         cursor = conn.cursor()
 
         if cantidad_clases:
+            # Incluir 'dada' además de 'agendada': una clase ya tomada también se cobra
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT ?
             """, (alumno["id"], cantidad_clases))
         elif todas_del_mes or modalidad == "Mensual":
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -368,19 +369,19 @@ def ejecutar_accion(accion, datos, numero):
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND pago_id IS NULL
-                AND (estado = 'agendada' OR estado = 'dada')
+                AND estado IN ('agendada', 'dada')
                 ORDER BY fecha ASC LIMIT 1
             """, (alumno["id"],))
         elif "10" in modalidad or "paquete" in modalidad.lower():
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT 10
             """, (alumno["id"],))
         else:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -389,7 +390,7 @@ def ejecutar_accion(accion, datos, numero):
         conn.close()
 
         if not clases:
-            respuesta = f"No encontré clases agendadas sin pago para {alumno['nombre']}."
+            respuesta = f"No encontré clases sin pagar para {alumno['nombre']}."
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
         clases_ids = [c["id"] for c in clases]
