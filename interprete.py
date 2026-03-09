@@ -121,8 +121,10 @@ Las acciones posibles son:
 
 18. "borrar_pago" - cuando quiere eliminar un pago registrado por error
     datos necesarios: nombre_alumno
+    datos opcionales: mes (número 1-12 si menciona un mes), anio (año si lo menciona)
     Ejemplos: "borrá el último pago de Stephen", "eliminar un pago de Grace",
-              "me equivoqué con el pago de Lucas", "quiero borrar un pago de Jeff"
+              "me equivoqué con el pago de Lucas", "quiero borrar un pago de Jeff",
+              "borrar pagos de jeff de febrero", "eliminar pagos de marzo de Grace"
 
 
 18. "sincronizar_calendario" - quiere sincronizar las clases con Google Calendar

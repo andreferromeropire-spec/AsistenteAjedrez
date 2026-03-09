@@ -8,7 +8,7 @@ import os
 from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
-from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno, historial_reciente_alumno, borrar_pago
+from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno, historial_reciente_alumno, borrar_pago, pagos_del_mes_alumno
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
 from dashboard_routes import dashboard_bp
 
@@ -1211,32 +1211,36 @@ def ejecutar_accion(accion, datos, numero):
                 f"Respondé 1 para confirmar o 2 para cancelar."
             )
 
-        # Primera vez: mostrar el historial de pagos para que elija
-        pagos = historial_reciente_alumno(alumno["id"], limite=5)
+        # Primera vez: mostrar todos los pagos del mes pedido (o mes actual)
+        mes_pedido = datos.get("mes")
+        anio_pedido = datos.get("anio")
+        pagos = pagos_del_mes_alumno(alumno["id"], mes=mes_pedido, anio=anio_pedido)
+        mes_mostrar = mes_pedido or hoy.month
+        anio_mostrar = anio_pedido or hoy.year
+        meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+                    7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
         if not pagos:
-            return f"{alumno['nombre']} no tiene pagos registrados."
+            return f"{alumno['nombre']} no tiene pagos registrados en {meses_es[mes_mostrar]} {anio_mostrar}."
 
         simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
         lista = []
         conn_h = __import__("database").get_connection()
         for i, p in enumerate(pagos):
             sim = simbolos.get(p["moneda"], "")
-            # Buscar clases asociadas a este pago
             clases_pago = conn_h.execute(
                 "SELECT fecha FROM clases WHERE pago_id = ? ORDER BY fecha ASC",
                 (p["id"],)
             ).fetchall()
             if clases_pago:
                 dias = ", ".join([c["fecha"].split("-")[2] for c in clases_pago])
-                mes_año = clases_pago[0]["fecha"][:7]  # "2026-03"
+                mes_año = clases_pago[0]["fecha"][:7]
                 palabra_dia = "días" if len(clases_pago) > 1 else "día"
-                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} ({palabra_dia} {dias})" 
+                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} ({palabra_dia} {dias})"
             else:
                 detalle_clases = f"registrado {p['fecha']}"
             lista.append(f"{i+1}. {sim}{p['monto']} {p['moneda']} — {detalle_clases}")
         conn_h.close()
 
-        # Guardamos los pagos en pendiente para cuando elija el número
         acciones_pendientes[numero] = {
             "accion": "borrar_pago",
             "datos": {
@@ -1245,9 +1249,9 @@ def ejecutar_accion(accion, datos, numero):
             },
             "pagos_candidatos": [dict(p) for p in pagos]
         }
-        texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
-        texto += "\n0. Cancelar (no borrar nada)"
-        texto += "\n\n¿Cuál querés borrar? Respondé con el número."
+        texto = f"Pagos de {alumno['nombre']} en {meses_es[mes_mostrar]} {anio_mostrar}:\n" + "\n".join(lista)
+        texto += "\n0. Cancelar"
+        texto += "\n\n¿Cuál querés borrar? Podés responder:\n• Un número: \'1\'\n• Varios: \'1,2\' o \'1 2\'\n• Todos: \'T\' o \'todos\'"
         return (aviso + "\n" + texto) if aviso else texto
 
     elif accion == "ignorar_evento":
@@ -1371,32 +1375,79 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
         elif pendiente.get("accion") == "borrar_pago":
             if "pagos_candidatos" in pendiente:
                 candidatos = pendiente["pagos_candidatos"]
-                if opcion == 0:
+                txt = mensaje_entrante.strip().lower()
+
+                # Cancelar
+                if txt in ("0", "cancelar", "cancel"):
                     del acciones_pendientes[numero]
                     return "Cancelado, no se borró nada."
-                elif 1 <= opcion <= len(candidatos):
-                    elegido = candidatos[opcion - 1]
-                    # Llamamos directamente a ejecutar_accion con el pago elegido
-                    # y retornamos para evitar doble ejecución
-                    datos_borrar = {
+
+                # Parsear selección: "T"/"todos", "1,2", "1 2 3", o número solo
+                if txt in ("t", "todos", "all"):
+                    indices = list(range(len(candidatos)))
+                else:
+                    import re as _re
+                    partes = _re.split(r"[,\s]+", txt)
+                    indices = []
+                    for p in partes:
+                        if p.isdigit():
+                            n = int(p) - 1
+                            if 0 <= n < len(candidatos):
+                                indices.append(n)
+                    if not indices:
+                        return f"No entendí. Respondé con números (ej: \'1,2\'), \'T\' para todos, o \'0\' para cancelar."
+
+                elegidos = [candidatos[i] for i in indices]
+                simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
+                resumen = []
+                for e in elegidos:
+                    sim = simbolos.get(e.get("moneda",""), "")
+                    resumen.append(f"• {sim}{e.get('monto','')} {e.get('moneda','')} — {e.get('fecha','')}")
+
+                # Guardar ids a borrar y pedir confirmación
+                acciones_pendientes[numero] = {
+                    "accion": "borrar_pago",
+                    "datos": {
                         **pendiente["datos"],
-                        "pago_id_a_borrar": elegido["id"],
-                        "detalle_pago_elegido": dict(elegido)
+                        "pago_ids_a_borrar": [e["id"] for e in elegidos],
+                        "confirmado": False
                     }
-                    # Actualizamos pendiente sin pagos_candidatos
-                    acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos_borrar}
-                    return ejecutar_accion("borrar_pago", datos_borrar, numero)
-                else:
-                    return f"Elegí un número entre 0 y {len(candidatos)}."
-            elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
-                if opcion == 1:
-                    accion = "borrar_pago"
-                    datos = pendiente["datos"]
-                elif opcion == 2:
+                }
+                n = len(elegidos)
+                return (
+                    f"⚠️ ¿Confirmás que querés borrar {n} pago{'s' if n > 1 else ''} de {pendiente['datos']['nombre_alumno']}?\n"
+                    + "\n".join(resumen)
+                    + "\n\nRespondé 1 para confirmar o 2 para cancelar."
+                )
+
+            elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar") or pendiente["datos"].get("pago_ids_a_borrar"):
+                if opcion == 2:
                     del acciones_pendientes[numero]
-                    return "Cancelado, no se borro nada."
+                    return "Cancelado, no se borró nada."
+                elif opcion == 1:
+                    d = pendiente["datos"]
+                    ids = d.get("pago_ids_a_borrar") or ([d["pago_id_a_borrar"]] if d.get("pago_id_a_borrar") else [])
+                    if not ids:
+                        del acciones_pendientes[numero]
+                        return "No había pagos para borrar."
+                    del acciones_pendientes[numero]
+                    total_clases = 0
+                    errores = []
+                    for pid in ids:
+                        ok, resultado = borrar_pago(pid)
+                        if ok:
+                            total_clases += resultado
+                        else:
+                            errores.append(str(resultado))
+                    n = len(ids)
+                    msg = f"🗑️ {n} pago{'s' if n > 1 else ''} borrado{'s' if n > 1 else ''}."
+                    if total_clases > 0:
+                        msg += f" {total_clases} clase{'s' if total_clases > 1 else ''} quedaron como no pagas."
+                    if errores:
+                        msg += f" Errores: {', '.join(errores)}"
+                    return msg
                 else:
-                    return "Responde 1 para confirmar o 2 para cancelar."
+                    return "Respondé 1 para confirmar o 2 para cancelar."
             else:
                 accion = "aclaracion_alumno"
                 datos = {"numero_opcion": opcion}
