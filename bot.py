@@ -330,13 +330,13 @@ def ejecutar_accion(accion, datos, numero):
         if cantidad_clases:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND (estado = 'agendada' OR estado = 'dada') AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT ?
             """, (alumno["id"], cantidad_clases))
         elif todas_del_mes or modalidad == "Mensual":
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND (estado = 'agendada' OR estado = 'dada') AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -356,7 +356,7 @@ def ejecutar_accion(accion, datos, numero):
         else:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
+                WHERE alumno_id = ? AND (estado = 'agendada' OR estado = 'dada') AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -688,8 +688,10 @@ def ejecutar_accion(accion, datos, numero):
         if not alumno:
             return aviso
         hoy = date.today()
-        mes = datos.get("mes", hoy.month)
-        anio = datos.get("anio", hoy.year)
+        # Intérprete puede devolver mes/anio null; usar mes actual si faltan o son None
+        mes = datos.get("mes") if datos.get("mes") is not None else hoy.month
+        anio = datos.get("anio") if datos.get("anio") is not None else hoy.year
+        mes, anio = int(mes), int(anio)
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -1107,7 +1109,7 @@ def ejecutar_accion(accion, datos, numero):
         }
         texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
         texto += "\n0. Cancelar (no borrar nada)"
-        texto += "\n\n¿Cuál querés borrar? Respondé con el número."
+        texto += "\n\nRespondé con el número, varios separados por coma o espacio, o T para todos."
         return (aviso + "\n" + texto) if aviso else texto
 
     elif accion == "ignorar_evento":

@@ -2039,9 +2039,9 @@ function abrirPago(gi, noCloseOthers) {
     + '<option value="combo"' + tipoCombo + '>Combo</option>'
     + '</select></div>'
     + '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:0.2rem">Precio/clase</label>'
-    + '<input type="number" step="0.01" class="cobro-precio-input" style="width:90px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-family:inherit;font-size:0.82rem" value="' + (precioDefault||'') + '" id="cobro-precio-' + gi + '"></div>'
+    + '<input type="number" step="1" class="cobro-precio-input" style="width:90px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-family:inherit;font-size:0.82rem" value="' + (precioDefault||'') + '" id="cobro-precio-' + gi + '"></div>'
     + '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:0.2rem">Total</label>'
-    + '<input type="number" step="0.01" class="cobro-monto-input" style="width:100px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-family:inherit;font-size:0.82rem" value="' + totalDefault + '" id="cobro-total-' + gi + '"></div>'
+    + '<input type="number" step="1" class="cobro-monto-input" style="width:100px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-family:inherit;font-size:0.82rem" value="' + totalDefault + '" id="cobro-total-' + gi + '"></div>'
     + '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:0.2rem">Moneda</label>'
     + '<select class="cobro-moneda-input" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-family:inherit;font-size:0.82rem">' + monedaOptions + '</select></div>'
     + '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:0.2rem">M\u00e9todo</label>'
@@ -2079,8 +2079,15 @@ function abrirPago(gi, noCloseOthers) {
 
   inputClases.addEventListener('input', function() {
     var nC = parseInt(inputClases.value) || 1;
-    var precio = parseFloat(inputPrecio.value) || 0;
-    inputTotal.value = Math.round(precio * nC * 100) / 100;
+    var tipo = inputTipo.value;
+    var nuevoPrecio = tipo === 'suelta' ? g.precio_suelta : calcularPrecioDesdeRangos(g.rangos, nC);
+    if (nuevoPrecio != null) {
+      inputPrecio.value = nuevoPrecio;
+      inputTotal.value = Math.round(nuevoPrecio * nC * 100) / 100;
+    } else {
+      var precio = parseFloat(inputPrecio.value) || 0;
+      inputTotal.value = Math.round(precio * nC * 100) / 100;
+    }
     verificarPromo();
   });
 

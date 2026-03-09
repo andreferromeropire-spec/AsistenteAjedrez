@@ -225,33 +225,30 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 
 ## Bugs conocidos y pendientes
 
-### ✅ Resueltos esta sesión
-- **Sillita dashboard**: ahora es un botón siempre en la misma columna, toggle real sin `confirm()`, URL correcta, event listener conectado
-- **Desmarcar ausente desde bot**: frases como "ilay sí vino", "desmarcar ausente ilay", "quita la ausencia de ilay el 2" funcionan
-- **marcar_ausente en intérprete**: antes no existía como acción, el intérprete lo mapeaba a `cancelar_clase`
-- **Handler "1"/"2" para ausente_o_cancelar**: ahora se procesa antes del bloque numérico general
+### ✅ Resueltos
+- **Sillita dashboard**: toggle real sin `confirm()`, URL correcta, una sola sillita siempre visible, auto-refresh cada 30s
+- **Desmarcar ausente desde bot**: "ilay sí vino", "desmarcar ausente ilay", "quita la ausencia de ilay el 2"
+- **marcar_ausente en intérprete**: antes se mapeaba a `cancelar_clase`, ahora es acción separada con distinción clara
+- **Handler "1"/"2" para ausente_o_cancelar**: procesado antes del bloque `isdigit`
+- **Borrar pago de a uno**: flujo con confirmación funciona correctamente
 
 ### 🐛 Bugs pendientes
 
 | ID | Descripción | Archivo |
 |---|---|---|
-| B3 | `"ver clases ruby"` crashea con NoneType (mes/anio llegan None desde intérprete) | `bot.py` |
-| B4 | "ilai" matchea Kerem en vez de Ilay — fuzzy matching prioriza mal | `alumnos.py` |
 | B5 | `"jeff pagó 4 clases"` registra solo 1 (ignora la cantidad) | `bot.py` / `pagos.py` |
-| B7 | SyntaxError en consola al cargar dashboard | `dashboard_routes.py` |
-| B8 | Formulario cobros: Jeff muestra $128 en vez de $175 (5 clases × $35) | `dashboard_routes.py` |
-| B10 | "undefined clase(s)" en lista de alumnos en cobros | `dashboard_routes.py` |
-| B11 | `"ruby pagó 4 clases"` → registra solo 3 (ignora la clase del día 2 que ya estaba marcada como `dada`). Ruby tiene 4 clases en marzo, la del 2 ya pasó y está verde (dada), pero el bot la omite al registrar el pago y solo vincula las 3 futuras. El pago debería cubrir las 4. | `bot.py` / `pagos.py` |
+| B8 | Formulario cobros: (1) El monto por clase no se modifica al cambiar la cantidad según combo vs suelta. (2) La flechita del monto debe subir de 1 en 1 (ej. $35 → $36). | `dashboard_routes.py` |
+| B11 | `"ruby pagó 4 clases"` → registra solo 3 (ignora la clase del día 2 que ya estaba `dada`). El pago debería cubrir las 4 clases del mes. | `bot.py` / `pagos.py` |
+
+| F1 | Borrar pagos múltiples desde bot ("T", "1,2", "2 3") — **implementado pero roto**: la lista de opciones ya no muestra T/todos ni permite elegir más de uno | `bot.py` |
 
 ### ✨ Features pendientes
 
 | ID | Descripción |
 |---|---|
-| F1 | Borrar pagos desde bot: `T` para todos, `"1,2"` para varios |
 | F3 | Formulario cobros: monto azul = mes actual, deuda anterior en rojo separada |
-| F4 | Tabla pagos: mostrar `$` / `AR$` / `£` en vez del nombre de moneda |
+
 | F5 | Alumnos al día: aparecen al final en verde con botón de cobro disponible |
-| F6 | Borrar pagos múltiples desde dashboard (checkbox) |
 | F7 | Clases canceladas: mostrar en rojo en `"ver clases"`, no desaparecer |
 
 ---
@@ -266,3 +263,57 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - Pagos anteriores al campo `pago_id` no tienen clases vinculadas (datos históricos, no arreglar)
 - Precio de clase suelta: siempre precio de 1 clase, aunque se cobren varias juntas
 - Ausente: la clase se cobra igual. Cancelada: no se cobra.
+
+---
+
+## Cursor — reglas del proyecto (`.cursor/rules/asistente_ajedrez.mdc`)
+
+Pegar esto en `.cursor/rules/asistente_ajedrez.mdc` para que Cursor entienda el proyecto automáticamente:
+
+```markdown
+# AsistenteAjedrez — Reglas del proyecto
+
+## Stack
+- Python 3 + Flask, SQLite (DB_PATH), Railway, GitHub auto-deploy
+- JS embebido como string triple-quoted en dashboard_routes.py (>2000 líneas)
+- Claude Haiku para NLP, Twilio para WhatsApp
+
+## Convenciones de código
+- Español para nombres de variables, funciones y comentarios
+- Sin type hints
+- Siempre cerrar conexiones SQLite con conn.close()
+- Usar database.get_connection() para toda conexión a la DB
+
+## Reglas críticas JS en dashboard_routes.py
+- NUNCA function declarations anidadas → usar var fn = function() {}
+- NUNCA \' dentro del string Python → usar \u0027
+- SIEMPRE rutas absolutas en fetch: /dashboard/api/... (nunca api/...)
+- Botones dinámicos DEBEN estar en document.addEventListener('click', ...)
+- Antes de proponer cambios JS, verificar que no rompe el string Python
+
+## Arquitectura del bot (bot.py)
+- procesar_mensaje() maneja pendientes ANTES de llamar al intérprete
+- Orden estricto en procesar_mensaje(): pendientes especiales → isdigit → else (intérprete)
+- Casos especiales (ausente_o_cancelar, confirmar_borrado_multiple) van ANTES del bloque isdigit()
+- buscar_o_sugerir_con_pendiente() para TODA búsqueda de alumnos
+- Google Calendar es fuente de verdad — el bot NUNCA crea eventos en Calendar
+
+## Principios de negocio
+- Ausente (ausente=1): clase se cobra igual, estado queda 'dada'
+- Cancelada: no se cobra, estado cambia
+- Representante: un adulto paga por varios alumnos, precio combo se calcula sumando clases de todos
+- Clase suelta: precio siempre de 1 clase aunque se cobren varias juntas
+```
+
+## Cómo arrancar una sesión en Cursor
+
+Pegar esto al inicio del chat cuando el contexto sea importante:
+
+```
+Proyecto: bot WhatsApp + dashboard Flask para gestión de clases de ajedrez.
+Stack: Python/Flask, SQLite en Railway, JS embebido en string triple-quoted Python.
+Archivos clave: bot.py (lógica), interprete.py (NLP con Claude Haiku), dashboard_routes.py (UI), database.py, clases.py, pagos.py, alumnos.py.
+Regla crítica: procesar_mensaje() en bot.py maneja pendientes especiales ANTES del bloque isdigit().
+Regla crítica JS: nunca function declarations anidadas, siempre /dashboard/api/ en fetch.
+Google Calendar es fuente de verdad — el bot nunca crea eventos.
+```
