@@ -1406,6 +1406,22 @@ def setup():
     crear_tablas()
     return "Tablas creadas"
 
+@app.route("/debug_alumno/<nombre>", methods=["GET"])
+def debug_alumno(nombre):
+    from database import get_connection
+    import json
+    conn = get_connection()
+    alumno = conn.execute("SELECT id FROM alumnos WHERE nombre LIKE ?", (f"%{nombre}%",)).fetchone()
+    if not alumno:
+        return f"No encontré alumno con nombre '{nombre}'"
+    clases = conn.execute(
+        "SELECT id, fecha, hora, estado, pago_id, ausente FROM clases WHERE alumno_id = ? ORDER BY fecha DESC LIMIT 30",
+        (alumno["id"],)
+    ).fetchall()
+    conn.close()
+    rows = [dict(c) for c in clases]
+    return "<pre>" + json.dumps(rows, indent=2, default=str) + "</pre>"
+
 @app.route("/migrar_moneda", methods=["GET"])
 def migrar_moneda():
     from database import get_connection
