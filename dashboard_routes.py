@@ -1404,27 +1404,63 @@ function cargarGraficos() {
   var isDark = ['dark','navy'].indexOf(document.documentElement.getAttribute('data-theme')) !== -1;
   var tickColor = isDark ? '#7a6f62' : '#9a8a78';
   var gridColor = isDark ? '#1e1c1a' : '#ece6d8';
-  api('grafico_clases').then(function(datos) {
-    if (charts.alumnos) charts.alumnos.destroy();
-    charts.alumnos = new Chart(document.getElementById('chart-alumnos').getContext('2d'), {
-      type:'bar',
-      data:{
-        labels:datos.map(function(d){return d.nombre;}),
-        datasets:[{data:datos.map(function(d){return d.total;}),backgroundColor:'rgba(180,140,80,0.55)',borderColor:'#b48c50',borderWidth:1,borderRadius:3}]
+  var mesesLabel = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  fetch('/dashboard/api/grafico_anual?anio=' + anio).then(function(r){ return r.json(); }).then(function(datos) {
+    if (charts.anual) charts.anual.destroy();
+    var agendadas = datos.map(function(d){ return (d.total || 0) - (d.dadas || 0); });
+    var dadas = datos.map(function(d){ return d.dadas || 0; });
+    var canceladas = datos.map(function(d){ return d.canceladas || 0; });
+    charts.anual = new Chart(document.getElementById('chart-anual').getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: mesesLabel,
+        datasets: [
+          { label: 'Agendadas', data: agendadas, backgroundColor: 'rgba(180,140,80,0.6)', borderColor: '#b48c50', borderWidth: 1, borderRadius: 3 },
+          { label: 'Dadas', data: dadas, backgroundColor: 'rgba(74,158,122,0.6)', borderColor: '#4a9e7a', borderWidth: 1, borderRadius: 3 },
+          { label: 'Canceladas', data: canceladas, backgroundColor: 'rgba(192,82,74,0.5)', borderColor: '#c0524a', borderWidth: 1, borderRadius: 3 }
+        ]
       },
-      options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{color:tickColor},grid:{color:gridColor}},y:{ticks:{color:tickColor},grid:{display:false}}}}
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: tickColor, font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: tickColor, maxRotation: 0 }, grid: { color: gridColor } },
+          y: { ticks: { color: tickColor }, grid: { color: gridColor } }
+        }
+      }
+    });
+    var toggles = document.querySelectorAll('#grafico-toggles .toggle-chip');
+    toggles.forEach(function(t, i) {
+      var serie = t.getAttribute('data-serie');
+      var idx = { total: 0, dadas: 1, canceladas: 2 }[serie];
+      if (idx === undefined) return;
+      t.onclick = function() {
+        var meta = charts.anual.getDatasetMeta(idx);
+        meta.hidden = !meta.hidden;
+        t.classList.toggle('active', !meta.hidden);
+        charts.anual.update();
+      };
     });
   });
-  api('clases').then(function(clases) {
-    var paises = {};
-    clases.filter(function(c){return c.estado==='agendada';}).forEach(function(c){
-      var p = c.pais || 'Sin datos'; paises[p] = (paises[p]||0)+1;
+  fetch('/dashboard/api/ingresos_anuales?anio=' + anio).then(function(r){ return r.json(); }).then(function(monedas) {
+    if (charts.ingresos) charts.ingresos.destroy();
+    var mesesLabel = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    var colores = ['#b48c50','#4a9e7a','#5b8db8'];
+    var datasets = Object.keys(monedas).map(function(moneda, i) {
+      return { label: moneda, data: monedas[moneda] || [], borderColor: colores[i % colores.length], backgroundColor: 'transparent', borderWidth: 2, fill: false, tension: 0.2 };
     });
-    if (charts.paises) charts.paises.destroy();
-    charts.paises = new Chart(document.getElementById('chart-paises').getContext('2d'), {
-      type:'doughnut',
-      data:{labels:Object.keys(paises),datasets:[{data:Object.values(paises),backgroundColor:['#b48c50','#4a9e7a','#c0524a','#5b8db8','#9b7fc8','#d4a853'],borderWidth:0}]},
-      options:{plugins:{legend:{labels:{color:tickColor,font:{size:11}}}},cutout:'58%'}
+    if (datasets.length === 0) datasets = [{ label: 'Sin datos', data: [0,0,0,0,0,0,0,0,0,0,0,0], borderColor: tickColor, borderWidth: 1 }];
+    charts.ingresos = new Chart(document.getElementById('chart-ingresos').getContext('2d'), {
+      type: 'line',
+      data: { labels: mesesLabel, datasets: datasets },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: tickColor, font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: tickColor, maxRotation: 0 }, grid: { color: gridColor } },
+          y: { ticks: { color: tickColor }, grid: { color: gridColor } }
+        }
+      }
     });
   });
 }
