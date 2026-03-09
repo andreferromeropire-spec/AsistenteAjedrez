@@ -1301,63 +1301,95 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
             else:
                 return "Respondé 1 para confirmar o 2 para cancelar."
 
-    if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
+    if numero in acciones_pendientes:
         pendiente = acciones_pendientes[numero]
-        opcion = int(mensaje_entrante.strip())
 
-        if pendiente.get("accion") == "confirmar_borrado":
-            accion = "confirmar_borrado"
-            datos = {"numero_opcion": opcion}
-
-        elif pendiente.get("accion") == "registrar_pago" and pendiente["datos"].get("confirmado"):
-            if opcion == 1:
-                accion = "registrar_pago"
-                datos = pendiente["datos"]
-                del acciones_pendientes[numero]
-            elif opcion == 2:
-                del acciones_pendientes[numero]
-                return "Cancelado. Mandame el pago de nuevo con el monto correcto."
+        # Borrar pagos: acepta "0", "T", "todos", "1", "2 3", "1,2" etc. (antes del isdigit)
+        if pendiente and pendiente.get("accion") == "borrar_pago" and "pagos_candidatos" in pendiente:
+            _t = mensaje_entrante.strip().lower()
+            _candidatos = pendiente["pagos_candidatos"]
+            if _t in ("0", "cancelar", "cancel", "no"):
+                _del_pendiente(numero)
+                return "Cancelado, no se borró nada."
+            if _t in ("t", "todos", "all"):
+                _ids = [c["id"] for c in _candidatos]
+                _candidatos_elegidos = _candidatos
             else:
-                return "Responde 1 para confirmar o 2 para reingresar el monto."
+                import re as _re
+                _tokens = _re.split(r"[\s,]+", _t)
+                _nums = [int(_tok) for _tok in _tokens if _tok.isdigit()]
+                if not _nums:
+                    return f"No entendí. Respondé con un número (1-{len(_candidatos)}), varios separados por coma o espacio, T para todos, 0 para cancelar."
+                _invalidos = [n for n in _nums if n < 1 or n > len(_candidatos)]
+                if _invalidos:
+                    return f"Número(s) inválido(s): {_invalidos}. Elegí entre 1 y {len(_candidatos)}."
+                _ids = [_candidatos[n - 1]["id"] for n in _nums]
+                _candidatos_elegidos = [_candidatos[n - 1] for n in _nums]
+            if len(_ids) == 1:
+                _elegido = next(c for c in _candidatos if c["id"] == _ids[0])
+                _datos_borrar = {**pendiente["datos"], "pago_id_a_borrar": _elegido["id"], "detalle_pago_elegido": dict(_elegido)}
+                acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": _datos_borrar}
+                return ejecutar_accion("borrar_pago", _datos_borrar, numero)
+            _resumen = "\n".join([f"  • ${c['monto']} {c['moneda']} — {c.get('detalle', 'pago')}" for c in _candidatos_elegidos])
+            _del_pendiente(numero)
+            _set_pendiente(numero, {
+                "accion": "borrar_pago",
+                "esperando": "confirmar_borrado_multiple",
+                "ids_a_borrar": _ids,
+                "nombre_alumno": pendiente["datos"].get("nombre_alumno", ""),
+                "resumen": _resumen,
+            })
+            return f"⚠️ ¿Confirmás que querés borrar {len(_ids)} pagos?\n{_resumen}\n\nRespondé 1 para confirmar o 2 para cancelar."
 
-        elif pendiente.get("accion") == "borrar_pago":
-            if "pagos_candidatos" in pendiente:
-                candidatos = pendiente["pagos_candidatos"]
-                if opcion == 0:
-                    del acciones_pendientes[numero]
-                    return "Cancelado, no se borró nada."
-                elif 1 <= opcion <= len(candidatos):
-                    elegido = candidatos[opcion - 1]
-                    # Llamamos directamente a ejecutar_accion con el pago elegido
-                    # y retornamos para evitar doble ejecución
-                    datos_borrar = {
-                        **pendiente["datos"],
-                        "pago_id_a_borrar": elegido["id"],
-                        "detalle_pago_elegido": dict(elegido)
-                    }
-                    # Actualizamos pendiente sin pagos_candidatos
-                    acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos_borrar}
-                    return ejecutar_accion("borrar_pago", datos_borrar, numero)
-                else:
-                    return f"Elegí un número entre 0 y {len(candidatos)}."
-            elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
+        if mensaje_entrante.strip().isdigit():
+            opcion = int(mensaje_entrante.strip())
+            if pendiente.get("accion") == "confirmar_borrado":
+                accion = "confirmar_borrado"
+                datos = {"numero_opcion": opcion}
+            elif pendiente.get("accion") == "registrar_pago" and pendiente["datos"].get("confirmado"):
                 if opcion == 1:
-                    accion = "borrar_pago"
+                    accion = "registrar_pago"
                     datos = pendiente["datos"]
+                    del acciones_pendientes[numero]
                 elif opcion == 2:
                     del acciones_pendientes[numero]
-                    return "Cancelado, no se borro nada."
+                    return "Cancelado. Mandame el pago de nuevo con el monto correcto."
                 else:
-                    return "Responde 1 para confirmar o 2 para cancelar."
+                    return "Responde 1 para confirmar o 2 para reingresar el monto."
+            elif pendiente.get("accion") == "borrar_pago":
+                if "pagos_candidatos" in pendiente:
+                    candidatos = pendiente["pagos_candidatos"]
+                    if opcion == 0:
+                        del acciones_pendientes[numero]
+                        return "Cancelado, no se borró nada."
+                    elif 1 <= opcion <= len(candidatos):
+                        elegido = candidatos[opcion - 1]
+                        datos_borrar = {
+                            **pendiente["datos"],
+                            "pago_id_a_borrar": elegido["id"],
+                            "detalle_pago_elegido": dict(elegido)
+                        }
+                        acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos_borrar}
+                        return ejecutar_accion("borrar_pago", datos_borrar, numero)
+                    else:
+                        return f"Elegí un número entre 0 y {len(candidatos)}."
+                elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
+                    if opcion == 1:
+                        accion = "borrar_pago"
+                        datos = pendiente["datos"]
+                    elif opcion == 2:
+                        del acciones_pendientes[numero]
+                        return "Cancelado, no se borro nada."
+                    else:
+                        return "Responde 1 para confirmar o 2 para cancelar."
+                else:
+                    accion = "aclaracion_alumno"
+                    datos = {"numero_opcion": opcion}
             else:
                 accion = "aclaracion_alumno"
                 datos = {"numero_opcion": opcion}
 
-        else:
-            accion = "aclaracion_alumno"
-            datos = {"numero_opcion": opcion}
-
-    else:
+    if accion == "no_entiendo" and datos == {}:
         if numero in acciones_pendientes and not mensaje_entrante.strip().isdigit():
             _p = acciones_pendientes.get(numero)
             if not (_p and _p.get("accion") == "borrar_pago" and "pagos_candidatos" in _p):
