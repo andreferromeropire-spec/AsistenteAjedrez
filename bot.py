@@ -708,10 +708,70 @@ def ejecutar_accion(accion, datos, numero):
         return respuesta
 
     elif accion == "clases_del_mes":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
+        nombre_buscado = datos.get("nombre_alumno", "")
         hoy = date.today()
+        mes = datos.get("mes", hoy.month)
+        anio = datos.get("anio", hoy.year)
+
+        # Detectar si el nombre buscado es un representante con varios alumnos
+        from alumnos import buscar_alumno_por_representante, buscar_alumno_con_sugerencia
+        alumnos_rep = buscar_alumno_por_representante(nombre_buscado) if not datos.get("alumno_id_directo") else []
+
+        if alumnos_rep and len(alumnos_rep) > 1:
+            # Mostrar clases de todos los alumnos del representante, mezcladas cronológicamente
+            conn = __import__('database').get_connection()
+            cursor = conn.cursor()
+            filas = []
+            for a in alumnos_rep:
+                cursor.execute("""
+                    SELECT fecha, hora, pago_id, estado, ausente FROM clases
+                    WHERE alumno_id = ?
+                    AND strftime('%m', fecha) = ?
+                    AND strftime('%Y', fecha) = ?
+                    AND estado IN ('agendada', 'dada')
+                """, (a["id"], f"{mes:02d}", str(anio)))
+                for c in cursor.fetchall():
+                    filas.append({**dict(c), "nombre_alumno": a["nombre"]})
+            conn.close()
+            if not filas:
+                return f"{nombre_buscado} no tiene clases en {mes}/{anio}."
+            filas.sort(key=lambda x: (x["fecha"], x["hora"] or ""))
+            rep_nombre = alumnos_rep[0]["representante"]
+            respuesta = f"📅 Clases de {rep_nombre} en {mes}/{anio}:\n"
+            pagadas = 0
+            ausentes = 0
+            for c in filas:
+                hora = f" a las {c['hora']}" if c['hora'] else ""
+                paga = " ✅" if c['pago_id'] else ""
+                if c['pago_id']:
+                    pagadas += 1
+                if c['ausente']:
+                    ausentes += 1
+                    emoji = "🪑"
+                elif c['estado'] == 'dada':
+                    emoji = "🟢"
+                else:
+                    emoji = "🔵"
+                respuesta += f"• {emoji} {c['fecha']}{hora} {c['nombre_alumno']}{paga}\n"
+            resumen = f"Total: {len(filas)} clases ({pagadas} pagas, {len(filas)-pagadas} pendientes)"
+            if ausentes:
+                resumen += f" · {ausentes} ausente(s)"
+            respuesta += f"\n{resumen}"
+            return respuesta
+
+        # Caso normal: un solo alumno
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
+        if not alumno:
+            # Último intento: fuzzy sobre representantes
+            alumnos_fuzzy, _ = buscar_alumno_con_sugerencia(nombre_buscado)
+            if alumnos_fuzzy:
+                rep = alumnos_fuzzy[0].get("representante")
+                if rep:
+                    alumnos_rep2 = buscar_alumno_por_representante(rep)
+                    if len(alumnos_rep2) > 1:
+                        datos["nombre_alumno"] = rep
+                        return ejecutar_accion(accion, datos, numero)
+            return aviso
         mes = datos.get("mes", hoy.month)
         anio = datos.get("anio", hoy.year)
         conn = __import__('database').get_connection()
