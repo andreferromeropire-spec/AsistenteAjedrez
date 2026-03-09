@@ -1359,7 +1359,9 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
 
     else:
         if numero in acciones_pendientes and not mensaje_entrante.strip().isdigit():
-            del acciones_pendientes[numero]
+            _p = acciones_pendientes.get(numero)
+            if not (_p and _p.get("accion") == "borrar_pago" and "pagos_candidatos" in _p):
+                del acciones_pendientes[numero]
         interpretado = interpretar_mensaje(mensaje_entrante, historial)
         accion = interpretado.get("accion", "no_entiendo")
         datos = interpretado.get("datos", {})
@@ -1370,10 +1372,22 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
     return ejecutar_accion(accion, datos, numero)
 
 
+def _normalizar_numero(numero):
+    """Unifica formato del número (ej. whatsapp:+54911... → +54911...) para que pendientes coincidan."""
+    if not numero or numero == "desconocido":
+        return numero
+    s = str(numero).strip()
+    for prefijo in ("whatsapp:", "whatsapp%3A"):
+        if s.lower().startswith(prefijo):
+            s = s[len(prefijo) :].strip()
+            break
+    return s or numero
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     mensaje_entrante = request.form.get("Body", "").strip()
-    numero = request.form.get("From", "desconocido")
+    numero = _normalizar_numero(request.form.get("From", "desconocido"))
 
     if numero not in historiales:
         historiales[numero] = []
