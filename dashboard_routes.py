@@ -1854,8 +1854,10 @@ function registrarSeleccionChecks() {
 function abrirPago(gi, noCloseOthers) {
   var g = cobrosData[gi];
   var form = document.getElementById('cobro-form-' + gi);
-  if (form.style.display !== 'none') { form.style.display = 'none'; return; }
-  document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  if (!noCloseOthers && form.style.display !== 'none') { form.style.display = 'none'; return; }
+  if (!noCloseOthers) {
+    document.querySelectorAll('.cobros-inline-form').forEach(function(f){ f.style.display = 'none'; });
+  }
   var montoStr = g.monto_calculado || '';
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
     return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
