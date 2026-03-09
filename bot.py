@@ -1353,7 +1353,22 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 _set_pendiente(numero, _p)
                 return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
 
-    if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
+    def _es_respuesta_pendiente(msg, pendiente):
+        """True si el mensaje es una respuesta válida a la acción pendiente."""
+        msg = msg.strip().lower()
+        if msg.isdigit():
+            return True
+        # Selección múltiple solo para borrar_pago
+        if pendiente and pendiente.get("accion") == "borrar_pago":
+            if msg in ("t", "todos", "all", "0", "cancelar"):
+                return True
+            import re as _re2
+            partes = _re2.split(r"[,\s]+", msg)
+            if all(p.isdigit() for p in partes if p):
+                return True
+        return False
+
+    if numero in acciones_pendientes and _es_respuesta_pendiente(mensaje_entrante, acciones_pendientes[numero]):
         pendiente = acciones_pendientes[numero]
         opcion = int(mensaje_entrante.strip())
 
