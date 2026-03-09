@@ -1212,11 +1212,13 @@ def ejecutar_accion(accion, datos, numero):
             )
 
         # Primera vez: mostrar todos los pagos del mes pedido (o mes actual)
+        from datetime import date as _date_bp
+        _hoy = _date_bp.today()
         mes_pedido = datos.get("mes")
         anio_pedido = datos.get("anio")
         pagos = pagos_del_mes_alumno(alumno["id"], mes=mes_pedido, anio=anio_pedido)
-        mes_mostrar = mes_pedido or hoy.month
-        anio_mostrar = anio_pedido or hoy.year
+        mes_mostrar = mes_pedido or _hoy.month
+        anio_mostrar = anio_pedido or _hoy.year
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
         if not pagos:
