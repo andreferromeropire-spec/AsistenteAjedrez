@@ -1574,13 +1574,23 @@ function selectAllResponsable(master) {
 }
 
 function actualizarBotonesResponsable() {
-  var checks = document.querySelectorAll('.resp-check:checked');
-  var btnAbrir = document.getElementById('btn-abrir-formularios');
-  var btnReg = document.getElementById('btn-registrar-abiertos');
-  btnAbrir.style.display = checks.length ? 'flex' : 'none';
-  // btn-registrar-abiertos se muestra solo si hay formularios abiertos
+  // Al marcar: abrir formulario. Al desmarcar: cerrar.
+  var checks = document.querySelectorAll('.resp-check');
+  checks.forEach(function(chk) {
+    var gi = parseInt(chk.getAttribute('data-gi'));
+    var form = document.getElementById('cobro-form-' + gi);
+    if (!form) return;
+    if (chk.checked) {
+      if (form.style.display === 'none' || form.style.display === '') {
+        abrirPago(gi, true);
+      }
+    } else {
+      form.style.display = 'none';
+    }
+  });
   var hayAbiertos = document.querySelectorAll('.cobros-inline-form[style*="flex"]').length > 0;
-  btnReg.style.display = hayAbiertos ? 'flex' : 'none';
+  document.getElementById('btn-registrar-abiertos').style.display = hayAbiertos ? 'flex' : 'none';
+  document.getElementById('btn-abrir-formularios').style.display = 'none';
 }
 
 function abrirFormulariosSeleccionados() {

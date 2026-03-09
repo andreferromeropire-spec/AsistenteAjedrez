@@ -846,16 +846,18 @@ def ejecutar_accion(accion, datos, numero):
 
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
-        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
 
         def formatear_promo(rangos):
             if not rangos:
                 return "💰 Sin promo cargada\n"
             texto = "💰 Promo:\n"
             for r in rangos:
-                precio = int(r['precio_por_clase']) if r['precio_por_clase'] == int(r['precio_por_clase']) else r['precio_por_clase']
+                precio_raw = r['precio_por_clase']
+                precio_int = int(precio_raw) if precio_raw == int(precio_raw) else precio_raw
+                precio_fmt = f"{precio_int:,}".replace(",", ".")
                 simbolo = simbolos.get(r['moneda'], r['moneda'])
-                texto += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {simbolo}{precio}/h\n"
+                texto += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {simbolo} {precio_fmt}/clase\n"
             return texto
 
         def mostrar_representante(nombre_rep, hoy):
@@ -1160,7 +1162,7 @@ def ejecutar_accion(accion, datos, numero):
         if not pagos:
             return f"{alumno['nombre']} no tiene pagos registrados."
 
-        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
         lista = []
         conn_h = __import__("database").get_connection()
         for i, p in enumerate(pagos):
@@ -1402,6 +1404,17 @@ def setup():
     from database import crear_tablas
     crear_tablas()
     return "Tablas creadas"
+
+@app.route("/migrar_moneda", methods=["GET"])
+def migrar_moneda():
+    from database import get_connection
+    conn = get_connection()
+    a = conn.execute("UPDATE alumnos SET moneda = 'ARS$' WHERE moneda = 'Pesos'").rowcount
+    p = conn.execute("UPDATE pagos SET moneda = 'ARS$' WHERE moneda = 'Pesos'").rowcount
+    pr = conn.execute("UPDATE promociones SET moneda = 'ARS$' WHERE moneda = 'Pesos'").rowcount
+    conn.commit()
+    conn.close()
+    return f"Migrado: {a} alumnos, {p} pagos, {pr} promociones"
 
 @app.route("/sincronizar_alumnos", methods=["GET"])
 def sincronizar_alumnos_endpoint():
