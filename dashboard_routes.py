@@ -2004,10 +2004,16 @@ function registrarSeleccionChecks() {
 
 function calcularPrecioDesdeRangos(rangos, nClases) {
   if (!rangos || !rangos.length) return null;
-  for (var i = 0; i < rangos.length; i++) {
-    if (nClases >= rangos[i].desde && nClases <= rangos[i].hasta) return rangos[i].precio;
+  var n = Number(nClases);
+  if (isNaN(n) || n < 1) return null;
+  var ordenados = rangos.slice().sort(function(a, b) { return (Number(a.desde) || 0) - (Number(b.desde) || 0); });
+  for (var i = 0; i < ordenados.length; i++) {
+    var d = Number(ordenados[i].desde);
+    var h = ordenados[i].hasta;
+    var hastaVal = (h !== undefined && h !== null && h !== '') ? Number(h) : Infinity;
+    if (!isNaN(d) && n >= d && n <= hastaVal) return ordenados[i].precio;
   }
-  return rangos[rangos.length-1].precio;
+  return ordenados[ordenados.length - 1].precio;
 }
 
 function abrirPago(gi, noCloseOthers) {

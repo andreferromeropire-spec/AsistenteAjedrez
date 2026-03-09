@@ -231,16 +231,17 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - **marcar_ausente en intérprete**: antes se mapeaba a `cancelar_clase`, ahora es acción separada con distinción clara
 - **Handler "1"/"2" para ausente_o_cancelar**: procesado antes del bloque `isdigit`
 - **Borrar pago de a uno**: flujo con confirmación funciona correctamente
+- **B5**: "jeff pagó 4 clases" ahora registra la cantidad (cantidad_clases en intérprete)
+- **B11**: Pago del mes incluye clases ya dadas (query con estado agendada o dada)
+- **B8**: Monto por clase según combo/suelta al cambiar cantidad; flechita step 1
+- **F1**: Instrucción "T para todos" y "varios por coma" en mensaje de borrar pagos
 
 ### 🐛 Bugs pendientes
 
 | ID | Descripción | Archivo |
 |---|---|---|
-| B5 | `"jeff pagó 4 clases"` registra solo 1 (ignora la cantidad) | `bot.py` / `pagos.py` |
-| B8 | Formulario cobros: (1) El monto por clase no se modifica al cambiar la cantidad según combo vs suelta. (2) La flechita del monto debe subir de 1 en 1 (ej. $35 → $36). | `dashboard_routes.py` |
-| B11 | `"ruby pagó 4 clases"` → registra solo 3 (ignora la clase del día 2 que ya estaba `dada`). El pago debería cubrir las 4 clases del mes. | `bot.py` / `pagos.py` |
-
-| F1 | Borrar pagos múltiples desde bot ("T", "1,2", "2 3") — **implementado pero roto**: la lista de opciones ya no muestra T/todos ni permite elegir más de uno | `bot.py` |
+| B1 | En algunos alumnos, al cambiar la cantidad de clases en cobros asigna 2–3 clases al último precio (ej. John: 1–3 $35, 4–6 $32, 7+ $30; con 2 o 3 salta a $30). | `dashboard_routes.py` |
+| F1 | Borrar pagos múltiples desde bot ("T", "1,2", "2 3") — implementado pero roto: la lista ya no muestra T/todos ni permite elegir más de uno | `bot.py` | Borrar pagos múltiples desde bot ("T", "1,2", "2 3") — **implementado pero roto**: la lista de opciones ya no muestra T/todos ni permite elegir más de uno | `bot.py` |
 
 ### ✨ Features pendientes
 
