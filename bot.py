@@ -8,7 +8,7 @@ import os
 from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
-from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno, historial_reciente_alumno, borrar_pago, pagos_del_mes_alumno
+from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno, historial_reciente_alumno, borrar_pago
 from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
 from dashboard_routes import dashboard_bp
 
@@ -17,12 +17,6 @@ crear_tablas()
 
 load_dotenv()
 app = Flask(__name__)
-
-# ── Configuración de features ──────────────────────────────
-# True = cancelar redirige a Google Calendar (comportamiento actual)
-# Cambiar a False cuando el bot pueda escribir en Calendar directamente
-CANCELAR_EN_CALENDAR = True
-# ───────────────────────────────────────────────────────────
 app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-2026")
 app.register_blueprint(dashboard_bp)
 
@@ -173,33 +167,6 @@ def ejecutar_accion(accion, datos, numero):
             nuevos_datos["candidato_elegido"] = elegido
             return ejecutar_accion(pendiente["accion"], nuevos_datos, numero)
 
-        # Guard: si el pendiente es de ausente_o_cancelar, no tiene candidatos
-        if pendiente.get("esperando") == "ausente_o_cancelar":
-            _del_pendiente(numero)
-            _cid = pendiente['clase_id']
-            _nom = pendiente['nombre_alumno']
-            _fec = pendiente['fecha']
-            _hor = pendiente.get('hora_fmt', '')
-            _op = datos.get("numero_opcion")
-            if _op == 1:
-                _c = __import__('database').get_connection()
-                _c.execute('UPDATE clases SET ausente = 1 WHERE id = ?', (_cid,))
-                _c.commit()
-                _c.close()
-                return f'\U0001fa91 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
-            elif _op == 2 and not CANCELAR_EN_CALENDAR:
-                # v2: cuando el bot pueda escribir en Calendar, habilitar esto
-                cancelar_clase(_cid, cancelada_por='profesora')
-                return f'\u2705 Clase de {_nom} del {_fec} cancelada. No se cobra.'
-            else:
-                _set_pendiente(numero, pendiente)
-                if CANCELAR_EN_CALENDAR:
-                    return f'Respondé 1 para marcar ausente a {_nom} el {_fec}. Para cancelar, hacelo en Google Calendar.'
-                return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
-
-        if "candidatos" not in pendiente:
-            return "No tenía candidatos pendientes. \u00bfQué querés hacer?"
-
         candidatos = pendiente["candidatos"]
         alumno_elegido = None
         if numero_opcion and 1 <= numero_opcion <= len(candidatos):
@@ -282,12 +249,8 @@ def ejecutar_accion(accion, datos, numero):
                     continue
                 n = len(clases)
                 monto_alumno = round(precio_unit * n, 2)
-                # Fecha del pago = primer día del mes de las clases
-                _fecha_clase = clases[0]["fecha"]  # "2026-01-06"
-                _fecha_pago = _fecha_clase[:7] + "-01"  # "2026-01-01"
                 pago_id = registrar_pago(alumno_id=alumno_rep["id"], monto=monto_alumno,
-                                         moneda=moneda, metodo=metodo, notas=datos.get("notas"),
-                                         fecha_pago=_fecha_pago)
+                                         moneda=moneda, metodo=metodo, notas=datos.get("notas"))
                 conn = __import__("database").get_connection()
                 for c in clases:
                     conn.execute("UPDATE clases SET pago_id = ? WHERE id = ?", (pago_id, c["id"]))
@@ -329,25 +292,14 @@ def ejecutar_accion(accion, datos, numero):
 
         # Si viene marcado como "confirmado", el usuario ya aprobó la diferencia de monto
         if datos.get("confirmado"):
-            clases_ids = datos.get("clases_ids", [])
-            # Fecha del pago = primer día del mes de las clases que cubre
-            _fecha_pago_conf = None
-            if clases_ids:
-                _conn_f = __import__("database").get_connection()
-                _row = _conn_f.execute(
-                    "SELECT fecha FROM clases WHERE id = ? LIMIT 1", (clases_ids[0],)
-                ).fetchone()
-                _conn_f.close()
-                if _row:
-                    _fecha_pago_conf = _row["fecha"][:7] + "-01"
             pago_id = registrar_pago(
                 alumno_id=alumno["id"],
                 monto=datos["monto"],
                 moneda=datos["moneda"],
                 metodo=datos["metodo"],
-                notas=datos.get("notas"),
-                fecha_pago=_fecha_pago_conf
+                notas=datos.get("notas")
             )
+            clases_ids = datos.get("clases_ids", [])
             if clases_ids:
                 conn = __import__("database").get_connection()
                 for clase_id in clases_ids:
@@ -376,53 +328,35 @@ def ejecutar_accion(accion, datos, numero):
         cursor = conn.cursor()
 
         if cantidad_clases:
-            # Incluir 'dada' además de 'agendada': una clase ya tomada también se cobra
-            # Filtrar por mes para no agarrar clases históricas sin pagar
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
-                AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT ?
-            """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago), cantidad_clases))
+            """, (alumno["id"], cantidad_clases))
         elif todas_del_mes or modalidad == "Mensual":
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
         elif modalidad == "Semanal":
-            # Semanal: una clase por vez, del mes actual por defecto
-            # Si especificó fecha, buscar esa clase específica
-            fecha_especifica = datos.get("fecha")
-            if fecha_especifica:
-                cursor.execute("""
-                    SELECT id, fecha, hora FROM clases
-                    WHERE alumno_id = ? AND pago_id IS NULL
-                    AND estado IN ('agendada', 'dada')
-                    AND fecha = ?
-                    ORDER BY fecha ASC LIMIT 1
-                """, (alumno["id"], fecha_especifica))
-            else:
-                cursor.execute("""
-                    SELECT id, fecha, hora FROM clases
-                    WHERE alumno_id = ? AND pago_id IS NULL
-                    AND estado IN ('agendada', 'dada')
-                    AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
-                    ORDER BY fecha ASC LIMIT 1
-                """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
-        elif "10" in modalidad or "paquete" in modalidad.lower():
-            # Paquete de 10: no filtra por mes, se pagan las próximas 10 desde hoy
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
-                AND fecha >= ?
+                WHERE alumno_id = ? AND pago_id IS NULL
+                AND (estado = 'agendada' OR estado = 'dada')
+                ORDER BY fecha ASC LIMIT 1
+            """, (alumno["id"],))
+        elif "10" in modalidad or "paquete" in modalidad.lower():
+            cursor.execute("""
+                SELECT id, fecha, hora FROM clases
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
                 ORDER BY fecha ASC LIMIT 10
-            """, (alumno["id"], hoy.isoformat()))
+            """, (alumno["id"],))
         else:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
+                WHERE alumno_id = ? AND estado = 'agendada' AND pago_id IS NULL
                 AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
@@ -431,7 +365,7 @@ def ejecutar_accion(accion, datos, numero):
         conn.close()
 
         if not clases:
-            respuesta = f"No encontré clases sin pagar para {alumno['nombre']}."
+            respuesta = f"No encontré clases agendadas sin pago para {alumno['nombre']}."
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
         clases_ids = [c["id"] for c in clases]
@@ -499,11 +433,8 @@ def ejecutar_accion(accion, datos, numero):
             return (aviso + "\n" + respuesta) if aviso else respuesta
 
         # ── Registrar el pago y marcar clases ──
-        # Fecha del pago = primer día del mes de las clases que cubre
-        _fecha_pago_n = (fechas_clases[0][:7] + "-01") if fechas_clases else None
         pago_id = registrar_pago(alumno_id=alumno["id"], monto=monto_final,
-                                  moneda=moneda, metodo=metodo, notas=datos.get("notas"),
-                                  fecha_pago=_fecha_pago_n)
+                                  moneda=moneda, metodo=metodo, notas=datos.get("notas"))
 
         conn = __import__("database").get_connection()
         for clase_id in clases_ids:
@@ -561,38 +492,21 @@ def ejecutar_accion(accion, datos, numero):
 
     elif accion == "cancelar_clase":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        nombre = alumno['nombre'] if alumno else datos.get("nombre_alumno", "el alumno")
-        return (
-            f"Para cancelar la clase de {nombre}, hacelo directamente en Google Calendar. "
-            f"En la próxima sincronización, el sistema lo va a reflejar automáticamente. \U0001f4c5"
-        )
-
-    elif accion == "reactivar_clase":
-        # v1: Google Calendar es la fuente de verdad — modificar la clase directamente ahí
-        # v2: cuando el bot tenga escritura en Calendar, descomentar el bloque de abajo
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        nombre = alumno['nombre'] if alumno else datos.get("nombre_alumno", "la clase")
-        return (
-            f"Para reactivar la clase de {nombre}, modificala directamente en Google Calendar. "
-            f"En la próxima sincronización se va a reflejar automáticamente. 📅"
-        )
-        # ── v2 (descomentar cuando haya escritura en Calendar) ──────────
-        # if not alumno: return aviso
-        # fecha_especifica = datos.get("fecha")
-        # conn = __import__('database').get_connection()
-        # clase = conn.execute(
-        #     "SELECT id, fecha FROM clases WHERE alumno_id = ? AND fecha = ? AND estado LIKE 'cancelada%'",
-        #     (alumno["id"], fecha_especifica)
-        # ).fetchone() if fecha_especifica else conn.execute(
-        #     "SELECT id, fecha FROM clases WHERE alumno_id = ? AND estado LIKE 'cancelada%' ORDER BY fecha DESC LIMIT 1",
-        #     (alumno["id"],)
-        # ).fetchone()
-        # if not clase: conn.close(); return f"No encontré clase cancelada de {alumno['nombre']}."
-        # estado_nuevo = 'dada' if clase['fecha'] < hoy.isoformat() else 'agendada'
-        # conn.execute("UPDATE clases SET estado = ? WHERE id = ?", (estado_nuevo, clase['id']))
-        # conn.commit(); conn.close()
-        # return f"✅ Clase de {alumno['nombre']} del {clase['fecha']} reactivada como {estado_nuevo}."
-        # ────────────────────────────────────────────────────────────────
+        if not alumno:
+            return aviso
+        from clases import proximas_clases_alumno
+        proximas = proximas_clases_alumno(alumno["id"])
+        if not proximas:
+            return f"No encontré clases agendadas para {alumno['nombre']}."
+        clase = proximas[0]
+        resultado = cancelar_clase(clase["id"], cancelada_por=datos.get("cancelada_por", "alumno"))
+        mensajes = {
+            "cancelada_con_anticipacion": f"✅ Clase de {alumno['nombre']} cancelada. Avisó a tiempo, queda como crédito.",
+            "cancelada_sin_anticipacion": f"⚠️ Clase de {alumno['nombre']} cancelada. No avisó a tiempo, se cobra igual.",
+            "cancelada_por_profesora": f"✅ Clase de {alumno['nombre']} cancelada por vos. No se cobra."
+        }
+        respuesta = mensajes.get(resultado, "Clase cancelada.")
+        return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "marcar_ausente":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
@@ -639,19 +553,12 @@ def ejecutar_accion(accion, datos, numero):
             'fecha': fecha_fmt,
             'hora_fmt': hora_fmt
         })
-        if CANCELAR_EN_CALENDAR:
-            return (
-                f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
-                f"¿Estuvo ausente? Respondé 1 para confirmar (se cobra igual).\n"
-                f"Si querés cancelarla, hacelo en Google Calendar y se va a reflejar en la próxima sincronización."
-            )
-        else:
-            return (
-                f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
-                f"¿Cómo la registramos?\n"
-                f"1 - Ausente (se cobra igual)\n"
-                f"2 - Cancelada (no se cobra)"
-            )
+        return (
+            f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
+            f"¿Cómo la registramos?\n"
+            f"1 - Ausente (se cobra igual)\n"
+            f"2 - Cancelada (no se cobra)"
+        )
 
     elif accion == "desmarcar_ausente":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
@@ -687,33 +594,30 @@ def ejecutar_accion(accion, datos, numero):
 
 
     elif accion == "reprogramar_clase":
-        # v1: Google Calendar es la fuente de verdad — reprogramar directamente ahí
-        # v2: cuando el bot tenga escritura en Calendar, descomentar el bloque de abajo
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        nombre = alumno['nombre'] if alumno else datos.get("nombre_alumno", "la clase")
-        return (
-            f"Para reprogramar la clase de {nombre}, modificala directamente en Google Calendar. "
-            f"En la próxima sincronización se va a reflejar automáticamente. 📅"
-        )
-        # ── v2 (descomentar cuando haya escritura en Calendar) ──────────
-        # if not alumno: return aviso
-        # fecha_original = datos.get("fecha_original")
-        # nueva_fecha = datos.get("nueva_fecha")
-        # nueva_hora = datos.get("nueva_hora")
-        # if not fecha_original or not nueva_fecha:
-        #     return "Necesito la fecha original y la nueva fecha para reprogramar."
-        # conn = __import__('database').get_connection()
-        # clase = conn.execute(
-        #     "SELECT id FROM clases WHERE alumno_id = ? AND fecha = ? AND estado = 'agendada'",
-        #     (alumno["id"], fecha_original)
-        # ).fetchone()
-        # conn.close()
-        # if not clase: return f"No encontré clase agendada de {alumno['nombre']} el {fecha_original}."
-        # reprogramar_clase(clase["id"], nueva_fecha, nueva_hora)
-        # respuesta = f"✅ Reprogramada del {fecha_original} al {nueva_fecha}"
-        # if nueva_hora: respuesta += f" a las {nueva_hora}"
-        # return (aviso + "\n" + respuesta + ".") if aviso else respuesta + "."
-        # ────────────────────────────────────────────────────────────────
+        if not alumno:
+            return aviso
+        fecha_original = datos.get("fecha_original")
+        nueva_fecha = datos.get("nueva_fecha")
+        nueva_hora = datos.get("nueva_hora")
+        if not fecha_original or not nueva_fecha:
+            return "Necesito la fecha original y la nueva fecha para reprogramar."
+        conn = __import__('database').get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id FROM clases
+            WHERE alumno_id = ? AND fecha = ? AND estado = 'agendada'
+        """, (alumno["id"], fecha_original))
+        clase = cursor.fetchone()
+        conn.close()
+        if not clase:
+            return f"No encontré una clase agendada de {alumno['nombre']} el {fecha_original}."
+        reprogramar_clase(clase["id"], nueva_fecha, nueva_hora)
+        respuesta = f"✅ Clase de {alumno['nombre']} reprogramada del {fecha_original} al {nueva_fecha}"
+        if nueva_hora:
+            respuesta += f" a las {nueva_hora}"
+        respuesta += "."
+        return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "alumno_nuevo":
         existentes = buscar_alumno_por_nombre(datos.get("nombre", ""))
@@ -780,70 +684,10 @@ def ejecutar_accion(accion, datos, numero):
         return respuesta
 
     elif accion == "clases_del_mes":
-        nombre_buscado = datos.get("nombre_alumno", "")
-        hoy = date.today()
-        mes = datos.get("mes", hoy.month)
-        anio = datos.get("anio", hoy.year)
-
-        # Detectar si el nombre buscado es un representante con varios alumnos
-        from alumnos import buscar_alumno_por_representante, buscar_alumno_con_sugerencia
-        alumnos_rep = buscar_alumno_por_representante(nombre_buscado) if not datos.get("alumno_id_directo") else []
-
-        if alumnos_rep and len(alumnos_rep) > 1:
-            # Mostrar clases de todos los alumnos del representante, mezcladas cronológicamente
-            conn = __import__('database').get_connection()
-            cursor = conn.cursor()
-            filas = []
-            for a in alumnos_rep:
-                cursor.execute("""
-                    SELECT fecha, hora, pago_id, estado, ausente FROM clases
-                    WHERE alumno_id = ?
-                    AND strftime('%m', fecha) = ?
-                    AND strftime('%Y', fecha) = ?
-                    AND estado IN ('agendada', 'dada')
-                """, (a["id"], f"{mes:02d}", str(anio)))
-                for c in cursor.fetchall():
-                    filas.append({**dict(c), "nombre_alumno": a["nombre"]})
-            conn.close()
-            if not filas:
-                return f"{nombre_buscado} no tiene clases en {mes}/{anio}."
-            filas.sort(key=lambda x: (x["fecha"], x["hora"] or ""))
-            rep_nombre = alumnos_rep[0]["representante"]
-            respuesta = f"📅 Clases de {rep_nombre} en {mes}/{anio}:\n"
-            pagadas = 0
-            ausentes = 0
-            for c in filas:
-                hora = f" a las {c['hora']}" if c['hora'] else ""
-                paga = " ✅" if c['pago_id'] else ""
-                if c['pago_id']:
-                    pagadas += 1
-                if c['ausente']:
-                    ausentes += 1
-                    emoji = "🪑"
-                elif c['estado'] == 'dada':
-                    emoji = "🟢"
-                else:
-                    emoji = "🔵"
-                respuesta += f"• {emoji} {c['fecha']}{hora} {c['nombre_alumno']}{paga}\n"
-            resumen = f"Total: {len(filas)} clases ({pagadas} pagas, {len(filas)-pagadas} pendientes)"
-            if ausentes:
-                resumen += f" · {ausentes} ausente(s)"
-            respuesta += f"\n{resumen}"
-            return respuesta
-
-        # Caso normal: un solo alumno
-        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
-            # Último intento: fuzzy sobre representantes
-            alumnos_fuzzy, _ = buscar_alumno_con_sugerencia(nombre_buscado)
-            if alumnos_fuzzy:
-                rep = alumnos_fuzzy[0].get("representante")
-                if rep:
-                    alumnos_rep2 = buscar_alumno_por_representante(rep)
-                    if len(alumnos_rep2) > 1:
-                        datos["nombre_alumno"] = rep
-                        return ejecutar_accion(accion, datos, numero)
             return aviso
+        hoy = date.today()
         mes = datos.get("mes", hoy.month)
         anio = datos.get("anio", hoy.year)
         conn = __import__('database').get_connection()
@@ -918,18 +762,16 @@ def ejecutar_accion(accion, datos, numero):
 
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
-        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
 
         def formatear_promo(rangos):
             if not rangos:
                 return "💰 Sin promo cargada\n"
             texto = "💰 Promo:\n"
             for r in rangos:
-                precio_raw = r['precio_por_clase']
-                precio_int = int(precio_raw) if precio_raw == int(precio_raw) else precio_raw
-                precio_fmt = f"{precio_int:,}".replace(",", ".")
+                precio = int(r['precio_por_clase']) if r['precio_por_clase'] == int(r['precio_por_clase']) else r['precio_por_clase']
                 simbolo = simbolos.get(r['moneda'], r['moneda'])
-                texto += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {simbolo} {precio_fmt}/clase\n"
+                texto += f"• {r['clases_desde']}–{r['clases_hasta']} clases: {simbolo}{precio}/h\n"
             return texto
 
         def mostrar_representante(nombre_rep, hoy):
@@ -1229,38 +1071,32 @@ def ejecutar_accion(accion, datos, numero):
                 f"Respondé 1 para confirmar o 2 para cancelar."
             )
 
-        # Primera vez: mostrar todos los pagos del mes pedido (o mes actual)
-        from datetime import date as _date_bp
-        _hoy = _date_bp.today()
-        mes_pedido = datos.get("mes")
-        anio_pedido = datos.get("anio")
-        pagos = pagos_del_mes_alumno(alumno["id"], mes=mes_pedido, anio=anio_pedido)
-        mes_mostrar = mes_pedido or _hoy.month
-        anio_mostrar = anio_pedido or _hoy.year
-        meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
-                    7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+        # Primera vez: mostrar el historial de pagos para que elija
+        pagos = historial_reciente_alumno(alumno["id"], limite=5)
         if not pagos:
-            return f"{alumno['nombre']} no tiene pagos registrados en {meses_es[mes_mostrar]} {anio_mostrar}."
+            return f"{alumno['nombre']} no tiene pagos registrados."
 
-        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
         lista = []
         conn_h = __import__("database").get_connection()
         for i, p in enumerate(pagos):
             sim = simbolos.get(p["moneda"], "")
+            # Buscar clases asociadas a este pago
             clases_pago = conn_h.execute(
                 "SELECT fecha FROM clases WHERE pago_id = ? ORDER BY fecha ASC",
                 (p["id"],)
             ).fetchall()
             if clases_pago:
                 dias = ", ".join([c["fecha"].split("-")[2] for c in clases_pago])
-                mes_año = clases_pago[0]["fecha"][:7]
+                mes_año = clases_pago[0]["fecha"][:7]  # "2026-03"
                 palabra_dia = "días" if len(clases_pago) > 1 else "día"
-                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} ({palabra_dia} {dias})"
+                detalle_clases = f"{len(clases_pago)} clase{'s' if len(clases_pago)>1 else ''} del {mes_año} ({palabra_dia} {dias})" 
             else:
                 detalle_clases = f"registrado {p['fecha']}"
             lista.append(f"{i+1}. {sim}{p['monto']} {p['moneda']} — {detalle_clases}")
         conn_h.close()
 
+        # Guardamos los pagos en pendiente para cuando elija el número
         acciones_pendientes[numero] = {
             "accion": "borrar_pago",
             "datos": {
@@ -1269,9 +1105,9 @@ def ejecutar_accion(accion, datos, numero):
             },
             "pagos_candidatos": [dict(p) for p in pagos]
         }
-        texto = f"Pagos de {alumno['nombre']} en {meses_es[mes_mostrar]} {anio_mostrar}:\n" + "\n".join(lista)
-        texto += "\n0. Cancelar"
-        texto += "\n\n¿Cuál querés borrar? Podés responder:\n• Un número: \'1\'\n• Varios: \'1,2\' o \'1 2\'\n• Todos: \'T\' o \'todos\'"
+        texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
+        texto += "\n0. Cancelar (no borrar nada)"
+        texto += "\n\n¿Cuál querés borrar? Respondé con el número."
         return (aviso + "\n" + texto) if aviso else texto
 
     elif accion == "ignorar_evento":
@@ -1351,46 +1187,119 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
             else:
                 _set_pendiente(numero, _p)
-                return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
 
-    def _es_respuesta_pendiente(msg, pendiente):
-        """True si el mensaje es una respuesta válida a la acción pendiente."""
-        msg = msg.strip().lower()
-        if msg.isdigit():
-            return True
-        # Selección múltiple solo para borrar_pago
-        if pendiente and pendiente.get("accion") == "borrar_pago":
-            if msg in ("t", "todos", "all", "0", "cancelar"):
-                return True
-            import re as _re2
-            partes = _re2.split(r"[,\s]+", msg)
-            if all(p.isdigit() for p in partes if p):
-                return True
-        return False
-
-    if numero in acciones_pendientes and _es_respuesta_pendiente(mensaje_entrante, acciones_pendientes[numero]):
-        pendiente = acciones_pendientes[numero]
-        opcion = int(mensaje_entrante.strip()) if mensaje_entrante.strip().isdigit() else None
-
-        # Si el pendiente es de ausente_o_cancelar, procesarlo aquí también como fallback
-        if pendiente.get("esperando") == "ausente_o_cancelar":
+    # ── Caso especial: respuesta a pregunta ausente/cancelar ──
+    if numero in acciones_pendientes:
+        _p = _get_pendiente(numero)
+        if _p and _p.get('esperando') == 'ausente_o_cancelar':
             _del_pendiente(numero)
-            _cid = pendiente['clase_id']
-            _nom = pendiente['nombre_alumno']
-            _fec = pendiente['fecha']
-            _hor = pendiente.get('hora_fmt', '')
-            if opcion == 1:
+            _cid = _p['clase_id']
+            _nom = _p['nombre_alumno']
+            _fec = _p['fecha']
+            _hor = _p.get('hora_fmt', '')
+            _t = mensaje_entrante.strip().lower()
+            if _t == '1' or 'ausent' in _t or 'falt' in _t or 'no asistio' in _t:
                 _c = __import__('database').get_connection()
                 _c.execute('UPDATE clases SET ausente = 1 WHERE id = ?', (_cid,))
                 _c.commit()
                 _c.close()
                 return f'🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
-            elif opcion == 2:
+            elif _t == '2' or 'cancel' in _t:
                 cancelar_clase(_cid, cancelada_por='profesora')
                 return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
             else:
-                _set_pendiente(numero, pendiente)
-                return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+                _set_pendiente(numero, _p)
+                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+
+    # ── Caso especial: selección de pagos a borrar (acepta "1", "1,2", "2 3", "T", "todos") ──
+    if numero in acciones_pendientes:
+        _p = _get_pendiente(numero)
+        if _p and _p.get('accion') == 'borrar_pago' and 'pagos_candidatos' in _p:
+            _t = mensaje_entrante.strip().lower()
+            _candidatos = _p['pagos_candidatos']
+
+            # Cancelar
+            if _t in ('0', 'cancelar', 'cancel', 'no'):
+                _del_pendiente(numero)
+                return "Cancelado, no se borró nada."
+
+            # Todos
+            if _t in ('t', 'todos', 'all'):
+                _ids = [c['id'] for c in _candidatos]
+            else:
+                # Parsear números separados por coma o espacio: "1,2" o "2 3" o "1, 2"
+                import re as _re
+                _tokens = _re.split(r'[\s,]+', _t)
+                _nums = []
+                for _tok in _tokens:
+                    if _tok.isdigit():
+                        _nums.append(int(_tok))
+                if not _nums:
+                    return f"No entendí. Respondé con un número (1-{len(_candidatos)}), varios separados por coma o espacio, T para todos, 0 para cancelar."
+                _invalidos = [n for n in _nums if n < 1 or n > len(_candidatos)]
+                if _invalidos:
+                    return f"Número(s) inválido(s): {_invalidos}. Elegí entre 1 y {len(_candidatos)}."
+                _ids = [_candidatos[n - 1]['id'] for n in _nums]
+                _candidatos_elegidos = [_candidatos[n - 1] for n in _nums]
+
+            if _t in ('t', 'todos', 'all'):
+                _candidatos_elegidos = _candidatos
+
+            # Si es uno solo, usar el flujo normal de confirmación
+            if len(_ids) == 1:
+                _elegido = next(c for c in _candidatos if c['id'] == _ids[0])
+                _datos_borrar = {**_p['datos'], 'pago_id_a_borrar': _elegido['id'], 'detalle_pago_elegido': dict(_elegido)}
+                acciones_pendientes[numero] = {'accion': 'borrar_pago', 'datos': _datos_borrar}
+                return ejecutar_accion('borrar_pago', _datos_borrar, numero)
+
+            # Múltiples: pedir confirmación con resumen
+            _resumen = "\n".join([
+                f"  • ${c['monto']} {c['moneda']} — {c.get('detalle', 'pago')}"
+                for c in _candidatos_elegidos
+            ])
+            _del_pendiente(numero)
+            _set_pendiente(numero, {
+                'accion': 'borrar_pago',
+                'esperando': 'confirmar_borrado_multiple',
+                'ids_a_borrar': _ids,
+                'nombre_alumno': _p['datos'].get('nombre_alumno', ''),
+                'resumen': _resumen
+            })
+            return (
+                f"⚠️ ¿Confirmás que querés borrar {len(_ids)} pagos?\n{_resumen}\n\n"
+                f"Respondé 1 para confirmar o 2 para cancelar."
+            )
+
+    # ── Caso especial: confirmación de borrado múltiple ──
+    if numero in acciones_pendientes:
+        _p = _get_pendiente(numero)
+        if _p and _p.get('esperando') == 'confirmar_borrado_multiple':
+            _t = mensaje_entrante.strip()
+            if _t == '1':
+                _ids = _p['ids_a_borrar']
+                _del_pendiente(numero)
+                _borrados = 0
+                _errores = []
+                for _pid in _ids:
+                    _ok, _res = borrar_pago(_pid)
+                    if _ok:
+                        _borrados += 1
+                    else:
+                        _errores.append(str(_res))
+                _msg = f"🗑️ {_borrados} pago(s) borrado(s)."
+                if _errores:
+                    _msg += f" Errores: {', '.join(_errores)}"
+                return _msg
+            elif _t == '2':
+                _del_pendiente(numero)
+                return "Cancelado, no se borró nada."
+            else:
+                return "Respondé 1 para confirmar o 2 para cancelar."
+
+    if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
+        pendiente = acciones_pendientes[numero]
+        opcion = int(mensaje_entrante.strip())
 
         if pendiente.get("accion") == "confirmar_borrado":
             accion = "confirmar_borrado"
@@ -1410,79 +1319,32 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
         elif pendiente.get("accion") == "borrar_pago":
             if "pagos_candidatos" in pendiente:
                 candidatos = pendiente["pagos_candidatos"]
-                txt = mensaje_entrante.strip().lower()
-
-                # Cancelar
-                if txt in ("0", "cancelar", "cancel"):
+                if opcion == 0:
                     del acciones_pendientes[numero]
                     return "Cancelado, no se borró nada."
-
-                # Parsear selección: "T"/"todos", "1,2", "1 2 3", o número solo
-                if txt in ("t", "todos", "all"):
-                    indices = list(range(len(candidatos)))
-                else:
-                    import re as _re
-                    partes = _re.split(r"[,\s]+", txt)
-                    indices = []
-                    for p in partes:
-                        if p.isdigit():
-                            n = int(p) - 1
-                            if 0 <= n < len(candidatos):
-                                indices.append(n)
-                    if not indices:
-                        return f"No entendí. Respondé con números (ej: \'1,2\'), \'T\' para todos, o \'0\' para cancelar."
-
-                elegidos = [candidatos[i] for i in indices]
-                simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$", "Pesos": "AR$"}
-                resumen = []
-                for e in elegidos:
-                    sim = simbolos.get(e.get("moneda",""), "")
-                    resumen.append(f"• {sim}{e.get('monto','')} {e.get('moneda','')} — {e.get('fecha','')}")
-
-                # Guardar ids a borrar y pedir confirmación
-                acciones_pendientes[numero] = {
-                    "accion": "borrar_pago",
-                    "datos": {
+                elif 1 <= opcion <= len(candidatos):
+                    elegido = candidatos[opcion - 1]
+                    # Llamamos directamente a ejecutar_accion con el pago elegido
+                    # y retornamos para evitar doble ejecución
+                    datos_borrar = {
                         **pendiente["datos"],
-                        "pago_ids_a_borrar": [e["id"] for e in elegidos],
-                        "confirmado": False
+                        "pago_id_a_borrar": elegido["id"],
+                        "detalle_pago_elegido": dict(elegido)
                     }
-                }
-                n = len(elegidos)
-                return (
-                    f"⚠️ ¿Confirmás que querés borrar {n} pago{'s' if n > 1 else ''} de {pendiente['datos']['nombre_alumno']}?\n"
-                    + "\n".join(resumen)
-                    + "\n\nRespondé 1 para confirmar o 2 para cancelar."
-                )
-
-            elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar") or pendiente["datos"].get("pago_ids_a_borrar"):
-                if opcion == 2:
-                    del acciones_pendientes[numero]
-                    return "Cancelado, no se borró nada."
-                elif opcion == 1:
-                    d = pendiente["datos"]
-                    ids = d.get("pago_ids_a_borrar") or ([d["pago_id_a_borrar"]] if d.get("pago_id_a_borrar") else [])
-                    if not ids:
-                        del acciones_pendientes[numero]
-                        return "No había pagos para borrar."
-                    del acciones_pendientes[numero]
-                    total_clases = 0
-                    errores = []
-                    for pid in ids:
-                        ok, resultado = borrar_pago(pid)
-                        if ok:
-                            total_clases += resultado
-                        else:
-                            errores.append(str(resultado))
-                    n = len(ids)
-                    msg = f"🗑️ {n} pago{'s' if n > 1 else ''} borrado{'s' if n > 1 else ''}."
-                    if total_clases > 0:
-                        msg += f" {total_clases} clase{'s' if total_clases > 1 else ''} quedaron como no pagas."
-                    if errores:
-                        msg += f" Errores: {', '.join(errores)}"
-                    return msg
+                    # Actualizamos pendiente sin pagos_candidatos
+                    acciones_pendientes[numero] = {"accion": "borrar_pago", "datos": datos_borrar}
+                    return ejecutar_accion("borrar_pago", datos_borrar, numero)
                 else:
-                    return "Respondé 1 para confirmar o 2 para cancelar."
+                    return f"Elegí un número entre 0 y {len(candidatos)}."
+            elif pendiente["datos"].get("confirmado") or pendiente["datos"].get("pago_id_a_borrar"):
+                if opcion == 1:
+                    accion = "borrar_pago"
+                    datos = pendiente["datos"]
+                elif opcion == 2:
+                    del acciones_pendientes[numero]
+                    return "Cancelado, no se borro nada."
+                else:
+                    return "Responde 1 para confirmar o 2 para cancelar."
             else:
                 accion = "aclaracion_alumno"
                 datos = {"numero_opcion": opcion}
@@ -1544,33 +1406,6 @@ def setup():
     from database import crear_tablas
     crear_tablas()
     return "Tablas creadas"
-
-@app.route("/debug_alumno/<nombre>", methods=["GET"])
-def debug_alumno(nombre):
-    from database import get_connection
-    import json
-    conn = get_connection()
-    alumno = conn.execute("SELECT id FROM alumnos WHERE nombre LIKE ?", (f"%{nombre}%",)).fetchone()
-    if not alumno:
-        return f"No encontré alumno con nombre '{nombre}'"
-    clases = conn.execute(
-        "SELECT id, fecha, hora, estado, pago_id, ausente FROM clases WHERE alumno_id = ? ORDER BY fecha DESC LIMIT 30",
-        (alumno["id"],)
-    ).fetchall()
-    conn.close()
-    rows = [dict(c) for c in clases]
-    return "<pre>" + json.dumps(rows, indent=2, default=str) + "</pre>"
-
-@app.route("/migrar_moneda", methods=["GET"])
-def migrar_moneda():
-    from database import get_connection
-    conn = get_connection()
-    a = conn.execute("UPDATE alumnos SET moneda = 'ARS$' WHERE moneda = 'Pesos'").rowcount
-    p = conn.execute("UPDATE pagos SET moneda = 'ARS$' WHERE moneda = 'Pesos'").rowcount
-    pr = conn.execute("UPDATE promociones SET moneda = 'ARS$' WHERE moneda = 'Pesos'").rowcount
-    conn.commit()
-    conn.close()
-    return f"Migrado: {a} alumnos, {p} pagos, {pr} promociones"
 
 @app.route("/sincronizar_alumnos", methods=["GET"])
 def sincronizar_alumnos_endpoint():
