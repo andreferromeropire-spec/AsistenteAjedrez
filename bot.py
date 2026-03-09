@@ -353,11 +353,13 @@ def ejecutar_accion(accion, datos, numero):
 
         if cantidad_clases:
             # Incluir 'dada' además de 'agendada': una clase ya tomada también se cobra
+            # Filtrar por mes para no agarrar clases históricas sin pagar
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
+                AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
                 ORDER BY fecha ASC LIMIT ?
-            """, (alumno["id"], cantidad_clases))
+            """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago), cantidad_clases))
         elif todas_del_mes or modalidad == "Mensual":
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
@@ -366,18 +368,33 @@ def ejecutar_accion(accion, datos, numero):
                 ORDER BY fecha ASC
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
         elif modalidad == "Semanal":
-            cursor.execute("""
-                SELECT id, fecha, hora FROM clases
-                WHERE alumno_id = ? AND pago_id IS NULL
-                AND estado IN ('agendada', 'dada')
-                ORDER BY fecha ASC LIMIT 1
-            """, (alumno["id"],))
+            # Semanal: una clase por vez, del mes actual por defecto
+            # Si el usuario especificó una fecha, tomar esa clase específica
+            fecha_especifica = datos.get("fecha")
+            if fecha_especifica:
+                cursor.execute("""
+                    SELECT id, fecha, hora FROM clases
+                    WHERE alumno_id = ? AND pago_id IS NULL
+                    AND estado IN ('agendada', 'dada')
+                    AND fecha = ?
+                    ORDER BY fecha ASC LIMIT 1
+                """, (alumno["id"], fecha_especifica))
+            else:
+                cursor.execute("""
+                    SELECT id, fecha, hora FROM clases
+                    WHERE alumno_id = ? AND pago_id IS NULL
+                    AND estado IN ('agendada', 'dada')
+                    AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
+                    ORDER BY fecha ASC LIMIT 1
+                """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
         elif "10" in modalidad or "paquete" in modalidad.lower():
+            # Paquete de 10: no filtra por mes, se pagan las próximas 10 desde hoy
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
                 WHERE alumno_id = ? AND estado IN ('agendada', 'dada') AND pago_id IS NULL
+                AND fecha >= ?
                 ORDER BY fecha ASC LIMIT 10
-            """, (alumno["id"],))
+            """, (alumno["id"], hoy.isoformat()))
         else:
             cursor.execute("""
                 SELECT id, fecha, hora FROM clases
