@@ -17,6 +17,12 @@ crear_tablas()
 
 load_dotenv()
 app = Flask(__name__)
+
+# ── Configuración de features ──────────────────────────────
+# True = cancelar redirige a Google Calendar (comportamiento actual)
+# Cambiar a False cuando el bot pueda escribir en Calendar directamente
+CANCELAR_EN_CALENDAR = True
+# ───────────────────────────────────────────────────────────
 app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-2026")
 app.register_blueprint(dashboard_bp)
 
@@ -181,12 +187,15 @@ def ejecutar_accion(accion, datos, numero):
                 _c.commit()
                 _c.close()
                 return f'\U0001fa91 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
-            elif _op == 2:
+            elif _op == 2 and not CANCELAR_EN_CALENDAR:
+                # v2: cuando el bot pueda escribir en Calendar, habilitar esto
                 cancelar_clase(_cid, cancelada_por='profesora')
                 return f'\u2705 Clase de {_nom} del {_fec} cancelada. No se cobra.'
             else:
                 _set_pendiente(numero, pendiente)
-                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+                if CANCELAR_EN_CALENDAR:
+                    return f'Respondé 1 para marcar ausente a {_nom} el {_fec}. Para cancelar, hacelo en Google Calendar.'
+                return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
 
         if "candidatos" not in pendiente:
             return "No tenía candidatos pendientes. \u00bfQué querés hacer?"
@@ -560,10 +569,14 @@ def ejecutar_accion(accion, datos, numero):
             conn.close()
             fecha_txt = f" el {fecha_especifica}" if fecha_especifica else ""
             return f"No encontré ninguna clase cancelada de {alumno['nombre']}{fecha_txt}."
-        conn.execute("UPDATE clases SET estado = 'agendada' WHERE id = ?", (clase["id"],))
+        # Si la fecha ya pasó, reactivar como 'dada', si no como 'agendada'
+        from datetime import date as _date
+        estado_nuevo = 'dada' if clase["fecha"] < hoy.isoformat() else 'agendada'
+        conn.execute("UPDATE clases SET estado = ? WHERE id = ?", (estado_nuevo, clase["id"]))
         conn.commit()
         conn.close()
-        respuesta = f"✅ Clase de {alumno['nombre']} del {clase['fecha']} reactivada. Ahora figura como agendada."
+        estado_txt = "dada" if estado_nuevo == "dada" else "agendada"
+        respuesta = f"✅ Clase de {alumno['nombre']} del {clase['fecha']} reactivada. Ahora figura como {estado_txt}."
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "marcar_ausente":
@@ -611,12 +624,19 @@ def ejecutar_accion(accion, datos, numero):
             'fecha': fecha_fmt,
             'hora_fmt': hora_fmt
         })
-        return (
-            f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
-            f"¿Cómo la registramos?\n"
-            f"1 - Ausente (se cobra igual)\n"
-            f"2 - Cancelada (no se cobra)"
-        )
+        if CANCELAR_EN_CALENDAR:
+            return (
+                f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
+                f"¿Estuvo ausente? Respondé 1 para confirmar (se cobra igual).\n"
+                f"Si querés cancelarla, hacelo en Google Calendar y se va a reflejar en la próxima sincronización."
+            )
+        else:
+            return (
+                f"🪑 {alumno['nombre']} — clase del {fecha_fmt}{hora_fmt}.\n"
+                f"¿Cómo la registramos?\n"
+                f"1 - Ausente (se cobra igual)\n"
+                f"2 - Cancelada (no se cobra)"
+            )
 
     elif accion == "desmarcar_ausente":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
@@ -1307,7 +1327,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
             else:
                 _set_pendiente(numero, _p)
-                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+                return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
 
     if numero in acciones_pendientes and mensaje_entrante.strip().isdigit():
         pendiente = acciones_pendientes[numero]
@@ -1331,7 +1351,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
             else:
                 _set_pendiente(numero, pendiente)
-                return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
+                return f'Respondé 1 para marcar ausente. Para cancelar la clase, hacelo en Google Calendar.' if CANCELAR_EN_CALENDAR else '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
 
         if pendiente.get("accion") == "confirmar_borrado":
             accion = "confirmar_borrado"

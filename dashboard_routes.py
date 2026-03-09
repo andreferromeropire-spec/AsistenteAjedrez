@@ -299,6 +299,31 @@ def api_marcar_ausente():
     return jsonify({'ok': True, 'ausente': nuevo_ausente})
 
 
+@dashboard_bp.route('/dashboard/api/reactivar_clase', methods=['POST'])
+@login_required
+def api_reactivar_clase():
+    data = request.get_json()
+    nombre = data.get('nombre_alumno', '').strip()
+    fecha = data.get('fecha', '').strip()
+    if not nombre or not fecha:
+        return jsonify({'ok': False, 'error': 'Faltan datos'})
+    conn = get_connection()
+    clase = conn.execute("""
+        SELECT c.id, c.fecha FROM clases c
+        JOIN alumnos a ON c.alumno_id = a.id
+        WHERE a.nombre = ? AND c.fecha = ?
+        AND c.estado LIKE 'cancelada%'
+    """, (nombre, fecha)).fetchone()
+    if not clase:
+        conn.close()
+        return jsonify({'ok': False, 'error': f'No se encontró clase cancelada de {nombre} el {fecha}'})
+    estado_nuevo = 'dada' if clase['fecha'] < date.today().isoformat() else 'agendada'
+    conn.execute("UPDATE clases SET estado = ? WHERE id = ?", (estado_nuevo, clase['id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'estado': estado_nuevo})
+
+
 @dashboard_bp.route('/dashboard/api/sincronizar', methods=['POST'])
 @login_required
 def api_sincronizar():
@@ -1254,7 +1279,10 @@ function cargarClases() {
       var ausenteBtn = (c.estado === 'dada')
         ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="'+(c.ausente ? 'Quitar ausencia' : 'Marcar ausente')+'" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0;opacity:'+(c.ausente ? '1' : '0.25')+'">&#x1FA91;</button>'
         : '';
-      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+'</td></tr>';
+      var reactivarBtn = (c.estado && c.estado.indexOf('cancelada') !== -1)
+        ? '<button class="btn-reactivar-clase" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="Reactivar" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0">&#x21A9;</button>'
+        : '';
+      return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+reactivarBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
     document.getElementById('t-clases').innerHTML = html;
   });
@@ -1270,6 +1298,20 @@ function marcarAusenteDashboard(nombre, fecha) {
       cargarClases();
     } else {
       alert('Error: ' + (d.error || 'No se pudo marcar'));
+    }
+  }).catch(function(e){ alert('Error de red: ' + e); });
+}
+
+function reactivarClaseDashboard(nombre, fecha) {
+  fetch('/dashboard/api/reactivar_clase', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.ok) {
+      cargarClases(); cargarTodo();
+    } else {
+      alert('Error: ' + (d.error || 'No se pudo reactivar'));
     }
   }).catch(function(e){ alert('Error de red: ' + e); });
 }
@@ -1518,6 +1560,12 @@ document.addEventListener('click', function(e) {
     var pagoId = btn.getAttribute('data-pago-id');
     var resumen = decodeURIComponent(btn.getAttribute('data-resumen') || '');
     borrarPagoDirecto(pagoId, resumen);
+    return;
+  }
+  if (btn.classList.contains('btn-reactivar-clase')) {
+    var nombre = btn.getAttribute('data-nombre');
+    var fecha = btn.getAttribute('data-fecha');
+    reactivarClaseDashboard(nombre, fecha);
     return;
   }
   if (btn.classList.contains('btn-marcar-ausente')) {
