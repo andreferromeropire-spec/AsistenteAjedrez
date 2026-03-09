@@ -920,7 +920,7 @@ tr:hover td{background:var(--gold-dim)}
               <div>
                 <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.3rem">Moneda</label>
                 <select id="modal-moneda" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.5rem 0.75rem;border-radius:4px;font-family:'DM Sans',sans-serif;font-size:0.83rem;outline:none">
-                  <option>Dólar</option><option>Libra Esterlina</option><option>Pesos</option>
+                  <option>Dólar</option><option>Libra Esterlina</option><option>ARS$</option>
                 </select>
               </div>
               <div>
@@ -1194,7 +1194,7 @@ function cargarResumen() {
     document.getElementById('m-canceladas').textContent = d.clases_canceladas;
     document.getElementById('m-usd').textContent = d.pagos['Dolar'] ? '$'+fmt(d.pagos['Dolar']) : (d.pagos['D\u00f3lar'] ? '$'+fmt(d.pagos['D\u00f3lar']) : '-');
     document.getElementById('m-gbp').textContent = d.pagos['Libra Esterlina'] ? '\u00a3'+fmt(d.pagos['Libra Esterlina']) : '-';
-    document.getElementById('m-ars').textContent = d.pagos['Pesos'] ? '$'+fmt(d.pagos['Pesos']) : '-';
+    document.getElementById('m-ars').textContent = d.pagos['ARS$'] ? '$'+fmt(d.pagos['ARS$']) : '-';
   });
 }
 
@@ -1279,7 +1279,7 @@ function cargarPagos() {
     var monedas = {};
     var html = datos.length ? datos.map(function(p) {
       monedas[p.moneda] = (monedas[p.moneda]||0) + p.monto;
-      var simM = p.moneda === 'Libra Esterlina' ? '\u00a3' : (p.moneda === 'Pesos' ? 'AR$' : '$');
+      var simM = p.moneda === 'Libra Esterlina' ? '\u00a3' : (p.moneda === 'ARS$' ? 'AR\u0024' : '$');
       var rep = (p.representante && p.representante !== '-') ? '<br><span style="color:var(--text-muted);font-size:0.75rem">'+p.representante+'</span>' : '';
       var np = p.nombre.replace(/"/g, '&quot;');
       var sim = p.moneda === 'Libra Esterlina' ? 'GBP' : p.moneda;
@@ -1746,7 +1746,7 @@ function abrirFormularioSemana(si, key) {
   document.querySelectorAll('.cobros-sem-form').forEach(function(f){ f.style.display = 'none'; });
   var grp = semanas_data[key];
   var totalItems = Object.values(grp.grupos).reduce(function(s,g){ return s + g.items.length; }, 0);
-  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
+  var monedaOptions = ['D\u00f3lar','Libra Esterlina','ARS$'].map(function(m){
     var firstGrp = Object.values(grp.grupos)[0];
     return '<option' + (firstGrp && m === firstGrp.moneda ? ' selected' : '') + '>' + m + '</option>';
   }).join('');
@@ -1913,7 +1913,7 @@ function abrirPago(gi, noCloseOthers) {
   var metodosOptions = ['Wise','PayPal','Transferencia nacional'].map(function(m){
     return '<option' + (m===g.metodo_pago?' selected':'') + '>' + m + '</option>';
   }).join('');
-  var monedaOptions = ['D\u00f3lar','Libra Esterlina','Pesos'].map(function(m){
+  var monedaOptions = ['D\u00f3lar','Libra Esterlina','ARS$'].map(function(m){
     return '<option' + (m===g.moneda?' selected':'') + '>' + m + '</option>';
   }).join('');
   var formHtml = '<div style="display:flex;flex-direction:column;gap:0.75rem;width:100%">'

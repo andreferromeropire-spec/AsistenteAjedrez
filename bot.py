@@ -846,7 +846,7 @@ def ejecutar_accion(accion, datos, numero):
 
         meses_es = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                     7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
-        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$"}
 
         def formatear_promo(rangos):
             if not rangos:
@@ -1160,7 +1160,7 @@ def ejecutar_accion(accion, datos, numero):
         if not pagos:
             return f"{alumno['nombre']} no tiene pagos registrados."
 
-        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "Pesos": "$"}
+        simbolos = {"Dólar": "$", "Libra Esterlina": "£", "ARS$": "AR$"}
         lista = []
         conn_h = __import__("database").get_connection()
         for i, p in enumerate(pagos):

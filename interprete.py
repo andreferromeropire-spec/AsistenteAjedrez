@@ -29,9 +29,9 @@ Las acciones posibles son:
 
 1. "registrar_pago" - cuando alguien pagó o pago (sin tilde también)
    Ejemplos: "jeff pagó", "jeff pago", "pagó lucas", "pago de isabella"
-   datos necesarios: nombre_alumno, monto, moneda (Dólar/Pesos/Libra Esterlina), metodo (Wise/PayPal/Transferencia nacional), notas (opcional)
+   datos necesarios: nombre_alumno, monto, moneda (Dólar/ARS$/Libra Esterlina), metodo (Wise/PayPal/Transferencia nacional), notas (opcional)
    Para la moneda, convertí siempre al nombre interno:
-   - "pesos", "ARS", "pesos argentinos", "$" → "Pesos"
+   - "pesos", "ARS", "pesos argentinos", "$" → "ARS$"
    - "dólares", "dólar", "USD", "usd", "dolares" → "Dólar"
    - "libras", "libra", "GBP", "pounds", "£" → "Libra Esterlina"
    Si no se menciona moneda, dejá el campo vacío (no lo inventes).
