@@ -84,6 +84,22 @@ def historial_de_pagos_alumno(alumno_id):
 
 # Devuelve los últimos N pagos de un alumno con detalle suficiente
 # para que el bot pueda mostrarlos numerados y el usuario elija cuál borrar
+def pagos_del_mes_alumno(alumno_id, mes=None, anio=None):
+    from datetime import date
+    hoy = date.today()
+    mes = mes or hoy.month
+    anio = anio or hoy.year
+    conn = get_connection()
+    pagos = conn.execute(        """SELECT id, fecha, monto, moneda, metodo, notas
+        FROM pagos
+        WHERE alumno_id = ?
+        AND strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?
+        ORDER BY fecha DESC, id DESC""",
+        (alumno_id, f"{mes:02d}", str(anio))
+    ).fetchall()
+    conn.close()
+    return pagos
+
 def historial_reciente_alumno(alumno_id, limite=5):
     conn = get_connection()
     cursor = conn.cursor()
