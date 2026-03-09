@@ -550,34 +550,31 @@ def ejecutar_accion(accion, datos, numero):
         )
 
     elif accion == "reactivar_clase":
+        # v1: Google Calendar es la fuente de verdad — modificar la clase directamente ahí
+        # v2: cuando el bot tenga escritura en Calendar, descomentar el bloque de abajo
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
-        fecha_especifica = datos.get("fecha")
-        conn = __import__('database').get_connection()
-        if fecha_especifica:
-            clase = conn.execute(
-                "SELECT id, fecha FROM clases WHERE alumno_id = ? AND fecha = ? AND estado LIKE 'cancelada%'",
-                (alumno["id"], fecha_especifica)
-            ).fetchone()
-        else:
-            clase = conn.execute(
-                "SELECT id, fecha FROM clases WHERE alumno_id = ? AND estado LIKE 'cancelada%' ORDER BY fecha DESC LIMIT 1",
-                (alumno["id"],)
-            ).fetchone()
-        if not clase:
-            conn.close()
-            fecha_txt = f" el {fecha_especifica}" if fecha_especifica else ""
-            return f"No encontré ninguna clase cancelada de {alumno['nombre']}{fecha_txt}."
-        # Si la fecha ya pasó, reactivar como 'dada', si no como 'agendada'
-        from datetime import date as _date
-        estado_nuevo = 'dada' if clase["fecha"] < hoy.isoformat() else 'agendada'
-        conn.execute("UPDATE clases SET estado = ? WHERE id = ?", (estado_nuevo, clase["id"]))
-        conn.commit()
-        conn.close()
-        estado_txt = "dada" if estado_nuevo == "dada" else "agendada"
-        respuesta = f"✅ Clase de {alumno['nombre']} del {clase['fecha']} reactivada. Ahora figura como {estado_txt}."
-        return (aviso + "\n" + respuesta) if aviso else respuesta
+        nombre = alumno['nombre'] if alumno else datos.get("nombre_alumno", "la clase")
+        return (
+            f"Para reactivar la clase de {nombre}, modificala directamente en Google Calendar. "
+            f"En la próxima sincronización se va a reflejar automáticamente. 📅"
+        )
+        # ── v2 (descomentar cuando haya escritura en Calendar) ──────────
+        # if not alumno: return aviso
+        # fecha_especifica = datos.get("fecha")
+        # conn = __import__('database').get_connection()
+        # clase = conn.execute(
+        #     "SELECT id, fecha FROM clases WHERE alumno_id = ? AND fecha = ? AND estado LIKE 'cancelada%'",
+        #     (alumno["id"], fecha_especifica)
+        # ).fetchone() if fecha_especifica else conn.execute(
+        #     "SELECT id, fecha FROM clases WHERE alumno_id = ? AND estado LIKE 'cancelada%' ORDER BY fecha DESC LIMIT 1",
+        #     (alumno["id"],)
+        # ).fetchone()
+        # if not clase: conn.close(); return f"No encontré clase cancelada de {alumno['nombre']}."
+        # estado_nuevo = 'dada' if clase['fecha'] < hoy.isoformat() else 'agendada'
+        # conn.execute("UPDATE clases SET estado = ? WHERE id = ?", (estado_nuevo, clase['id']))
+        # conn.commit(); conn.close()
+        # return f"✅ Clase de {alumno['nombre']} del {clase['fecha']} reactivada como {estado_nuevo}."
+        # ────────────────────────────────────────────────────────────────
 
     elif accion == "marcar_ausente":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
@@ -672,30 +669,33 @@ def ejecutar_accion(accion, datos, numero):
 
 
     elif accion == "reprogramar_clase":
+        # v1: Google Calendar es la fuente de verdad — reprogramar directamente ahí
+        # v2: cuando el bot tenga escritura en Calendar, descomentar el bloque de abajo
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
-        fecha_original = datos.get("fecha_original")
-        nueva_fecha = datos.get("nueva_fecha")
-        nueva_hora = datos.get("nueva_hora")
-        if not fecha_original or not nueva_fecha:
-            return "Necesito la fecha original y la nueva fecha para reprogramar."
-        conn = __import__('database').get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id FROM clases
-            WHERE alumno_id = ? AND fecha = ? AND estado = 'agendada'
-        """, (alumno["id"], fecha_original))
-        clase = cursor.fetchone()
-        conn.close()
-        if not clase:
-            return f"No encontré una clase agendada de {alumno['nombre']} el {fecha_original}."
-        reprogramar_clase(clase["id"], nueva_fecha, nueva_hora)
-        respuesta = f"✅ Clase de {alumno['nombre']} reprogramada del {fecha_original} al {nueva_fecha}"
-        if nueva_hora:
-            respuesta += f" a las {nueva_hora}"
-        respuesta += "."
-        return (aviso + "\n" + respuesta) if aviso else respuesta
+        nombre = alumno['nombre'] if alumno else datos.get("nombre_alumno", "la clase")
+        return (
+            f"Para reprogramar la clase de {nombre}, modificala directamente en Google Calendar. "
+            f"En la próxima sincronización se va a reflejar automáticamente. 📅"
+        )
+        # ── v2 (descomentar cuando haya escritura en Calendar) ──────────
+        # if not alumno: return aviso
+        # fecha_original = datos.get("fecha_original")
+        # nueva_fecha = datos.get("nueva_fecha")
+        # nueva_hora = datos.get("nueva_hora")
+        # if not fecha_original or not nueva_fecha:
+        #     return "Necesito la fecha original y la nueva fecha para reprogramar."
+        # conn = __import__('database').get_connection()
+        # clase = conn.execute(
+        #     "SELECT id FROM clases WHERE alumno_id = ? AND fecha = ? AND estado = 'agendada'",
+        #     (alumno["id"], fecha_original)
+        # ).fetchone()
+        # conn.close()
+        # if not clase: return f"No encontré clase agendada de {alumno['nombre']} el {fecha_original}."
+        # reprogramar_clase(clase["id"], nueva_fecha, nueva_hora)
+        # respuesta = f"✅ Reprogramada del {fecha_original} al {nueva_fecha}"
+        # if nueva_hora: respuesta += f" a las {nueva_hora}"
+        # return (aviso + "\n" + respuesta + ".") if aviso else respuesta + "."
+        # ────────────────────────────────────────────────────────────────
 
     elif accion == "alumno_nuevo":
         existentes = buscar_alumno_por_nombre(datos.get("nombre", ""))
