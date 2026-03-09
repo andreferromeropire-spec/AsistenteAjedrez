@@ -61,6 +61,12 @@ Las acciones posibles son:
               "ilay no estuvo ausente el 2", "ilay si estuvo la clase del 2",
               "ilay sí asistió", "error, henry sí vino"
 
+4d. "reactivar_clase" - para revertir una cancelación registrada por error (la clase SÍ se va a dar o se dio)
+    datos necesarios: nombre_alumno, fecha (YYYY-MM-DD, opcional)
+    Ejemplos: "reactivá la clase de jeff del 10 de marzo", "jeff no canceló",
+              "quita la cancelación de henry el 5", "la clase de jeff del 10 no estaba cancelada",
+              "error, jeff sí tiene clase el 17", "reactivar clase jeff"
+
 5. "quien_debe" - quiere saber quién no pagó este mes
    datos necesarios: ninguno
 

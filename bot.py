@@ -369,7 +369,7 @@ def ejecutar_accion(accion, datos, numero):
             """, (alumno["id"], f"{mes_pago:02d}", str(anio_pago)))
         elif modalidad == "Semanal":
             # Semanal: una clase por vez, del mes actual por defecto
-            # Si el usuario especificó una fecha, tomar esa clase específica
+            # Si especificó fecha, buscar esa clase específica
             fecha_especifica = datos.get("fecha")
             if fecha_especifica:
                 cursor.execute("""
@@ -534,20 +534,36 @@ def ejecutar_accion(accion, datos, numero):
 
     elif accion == "cancelar_clase":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
+        nombre = alumno['nombre'] if alumno else datos.get("nombre_alumno", "el alumno")
+        return (
+            f"Para cancelar la clase de {nombre}, hacelo directamente en Google Calendar. "
+            f"En la próxima sincronización, el sistema lo va a reflejar automáticamente. \U0001f4c5"
+        )
+
+    elif accion == "reactivar_clase":
+        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
             return aviso
-        from clases import proximas_clases_alumno
-        proximas = proximas_clases_alumno(alumno["id"])
-        if not proximas:
-            return f"No encontré clases agendadas para {alumno['nombre']}."
-        clase = proximas[0]
-        resultado = cancelar_clase(clase["id"], cancelada_por=datos.get("cancelada_por", "alumno"))
-        mensajes = {
-            "cancelada_con_anticipacion": f"✅ Clase de {alumno['nombre']} cancelada. Avisó a tiempo, queda como crédito.",
-            "cancelada_sin_anticipacion": f"⚠️ Clase de {alumno['nombre']} cancelada. No avisó a tiempo, se cobra igual.",
-            "cancelada_por_profesora": f"✅ Clase de {alumno['nombre']} cancelada por vos. No se cobra."
-        }
-        respuesta = mensajes.get(resultado, "Clase cancelada.")
+        fecha_especifica = datos.get("fecha")
+        conn = __import__('database').get_connection()
+        if fecha_especifica:
+            clase = conn.execute(
+                "SELECT id, fecha FROM clases WHERE alumno_id = ? AND fecha = ? AND estado LIKE 'cancelada%'",
+                (alumno["id"], fecha_especifica)
+            ).fetchone()
+        else:
+            clase = conn.execute(
+                "SELECT id, fecha FROM clases WHERE alumno_id = ? AND estado LIKE 'cancelada%' ORDER BY fecha DESC LIMIT 1",
+                (alumno["id"],)
+            ).fetchone()
+        if not clase:
+            conn.close()
+            fecha_txt = f" el {fecha_especifica}" if fecha_especifica else ""
+            return f"No encontré ninguna clase cancelada de {alumno['nombre']}{fecha_txt}."
+        conn.execute("UPDATE clases SET estado = 'agendada' WHERE id = ?", (clase["id"],))
+        conn.commit()
+        conn.close()
+        respuesta = f"✅ Clase de {alumno['nombre']} del {clase['fecha']} reactivada. Ahora figura como agendada."
         return (aviso + "\n" + respuesta) if aviso else respuesta
 
     elif accion == "marcar_ausente":
