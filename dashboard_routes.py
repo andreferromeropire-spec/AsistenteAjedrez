@@ -1497,7 +1497,15 @@ function cargarGraficos() {
       options: {
         responsive: true,
         plugins: {
-          legend: { labels: { color: tickColor, font: { size: 11 } } },
+          legend: {
+            labels: { color: tickColor, font: { size: 11 } },
+            onClick: function(e, item, legend) {
+              var chart = legend.chart;
+              var idx = item.datasetIndex;
+              chart.data.datasets.forEach(function(ds, i) { ds.hidden = (i !== idx); });
+              chart.update();
+            }
+          },
           tooltip: { callbacks: { title: function(){ return 'Ingresos en USD equivalente' + notaBlu; } } }
         },
         scales: {
