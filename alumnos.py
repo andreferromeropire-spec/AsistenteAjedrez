@@ -80,26 +80,25 @@ def buscar_alumno_con_sugerencia(nombre):
     if resultado:
         return resultado, None
 
-    # 3. Búsqueda difusa: compara contra nombres Y representantes
+    # 3. Búsqueda difusa: primero nombres de alumnos, luego representantes
     todos = obtener_todos_los_alumnos()
     
-    # Armar lista de todos los nombres posibles (alumno + representante)
     nombres_alumnos = [a['nombre'] for a in todos]
     representantes = list({a['representante'] for a in todos 
                            if a['representante'] and a['representante'].strip() not in ('', '-')})
-    
-    # Buscar en representantes primero (cutoff más bajo para nombres propios)
-    sugerencias_rep = get_close_matches(nombre, representantes, n=1, cutoff=0.4)
-    if sugerencias_rep:
-        resultado = buscar_alumno_por_representante(sugerencias_rep[0])
-        if resultado:
-            return resultado, sugerencias_rep
 
-    # Buscar en nombres de alumnos
+    # Buscar en nombres de alumnos primero (prioridad más alta)
     sugerencias = get_close_matches(nombre, nombres_alumnos, n=3, cutoff=0.4)
     if sugerencias:
         mejor = buscar_alumno_por_nombre(sugerencias[0])
         return mejor, sugerencias
+
+    # Solo si no hay match en nombres, buscar en representantes (cutoff más alto para evitar falsos positivos)
+    sugerencias_rep = get_close_matches(nombre, representantes, n=1, cutoff=0.6)
+    if sugerencias_rep:
+        resultado = buscar_alumno_por_representante(sugerencias_rep[0])
+        if resultado:
+            return resultado, sugerencias_rep
 
     return [], None
 
