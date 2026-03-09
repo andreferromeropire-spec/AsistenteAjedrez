@@ -235,13 +235,13 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - **B11**: Pago del mes incluye clases ya dadas (query con estado agendada o dada)
 - **B8**: Monto por clase según combo/suelta al cambiar cantidad; flechita step 1
 - **F1**: Instrucción "T para todos" y "varios por coma" en mensaje de borrar pagos
+- **B1**: Cobros 2–3 clases usan primer rango; aviso promo solo si monto no está en la lista
 
 ### 🐛 Bugs pendientes
 
 | ID | Descripción | Archivo |
 |---|---|---|
-| B1 | En algunos alumnos, al cambiar la cantidad de clases en cobros asigna 2–3 clases al último precio (ej. John: 1–3 $35, 4–6 $32, 7+ $30; con 2 o 3 salta a $30). | `dashboard_routes.py` |
-| F1 | Borrar pagos múltiples desde bot ("T", "1,2", "2 3") — implementado pero roto: la lista ya no muestra T/todos ni permite elegir más de uno | `bot.py` | Borrar pagos múltiples desde bot ("T", "1,2", "2 3") — **implementado pero roto**: la lista de opciones ya no muestra T/todos ni permite elegir más de uno | `bot.py` |
+| F1 | Borrar pagos múltiples desde bot: lista debe mostrar opción "T. Todos" y aceptar varios números | `bot.py` |
 
 ### ✨ Features pendientes
 

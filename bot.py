@@ -1109,6 +1109,8 @@ def ejecutar_accion(accion, datos, numero):
         }
         texto = f"Últimos pagos de {alumno['nombre']}:\n" + "\n".join(lista)
         texto += "\n0. Cancelar (no borrar nada)"
+        if len(pagos) > 1:
+            texto += "\nT. Todos (borrar los " + str(len(pagos)) + ")"
         texto += "\n\nRespondé con el número, varios separados por coma o espacio, o T para todos."
         return (aviso + "\n" + texto) if aviso else texto
 
