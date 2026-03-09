@@ -1111,7 +1111,7 @@ def ejecutar_accion(accion, datos, numero):
         texto += "\n0. Cancelar (no borrar nada)"
         if len(pagos) > 1:
             texto += "\nT. Todos (borrar los " + str(len(pagos)) + ")"
-        texto += "\n\nRespondé con el número, varios separados por coma o espacio, o T para todos."
+        texto += "\n\nRespondé con el número (por ahora solo uno por vez). Desde el dashboard podés borrar más de uno a la vez."
         return (aviso + "\n" + texto) if aviso else texto
 
     elif accion == "ignorar_evento":

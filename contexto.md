@@ -239,9 +239,15 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 
 ### 🐛 Bugs pendientes
 
-| ID | Descripción | Archivo |
+_(ninguno)_
+
+### ⚠️ Limitaciones conocidas
+
+| ID | Descripción | Alternativa |
 |---|---|---|
-| F1 | Borrar pagos múltiples desde bot: lista debe mostrar opción "T. Todos" y aceptar varios números | `bot.py` |
+| F1 | Desde el bot (WhatsApp) solo se puede borrar **un pago a la vez**; "T" o "2 3" no se procesan. | Desde el dashboard podés borrar varios a la vez (checkboxes en la pestaña Pagos). |
+
+**Causa técnica (F1):** El estado pendiente se guarda en DB con la clave `numero` (From de Twilio). Al responder "T" o "2 3", en la segunda request esa clave no coincide (Twilio puede enviar From con formato distinto entre mensajes), así que no se encuentra el pendiente y el mensaje cae en el intérprete → "No entendí bien". Se probó normalizar el número (quitar `whatsapp:`, canonizar a `+digits`); si en tu entorno From sigue variando, habría que buscar el pendiente por otro criterio (ej. última actividad por número sin importar formato) o unificar From del lado de Twilio.
 
 ### ✨ Features pendientes
 
