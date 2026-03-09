@@ -1405,7 +1405,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
 
 
 def _normalizar_numero(numero):
-    """Unifica formato del número (ej. whatsapp:+54911... → +54911...) para que pendientes coincidan."""
+    """Unifica formato del número para que pendientes coincidan entre requests (Twilio puede enviar From distinto)."""
     if not numero or numero == "desconocido":
         return numero
     s = str(numero).strip()
@@ -1413,6 +1413,9 @@ def _normalizar_numero(numero):
         if s.lower().startswith(prefijo):
             s = s[len(prefijo) :].strip()
             break
+    digitos = "".join(c for c in s if c.isdigit())
+    if digitos:
+        return "+" + digitos
     return s or numero
 
 
