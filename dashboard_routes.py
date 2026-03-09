@@ -1279,9 +1279,7 @@ function cargarClases() {
       var ausenteBtn = (c.estado === 'dada')
         ? '<button class="btn-marcar-ausente" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="'+(c.ausente ? 'Quitar ausencia' : 'Marcar ausente')+'" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0;opacity:'+(c.ausente ? '1' : '0.25')+'">&#x1FA91;</button>'
         : '';
-      var reactivarBtn = (c.estado && c.estado.indexOf('cancelada') !== -1)
-        ? '<button class="btn-reactivar-clase" data-nombre="'+c.nombre.replace(/"/g,'&quot;')+'" data-fecha="'+c.fecha+'" title="Reactivar" style="background:none;border:none;cursor:pointer;font-size:1rem;padding:0">&#x21A9;</button>'
-        : '';
+      var reactivarBtn = ''; // v2: reactivar desde Calendar
       return '<tr><td>'+c.fecha+'</td><td>'+(c.hora||'-')+'</td><td><strong>'+c.nombre+'</strong></td><td>'+estadoBadge(c.estado)+'</td><td style="text-align:center">'+pagoBadge+'</td><td>'+(c.pais||'-')+'</td><td style="text-align:center">'+ausenteBtn+reactivarBtn+'</td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Sin clases en este periodo</td></tr>';
     document.getElementById('t-clases').innerHTML = html;
@@ -1302,18 +1300,9 @@ function marcarAusenteDashboard(nombre, fecha) {
   }).catch(function(e){ alert('Error de red: ' + e); });
 }
 
+// v2: reactivarClaseDashboard — se implementa cuando el bot pueda escribir en Calendar
 function reactivarClaseDashboard(nombre, fecha) {
-  fetch('/dashboard/api/reactivar_clase', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nombre_alumno: nombre, fecha: fecha})
-  }).then(function(r){ return r.json(); }).then(function(d) {
-    if (d.ok) {
-      cargarClases(); cargarTodo();
-    } else {
-      alert('Error: ' + (d.error || 'No se pudo reactivar'));
-    }
-  }).catch(function(e){ alert('Error de red: ' + e); });
+  alert('Para reactivar esta clase, modificala en Google Calendar. En la pr\u00f3xima sincronizaci\u00f3n se va a reflejar autom\u00e1ticamente.');
 }
 
 function cargarPagos() {

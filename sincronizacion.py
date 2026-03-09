@@ -210,6 +210,15 @@ def sincronizacion_diaria(mes=None, anio=None, enviar_whatsapp=True, es_sync_noc
     mes = mes or hoy.month
     anio = anio or hoy.year
 
+    # Marcar como 'dada' todas las clases cuya fecha ya pasó y siguen en 'agendada'
+    conn_fix = get_connection()
+    conn_fix.execute(
+        "UPDATE clases SET estado = 'dada' WHERE estado = 'agendada' AND fecha < ?",
+        (hoy.isoformat(),)
+    )
+    conn_fix.commit()
+    conn_fix.close()
+
     cambios = detectar_cambios(mes, anio)
     total = len(cambios["nuevos"]) + len(cambios["cancelados"]) + len(cambios["modificados"])
 
