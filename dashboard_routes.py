@@ -2021,6 +2021,8 @@ function calcularPrecioDesdeRangos(rangos, nClases) {
     if (hastaVal < d) hastaVal = Infinity;
     if (!isNaN(d) && n >= d && n <= hastaVal) return getPrecio(ordenados[i]);
   }
+  var desdeSiguiente = ordenados.length > 1 ? getDesde(ordenados[1]) : Infinity;
+  if (n < desdeSiguiente) return getPrecio(ordenados[0]);
   return getPrecio(ordenados[ordenados.length - 1]);
 }
 
@@ -2084,7 +2086,9 @@ function abrirPago(gi, noCloseOthers) {
     var nC = parseInt(inputClases.value) || 1;
     if (!precio || !g.rangos || !g.rangos.length) { avisoEl.style.display = 'none'; return; }
     var precioEsperado = tipo === 'suelta' ? g.precio_suelta : calcularPrecioDesdeRangos(g.rangos, nC);
-    if (precioEsperado && Math.abs(precio - precioEsperado) > 0.01) {
+    var preciosEnPromo = g.rangos.map(function(r) { return Number(r.precio !== undefined ? r.precio : r.precio_por_clase); });
+    var estaEnPromo = preciosEnPromo.some(function(p) { return Math.abs(precio - p) < 0.01; });
+    if (precioEsperado && Math.abs(precio - precioEsperado) > 0.01 && !estaEnPromo) {
       avisoEl.style.display = 'inline';
     } else {
       avisoEl.style.display = 'none';
