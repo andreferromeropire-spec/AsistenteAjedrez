@@ -136,7 +136,7 @@ def desactivar_alumno(alumno_id):
 def borrar_alumno_definitivo(alumno_id):
     conn = get_connection()
     cursor = conn.cursor()
-    # Borramos también sus clases y pagos para no dejar datos huérfanos
+    # Borramos también  sus clases y pagos para no dejar datos huérfanos
     cursor.execute("DELETE FROM clases WHERE alumno_id = ?", (alumno_id,))
     cursor.execute("DELETE FROM pagos WHERE alumno_id = ?", (alumno_id,))
     cursor.execute("DELETE FROM promociones WHERE alumno_id = ?", (alumno_id,))
