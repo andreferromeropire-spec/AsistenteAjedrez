@@ -462,11 +462,33 @@ def api_grafico_anual():
     return jsonify(resultado)
 
 
+def _tasas_usd():
+    """Tasas para convertir a USD: dolar blue ARS (cuántos pesos por 1 USD), GBP a USD."""
+    dolar_blu = float(os.environ.get("DOLAR_BLU_ARS", "1200"))
+    gbp_usd = float(os.environ.get("TASA_GBP_USD", "1.27"))
+    return dolar_blu, gbp_usd
+
+
+def _convertir_a_usd(monto, moneda, dolar_blu, gbp_usd):
+    """Convierte monto a USD según la moneda. Dólar=1, Libra=gbp_usd, Pesos/ARS=1/dolar_blu."""
+    if moneda is None:
+        return 0.0
+    m = str(moneda).strip().lower()
+    if "dólar" in m or "dolar" in m or m == "usd":
+        return float(monto)
+    if "libra" in m or m == "gbp":
+        return float(monto) * gbp_usd
+    if "peso" in m or "ars" in m or m == "ars$":
+        return float(monto) / dolar_blu if dolar_blu else 0.0
+    return float(monto)
+
+
 @dashboard_bp.route('/dashboard/api/ingresos_anuales')
 @login_required
 def api_ingresos_anuales():
-    """Ingresos mensuales por moneda para todo el año."""
+    """Ingresos mensuales convertidos a USD (dolar blue para ARS) + por moneda en USD."""
     anio = int(request.args.get('anio', date.today().year))
+    dolar_blu, gbp_usd = _tasas_usd()
     conn = get_connection()
     filas = conn.execute("""
         SELECT strftime('%m', fecha) as mes, moneda, SUM(monto) as total
@@ -476,14 +498,24 @@ def api_ingresos_anuales():
         ORDER BY mes
     """, (str(anio),)).fetchall()
     conn.close()
-    # Organizar por moneda → array de 12 valores
-    monedas = {}
+    monedas_raw = {}
     for r in filas:
         m = r['moneda']
-        if m not in monedas:
-            monedas[m] = [0] * 12
-        monedas[m][int(r['mes']) - 1] = r['total']
-    return jsonify(monedas)
+        if m not in monedas_raw:
+            monedas_raw[m] = [0.0] * 12
+        monedas_raw[m][int(r['mes']) - 1] = float(r['total'])
+    por_moneda_usd = {}
+    total_usd = [0.0] * 12
+    for moneda, valores in monedas_raw.items():
+        en_usd = [_convertir_a_usd(v, moneda, dolar_blu, gbp_usd) for v in valores]
+        por_moneda_usd[moneda] = en_usd
+        for i in range(12):
+            total_usd[i] += en_usd[i]
+    return jsonify({
+        "total_usd": [round(x, 2) for x in total_usd],
+        "por_moneda_usd": {k: [round(x, 2) for x in v] for k, v in por_moneda_usd.items()},
+        "dolar_blu_ars": dolar_blu
+    })
 
 
 @dashboard_bp.route('/dashboard/api/clases_sin_pagar')
@@ -1019,7 +1051,10 @@ tr:hover td{background:var(--gold-dim)}
             <canvas id="chart-anual" height="260"></canvas>
           </div>
           <div class="chart-box">
-            <h3>Ingresos mensuales</h3>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.5rem">
+              <h3 style="margin:0">Ingresos mensuales (USD equivalente)</h3>
+              <span id="grafico-ingresos-nota" style="font-size:0.7rem;color:var(--text-muted)"></span>
+            </div>
             <canvas id="chart-ingresos" height="260"></canvas>
           </div>
         </div>
@@ -1442,26 +1477,37 @@ function cargarGraficos() {
       };
     });
   });
-  fetch('/dashboard/api/ingresos_anuales?anio=' + anio).then(function(r){ return r.json(); }).then(function(monedas) {
+  fetch('/dashboard/api/ingresos_anuales?anio=' + anio).then(function(r){ return r.json(); }).then(function(res) {
     if (charts.ingresos) charts.ingresos.destroy();
     var mesesLabel = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    var colores = ['#b48c50','#4a9e7a','#5b8db8'];
-    var datasets = Object.keys(monedas).map(function(moneda, i) {
-      return { label: moneda, data: monedas[moneda] || [], borderColor: colores[i % colores.length], backgroundColor: 'transparent', borderWidth: 2, fill: false, tension: 0.2 };
+    var totalUsd = res.total_usd || [];
+    var porMoneda = res.por_moneda_usd || {};
+    var colores = ['#b48c50','#4a9e7a','#5b8db8','#9b7fc8'];
+    var datasets = [{ label: 'Total (USD est.)', data: totalUsd, borderColor: '#b48c50', backgroundColor: 'rgba(180,140,80,0.15)', borderWidth: 3, fill: true, tension: 0.2 }];
+    var idx = 1;
+    Object.keys(porMoneda).forEach(function(moneda) {
+      datasets.push({ label: moneda + ' (USD)', data: porMoneda[moneda] || [], borderColor: colores[idx % colores.length], backgroundColor: 'transparent', borderWidth: 2, borderDash: [4,2], fill: false, tension: 0.2, hidden: true });
+      idx++;
     });
-    if (datasets.length === 0) datasets = [{ label: 'Sin datos', data: [0,0,0,0,0,0,0,0,0,0,0,0], borderColor: tickColor, borderWidth: 1 }];
+    if (datasets.length === 1 && totalUsd.every(function(x){ return x === 0; })) datasets = [{ label: 'Sin datos', data: [0,0,0,0,0,0,0,0,0,0,0,0], borderColor: tickColor, borderWidth: 1 }];
+    var notaBlu = res.dolar_blu_ars ? ' (ARS con dolar blue ref. ' + res.dolar_blu_ars + ')' : '';
     charts.ingresos = new Chart(document.getElementById('chart-ingresos').getContext('2d'), {
       type: 'line',
       data: { labels: mesesLabel, datasets: datasets },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: tickColor, font: { size: 11 } } } },
+        plugins: {
+          legend: { labels: { color: tickColor, font: { size: 11 } } },
+          tooltip: { callbacks: { title: function(){ return 'Ingresos en USD equivalente' + notaBlu; } } }
+        },
         scales: {
           x: { ticks: { color: tickColor, maxRotation: 0 }, grid: { color: gridColor } },
           y: { ticks: { color: tickColor }, grid: { color: gridColor } }
         }
       }
     });
+    var notaEl = document.getElementById('grafico-ingresos-nota');
+    if (notaEl) notaEl.textContent = 'Todo en USD. ARS convertido con dolar blue (DOLAR_BLU_ARS).';
   });
 }
 

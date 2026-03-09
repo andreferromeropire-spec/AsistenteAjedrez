@@ -220,6 +220,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - A veces cambios solo en `dashboard_routes.py` no triggean deploy → agregar comentario en `bot.py` para forzarlo
 - DB SQLite en volumen montado en `/data`
 - Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN_JSON`, `ANTHROPIC_API_KEY`, `TWILIO_*`
+- Gráfico ingresos en USD: `DOLAR_BLU_ARS` (cuántos pesos por 1 USD, ej. 1200), `TASA_GBP_USD` (ej. 1.27). Si no se setean, se usan defaults.
 
 ---
 
