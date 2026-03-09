@@ -1938,7 +1938,7 @@ function abrirPago(gi, noCloseOthers) {
     + '<input type="text" class="cobro-notas-input" placeholder="Notas (opcional)" style="flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.38rem 0.6rem;border-radius:4px;font-family:inherit;font-size:0.82rem">'
     + '<span class="cobro-aviso-promo" id="cobro-aviso-' + gi + '" style="color:#c8a94a;font-size:0.75rem;display:none">\u26a0 Precio fuera de promo</span>'
     + '<button class="btn" onclick="confirmarPagoInline(' + gi + ')">\u2713 Confirmar</button>'
-    + '<button class="btn" onclick="document.getElementById(\u0027cobro-form-' + gi + '\u0027).style.display=\u0027none\u0027">Cancelar</button>'
+    + '<button class="btn" onclick="document.getElementById(&quot;cobro-form-' + gi + '&quot;).style.display=&quot;none&quot;">Cancelar</button>'
     + '</div></div>';
   form.innerHTML = formHtml;
   form.style.display = 'flex';
