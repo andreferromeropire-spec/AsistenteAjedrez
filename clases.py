@@ -81,6 +81,26 @@ def cancelar_clase(clase_id, cancelada_por="alumno"):
     conn.close()
     return estado_final
 
+
+def reactivar_clase(clase_id):
+    """Vuelve a poner una clase cancelada como agendada (para corregir cancelaciones hechas en la DB)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT estado FROM clases WHERE id = ?", (clase_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+    cursor.execute("""
+        UPDATE clases
+        SET estado = 'agendada', cancelada_por = NULL, fecha_cancelacion = NULL
+        WHERE id = ?
+    """, (clase_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
 # Reprograma una clase a nueva fecha y hora
 def reprogramar_clase(clase_id, nueva_fecha, nueva_hora=None):
     conn = get_connection()

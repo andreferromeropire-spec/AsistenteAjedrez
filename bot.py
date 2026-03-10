@@ -149,6 +149,24 @@ def ejecutar_accion(accion, datos, numero):
         numero_opcion = datos.get("numero_opcion")
         nombre_aclaracion = datos.get("nombre_alumno", "")
 
+        # Si el pendiente era "ausente vs cancelar", manejar 1/2 aquí (evita KeyError 'candidatos')
+        if pendiente.get("esperando") == "ausente_o_cancelar":
+            _cid = pendiente.get("clase_id")
+            _nom = pendiente.get("nombre_alumno", "")
+            _fec = pendiente.get("fecha", "")
+            _hor = pendiente.get("hora_fmt", "")
+            del acciones_pendientes[numero]
+            if numero_opcion == 1:
+                conn = __import__("database").get_connection()
+                conn.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (_cid,))
+                conn.commit()
+                conn.close()
+                return f"🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual."
+            if numero_opcion == 2:
+                return "Para cancelar una clase, eliminá el evento en Google Calendar. La sincronización la tomará automáticamente."
+            acciones_pendientes[numero] = pendiente
+            return "1 para ausente (se cobra igual) o 2 para cancelar (no se cobra)."
+
         if "candidatos_custom" in pendiente:
             candidatos = pendiente["candidatos_custom"]
             elegido = None
@@ -1235,9 +1253,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
             elif _t == '2' or 'cancel' in _t:
                 _del_pendiente(numero)
                 return (
-                    "Las cancelaciones solo se hacen desde Google Calendar. "
-                    "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
-                    "el bot tomará la clase como cancelada."
+"Para cancelar una clase, eliminá el evento en Google Calendar. La sincronización la tomará automáticamente."
                 )
             else:
                 _set_pendiente(numero, _p)
@@ -1261,9 +1277,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 return f'🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
             elif _t == '2' or 'cancel' in _t:
                 return (
-                    "Las cancelaciones solo se hacen desde Google Calendar. "
-                    "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
-                    "el bot tomará la clase como cancelada."
+"Para cancelar una clase, eliminá el evento en Google Calendar. La sincronización la tomará automáticamente."
                 )
             else:
                 _set_pendiente(numero, _p)
@@ -1412,9 +1426,7 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 elif opcion == 2:
                     _del_pendiente(numero)
                     return (
-                        "Las cancelaciones solo se hacen desde Google Calendar. "
-                        "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
-                        "el bot tomará la clase como cancelada."
+"Para cancelar una clase, eliminá el evento en Google Calendar. La sincronización la tomará automáticamente."
                     )
                 else:
                     _set_pendiente(numero, pendiente)
