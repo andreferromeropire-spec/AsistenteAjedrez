@@ -684,14 +684,71 @@ def ejecutar_accion(accion, datos, numero):
         return respuesta
 
     elif accion == "clases_del_mes":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
+        from datetime import datetime
+        from clases import clases_del_mes_alumno
+        from alumnos import buscar_alumno_por_representante
+
+        # Lun Mar Mié Jue Vie Sáb Dom (weekday 0=Monday)
+        dias_semana = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
+
+        def linea_clase(fecha, nombre_alumno, estado, pago_id, ausente):
+            wd = datetime.strptime(fecha, "%Y-%m-%d").weekday()
+            dia_num = fecha[8:10]  # 03
+            paga = " ✅" if pago_id else ""
+            if ausente:
+                emoji = "🪑"
+            elif estado == "dada":
+                emoji = "🟢"
+            else:
+                emoji = "🔵"
+            return f"• {emoji} {nombre_alumno} {dias_semana[wd]} {dia_num}{paga}\n"
+
+        nombre_buscado = (datos.get("nombre_alumno") or "").strip()
         hoy = date.today()
-        # Intérprete puede devolver mes/anio null; usar mes actual si faltan o son None
         mes = datos.get("mes") if datos.get("mes") is not None else hoy.month
         anio = datos.get("anio") if datos.get("anio") is not None else hoy.year
         mes, anio = int(mes), int(anio)
+
+        # Si el nombre matchea un representante, mostrar todas las clases de sus representados en orden cronológico (sin preguntar)
+        candidatos = buscar_en_todo(nombre_buscado)
+        nombre_lower = nombre_buscado.lower()
+        rep_candidato = next((c for c in candidatos if c.get("tipo") == "representante" and nombre_lower in c["nombre"].lower()), None)
+
+        if rep_candidato:
+            alumnos_rep = buscar_alumno_por_representante(rep_candidato["nombre"])
+            todas = []
+            for a in alumnos_rep:
+                for c in clases_del_mes_alumno(a["id"], mes, anio):
+                    d = dict(c)
+                    d["alumno_nombre"] = a["nombre"]
+                    todas.append(d)
+            todas.sort(key=lambda x: (x["fecha"], x["hora"] or ""))
+
+            if not todas:
+                return f"{rep_candidato['nombre']} (sus representados) no tiene clases en {mes}/{anio}."
+
+            nombres_rep = " y ".join([a["nombre"] for a in alumnos_rep])
+            respuesta = f"📅 Clases de {rep_candidato['nombre']} ({nombres_rep}) en {mes}/{anio}:\n"
+            pagadas = 0
+            ausentes = 0
+            for clase in todas:
+                if clase.get("pago_id"):
+                    pagadas += 1
+                if clase.get("ausente"):
+                    ausentes += 1
+                respuesta += linea_clase(
+                    clase["fecha"], clase["alumno_nombre"],
+                    clase.get("estado"), clase.get("pago_id"), clase.get("ausente")
+                )
+            resumen = f"Total: {len(todas)} clases ({pagadas} pagas, {len(todas)-pagadas} pendientes)"
+            if ausentes:
+                resumen += f" · {ausentes} ausente(s)"
+            respuesta += f"\n{resumen}"
+            return respuesta
+
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
+        if not alumno:
+            return aviso
         conn = __import__('database').get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -710,18 +767,14 @@ def ejecutar_accion(accion, datos, numero):
         pagadas = 0
         ausentes = 0
         for clase in clases:
-            hora = f" a las {clase['hora']}" if clase['hora'] else ""
-            paga = " ✅" if clase['pago_id'] else ""
             if clase['pago_id']:
                 pagadas += 1
             if clase['ausente']:
                 ausentes += 1
-                emoji = "🪑"
-            elif clase['estado'] == 'dada':
-                emoji = "🟢"
-            else:
-                emoji = "🔵"
-            respuesta += f"• {emoji} {clase['fecha']}{hora}{paga}\n"
+            respuesta += linea_clase(
+                clase['fecha'], alumno['nombre'],
+                clase['estado'], clase['pago_id'], clase['ausente']
+            )
         resumen = f"Total: {len(clases)} clases ({pagadas} pagas, {len(clases)-pagadas} pendientes)"
         if ausentes:
             resumen += f" · {ausentes} ausente(s)"
