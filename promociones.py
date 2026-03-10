@@ -48,7 +48,7 @@ def calcular_monto(alumno_id, cantidad_clases):
     monto_total = precio * cantidad_clases
     return monto_total, precio, moneda
 
-# Cuenta las clases agendadas de un alumno en un mes específico
+# Cuenta las clases a cobrar de un alumno en un mes (agendadas + dadas sin pagar)
 def clases_agendadas_mes(alumno_id, mes, anio):
     conn = get_connection()
     cursor = conn.cursor()
@@ -57,7 +57,8 @@ def clases_agendadas_mes(alumno_id, mes, anio):
         WHERE alumno_id = ?
         AND strftime('%m', fecha) = ?
         AND strftime('%Y', fecha) = ?
-        AND estado = 'agendada'
+        AND (estado = 'agendada' OR estado = 'dada')
+        AND pago_id IS NULL
     """, (alumno_id, f"{mes:02d}", str(anio)))
     resultado = cursor.fetchone()
     conn.close()

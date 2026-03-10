@@ -143,6 +143,22 @@ def proximas_clases_alumno(alumno_id):
     conn.close()
     return clases
 
+# Clases del mes (agendada + dada) para un alumno; sirve para ver representante y cobro
+def clases_del_mes_alumno(alumno_id, mes, anio):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM clases
+        WHERE alumno_id = ?
+        AND strftime('%m', fecha) = ?
+        AND strftime('%Y', fecha) = ?
+        AND (estado = 'agendada' OR estado = 'dada')
+        ORDER BY fecha ASC
+    """, (alumno_id, f"{mes:02d}", str(anio)))
+    clases = cursor.fetchall()
+    conn.close()
+    return clases
+
 # Devuelve cuántas clases quedan en el paquete activo de un alumno.
 # Cuenta las clases agendadas que todavía no se dieron.
 def clases_restantes_paquete(alumno_id):

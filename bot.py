@@ -745,7 +745,7 @@ def ejecutar_accion(accion, datos, numero):
             resumen = resumen_cobro_alumno(alumno['id'], mes, anio)
             if resumen['monto_total'] is None:
                 return f"{alumno['nombre']} no tiene promoción cargada todavía."
-            respuesta = (f"💰 Cobro de {resumen['alumno']} ({mes}/{anio}):\n• Clases agendadas: {resumen['clases_agendadas']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
+            respuesta = (f"💰 Cobro de {resumen['alumno']} ({mes}/{anio}):\n• Clases a cobrar: {resumen['clases_agendadas']}\n• Precio por clase: {resumen['precio_por_clase']} {resumen['moneda']}\n• Total a cobrar: {resumen['monto_total']} {resumen['moneda']}")
             return (aviso + "\n" + respuesta) if aviso else respuesta
         else:
             try:
@@ -758,7 +758,7 @@ def ejecutar_accion(accion, datos, numero):
             return f"No encontré ningún alumno ni representante con el nombre '{nombre}'."
 
     elif accion == "ver_alumno":
-        from clases import proximas_clases_alumno
+        from clases import proximas_clases_alumno, clases_del_mes_alumno
         from promociones import obtener_promo
         from alumnos import buscar_alumno_por_representante, obtener_alumno_por_id
 
@@ -795,8 +795,7 @@ def ejecutar_accion(accion, datos, numero):
             respuesta += formatear_promo(obtener_promo(a0["id"]))
             total_clases = 0
             for a in alumnos_rep:
-                proximas = proximas_clases_alumno(a["id"])
-                clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
+                clases_mes = clases_del_mes_alumno(a["id"], hoy.month, hoy.year)
                 dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
                 respuesta += f"\n{a['nombre']}\nClases {nombre_mes}: {dias or 'sin clases'}\n"
                 total_clases += len(clases_mes)
@@ -817,8 +816,7 @@ def ejecutar_accion(accion, datos, numero):
             respuesta += f"• Alias: {alumno['alias'] or '—'}\n"
             respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n\n"
             respuesta += formatear_promo(obtener_promo(alumno["id"]))
-            proximas = proximas_clases_alumno(alumno["id"])
-            clases_mes = [c for c in proximas if c['fecha'].startswith(f"{hoy.year}-{hoy.month:02d}")]
+            clases_mes = clases_del_mes_alumno(alumno["id"], hoy.month, hoy.year)
             if clases_mes:
                 dias = ", ".join([c['fecha'].split("-")[2] for c in clases_mes])
                 respuesta += f"\n📅 {nombre_mes}: {dias}"
@@ -849,6 +847,12 @@ def ejecutar_accion(accion, datos, numero):
             else:
                 alumno = obtener_alumno_por_id(c["id"])
                 return mostrar_alumno(alumno, hoy)
+
+        # Varios candidatos: si uno es representante y el nombre buscado matchea, mostrar directo (todas las clases de sus representados)
+        nombre_lower = nombre_buscado.strip().lower()
+        for c in candidatos:
+            if c.get("tipo") == "representante" and nombre_lower in c["nombre"].lower():
+                return mostrar_representante(c["nombre"], hoy)
 
         acciones_pendientes[numero] = {
             "accion": accion,
