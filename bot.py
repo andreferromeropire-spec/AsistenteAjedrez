@@ -9,7 +9,7 @@ from interprete import interpretar_mensaje
 from notificaciones import configurar_scheduler
 from alumnos import buscar_alumno_por_nombre, agregar_alumno, buscar_alumno_con_sugerencia
 from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, historial_de_pagos_alumno, historial_reciente_alumno, borrar_pago
-from clases import agendar_clase, cancelar_clase, resumen_clases_alumno_mes, reprogramar_clase
+from clases import agendar_clase, resumen_clases_alumno_mes, reprogramar_clase
 from dashboard_routes import dashboard_bp
 
 from database import crear_tablas
@@ -491,22 +491,11 @@ def ejecutar_accion(accion, datos, numero):
         return respuesta
 
     elif accion == "cancelar_clase":
-        alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
-        if not alumno:
-            return aviso
-        from clases import proximas_clases_alumno
-        proximas = proximas_clases_alumno(alumno["id"])
-        if not proximas:
-            return f"No encontré clases agendadas para {alumno['nombre']}."
-        clase = proximas[0]
-        resultado = cancelar_clase(clase["id"], cancelada_por=datos.get("cancelada_por", "alumno"))
-        mensajes = {
-            "cancelada_con_anticipacion": f"✅ Clase de {alumno['nombre']} cancelada. Avisó a tiempo, queda como crédito.",
-            "cancelada_sin_anticipacion": f"⚠️ Clase de {alumno['nombre']} cancelada. No avisó a tiempo, se cobra igual.",
-            "cancelada_por_profesora": f"✅ Clase de {alumno['nombre']} cancelada por vos. No se cobra."
-        }
-        respuesta = mensajes.get(resultado, "Clase cancelada.")
-        return (aviso + "\n" + respuesta) if aviso else respuesta
+        return (
+            "Las cancelaciones de clases solo se hacen desde Google Calendar. "
+            "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
+            "el bot tomará la clase como cancelada."
+        )
 
     elif accion == "marcar_ausente":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
@@ -1244,8 +1233,12 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 _c.close()
                 return f'🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
             elif _t == '2' or 'cancel' in _t:
-                cancelar_clase(_cid, cancelada_por='profesora')
-                return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
+                _del_pendiente(numero)
+                return (
+                    "Las cancelaciones solo se hacen desde Google Calendar. "
+                    "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
+                    "el bot tomará la clase como cancelada."
+                )
             else:
                 _set_pendiente(numero, _p)
                 return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
@@ -1267,8 +1260,11 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
                 _c.close()
                 return f'🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual.'
             elif _t == '2' or 'cancel' in _t:
-                cancelar_clase(_cid, cancelada_por='profesora')
-                return f'✅ Clase de {_nom} del {_fec} cancelada. No se cobra.'
+                return (
+                    "Las cancelaciones solo se hacen desde Google Calendar. "
+                    "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
+                    "el bot tomará la clase como cancelada."
+                )
             else:
                 _set_pendiente(numero, _p)
                 return '1 para ausente (se cobra igual) o 2 para cancelar (no se cobra).'
@@ -1400,6 +1396,29 @@ def procesar_mensaje(mensaje_entrante, numero, historial=None):
 
         if mensaje_entrante.strip().isdigit():
             opcion = int(mensaje_entrante.strip())
+            # Respuesta 1/2 a ausente vs cancelar (evita que se interprete como aclaracion_alumno)
+            if pendiente.get("esperando") == "ausente_o_cancelar":
+                _cid = pendiente["clase_id"]
+                _nom = pendiente["nombre_alumno"]
+                _fec = pendiente["fecha"]
+                _hor = pendiente.get("hora_fmt", "")
+                _del_pendiente(numero)
+                if opcion == 1:
+                    _c = __import__("database").get_connection()
+                    _c.execute("UPDATE clases SET ausente = 1 WHERE id = ?", (_cid,))
+                    _c.commit()
+                    _c.close()
+                    return f"🪑 {_nom} marcado/a ausente el {_fec}{_hor}. Se cobra igual."
+                elif opcion == 2:
+                    _del_pendiente(numero)
+                    return (
+                        "Las cancelaciones solo se hacen desde Google Calendar. "
+                        "Cancelá el evento en el calendario y después sincronizá el calendario con el bot; "
+                        "el bot tomará la clase como cancelada."
+                    )
+                else:
+                    _set_pendiente(numero, pendiente)
+                    return "1 para ausente (se cobra igual) o 2 para cancelar (no se cobra)."
             if pendiente.get("accion") == "confirmar_borrado":
                 accion = "confirmar_borrado"
                 datos = {"numero_opcion": opcion}
