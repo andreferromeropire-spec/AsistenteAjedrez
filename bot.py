@@ -1570,24 +1570,41 @@ def reactivar_clase_endpoint():
     alumno = request.args.get("alumno", "").strip()
     fecha = request.args.get("fecha", "").strip() or None
     if not alumno:
-        return "Faltaba el parámetro: ?alumno=Nombre (ej: ?alumno=Ximena). Opcional: &fecha=2026-03-03", 400
+        return "Faltaba el parámetro: ?alumno=Nombre (ej: ?alumno=Ximena). Opcional: &fecha=2026-03-10", 400
     conn = __import__("database").get_connection()
     cursor = conn.cursor()
+    # Búsqueda por nombre flexible (case-insensitive); cualquier estado cancelada*
     cursor.execute("""
         SELECT c.id, c.fecha, c.hora, c.estado, a.nombre
         FROM clases c
         JOIN alumnos a ON c.alumno_id = a.id
-        WHERE a.nombre LIKE ? AND c.estado LIKE 'cancelada%'
+        WHERE LOWER(TRIM(a.nombre)) LIKE LOWER(?) AND c.estado IN ('cancelada_sin_anticipacion', 'cancelada_con_anticipacion', 'cancelada_por_profesora')
         ORDER BY c.fecha DESC
     """, (f"%{alumno}%",))
     filas = cursor.fetchall()
-    conn.close()
     if not filas:
-        return f"No hay clases canceladas de alguien que coincida con '{alumno}'.", 404
+        # Ayuda: listar qué clases canceladas hay para orientar al usuario
+        cursor.execute("""
+            SELECT a.nombre, c.fecha, c.estado
+            FROM clases c
+            JOIN alumnos a ON c.alumno_id = a.id
+            WHERE c.estado IN ('cancelada_sin_anticipacion', 'cancelada_con_anticipacion', 'cancelada_por_profesora')
+            ORDER BY c.fecha DESC
+            LIMIT 20
+        """)
+        ejemplos = cursor.fetchall()
+        conn.close()
+        msg = f"No hay clases canceladas que coincidan con '{alumno}'."
+        if ejemplos:
+            msg += " Clases canceladas en la DB: " + ", ".join([f"{r['nombre']} ({r['fecha']})" for r in ejemplos])
+        return msg, 404
     if fecha:
+        fechas_disponibles = [r["fecha"] for r in filas]
         filas = [r for r in filas if r["fecha"] == fecha]
         if not filas:
-            return f"Ninguna clase cancelada de ese alumno en {fecha}.", 404
+            conn.close()
+            return f"Ninguna clase cancelada de ese alumno en {fecha}. Fechas con canceladas: " + ", ".join(fechas_disponibles[:10]), 404
+    conn.close()
     clase = filas[0]
     reactivar_clase(clase["id"])
     return f"✅ Clase de {clase['nombre']} del {clase['fecha']} reactivada (estado = agendada)."
