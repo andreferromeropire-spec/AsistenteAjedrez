@@ -1562,6 +1562,37 @@ def sincronizar_calendario_endpoint():
     resultado = sincronizar_mes(hoy.month, hoy.year)
     return f"✅ {resultado['clases_registradas']} clases registradas. No identificadas: {resultado['no_identificadas']}"
 
+
+@app.route("/reactivar_clase", methods=["GET"])
+def reactivar_clase_endpoint():
+    """Reactiva la última clase cancelada de un alumno. Usa la DB del servidor (Railway)."""
+    from clases import reactivar_clase
+    alumno = request.args.get("alumno", "").strip()
+    fecha = request.args.get("fecha", "").strip() or None
+    if not alumno:
+        return "Faltaba el parámetro: ?alumno=Nombre (ej: ?alumno=Ximena). Opcional: &fecha=2026-03-03", 400
+    conn = __import__("database").get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id, c.fecha, c.hora, c.estado, a.nombre
+        FROM clases c
+        JOIN alumnos a ON c.alumno_id = a.id
+        WHERE a.nombre LIKE ? AND c.estado LIKE 'cancelada%'
+        ORDER BY c.fecha DESC
+    """, (f"%{alumno}%",))
+    filas = cursor.fetchall()
+    conn.close()
+    if not filas:
+        return f"No hay clases canceladas de alguien que coincida con '{alumno}'.", 404
+    if fecha:
+        filas = [r for r in filas if r["fecha"] == fecha]
+        if not filas:
+            return f"Ninguna clase cancelada de ese alumno en {fecha}.", 404
+    clase = filas[0]
+    reactivar_clase(clase["id"])
+    return f"✅ Clase de {clase['nombre']} del {clase['fecha']} reactivada (estado = agendada)."
+
+
 if __name__ == "__main__":
     scheduler = configurar_scheduler()
     port = int(os.environ.get("PORT", 5000))
