@@ -5,6 +5,8 @@ from flask import Blueprint, Response, request, session, redirect, jsonify
 from functools import wraps
 from datetime import date
 import os
+import json
+import traceback
 
 from database import get_connection
 
@@ -59,19 +61,37 @@ def auth_callback():
     """Recibe el código de Google, intercambia por token, guarda en DB y redirige al dashboard."""
     from calendar_google import crear_flow_google
     from database import set_config
-    state_received = request.args.get('state')
-    if state_received != session.get('oauth_state'):
-        return redirect('/dashboard?error=auth_state')
-    session.pop('oauth_state', None)
     redirect_uri = 'https://asistenteajedrez-production.up.railway.app/auth/callback'
-    flow = crear_flow_google(redirect_uri, state=state_received)
-    code = request.args.get('code')
-    if not code:
-        return redirect('/dashboard?error=auth_code')
-    flow.fetch_token(code=code)
-    creds = flow.credentials
-    set_config('google_token', creds.to_json())
-    return redirect('/dashboard')
+    try:
+        state_received = request.args.get('state')
+        if state_received != session.get('oauth_state'):
+            return redirect('/dashboard?error=auth_state')
+        session.pop('oauth_state', None)
+        code = request.args.get('code')
+        if not code:
+            return redirect('/dashboard?error=auth_code')
+        flow = crear_flow_google(redirect_uri, state=state_received)
+        # Usar la URL completa como en la doc (evita problemas con proxy http/https)
+        auth_response = redirect_uri + '?' + request.query_string.decode('utf-8')
+        flow.fetch_token(authorization_response=auth_response)
+        creds = flow.credentials
+        try:
+            token_json = creds.to_json()
+        except (AttributeError, TypeError):
+            token_json = json.dumps({
+                'token': getattr(creds, 'token', None),
+                'refresh_token': getattr(creds, 'refresh_token', None),
+                'token_uri': getattr(creds, 'token_uri', None),
+                'client_id': getattr(creds, 'client_id', None),
+                'client_secret': getattr(creds, 'client_secret', None),
+                'scopes': list(creds.scopes) if getattr(creds, 'scopes', None) else []
+            })
+        set_config('google_token', token_json)
+        return redirect('/dashboard')
+    except Exception as e:
+        print('auth_callback error:', type(e).__name__, str(e))
+        traceback.print_exc()
+        return redirect('/dashboard?error=auth_callback')
 
 
 @dashboard_bp.route('/dashboard')
@@ -85,7 +105,10 @@ def dashboard():
         f'<option value="{i+1}"{" selected" if i+1==hoy.month else ""}>{m}</option>'
         for i, m in enumerate(meses)
     )
-    html = DASHBOARD_HTML.replace('{MES_OPTIONS}', mes_options)
+    auth_banner = ''
+    if request.args.get('error') == 'auth_callback':
+        auth_banner = '<div class="auth-error-banner"><p class="error">No se pudo guardar la autorizaci\u00f3n de Google. <a href="/auth/google">Intentar de nuevo</a>.</p></div>'
+    html = DASHBOARD_HTML.replace('{MES_OPTIONS}', mes_options).replace('{AUTH_ERROR_BANNER}', auth_banner)
     return Response(html, mimetype='text/html; charset=utf-8')
 
 
@@ -752,6 +775,7 @@ label{display:block;color:#888;font-size:0.75rem;letter-spacing:0.12em;text-tran
 input[type=password]{width:100%;background:#faf8f5;border:1px solid #e0d8cc;border-radius:4px;color:#2c2416;padding:0.85rem 1rem;font-size:1rem;font-family:'DM Sans',sans-serif;outline:none;transition:border-color 0.2s}
 input[type=password]:focus{border-color:#b48c50}
 .error{color:#c0392b;font-size:0.8rem;margin-top:0.75rem}
+.auth-error-banner{margin-bottom:1rem;padding:0.75rem 1rem;background:var(--red-bg);border:1px solid var(--red);border-radius:6px}.auth-error-banner .error{margin:0}.auth-error-banner a{color:var(--gold-light);text-decoration:underline}
 button{width:100%;margin-top:1.5rem;background:#b48c50;color:#fff;border:none;border-radius:4px;padding:0.9rem;font-size:0.85rem;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background 0.2s}
 button:hover{background:#9a7540}
 </style>
@@ -954,6 +978,7 @@ tr:hover td{background:var(--gold-dim)}
 </header>
 
 <main>
+  {AUTH_ERROR_BANNER}
   <div class="metrics" id="metrics">
     <div class="metric"><div class="metric-label">Alumnos activos</div><div class="metric-value" id="m-alumnos">-</div></div>
     <div class="metric"><div class="metric-label">Clases agendadas</div><div class="metric-value" id="m-clases">-</div></div>
