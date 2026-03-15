@@ -44,7 +44,9 @@ def logout():
 def auth_google():
     """Redirige al usuario a la URL de autorización de Google OAuth (flujo web)."""
     from calendar_google import crear_flow_google
+    print("host_url:", request.host_url)
     redirect_uri = request.host_url.rstrip('/') + '/auth/callback'
+    print("redirect_uri:", redirect_uri)
     flow = crear_flow_google(redirect_uri)
     auth_url, state = flow.authorization_url(access_type='offline', prompt='consent')
     session['oauth_state'] = state
