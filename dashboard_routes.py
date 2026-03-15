@@ -408,6 +408,9 @@ def api_sincronizar():
     except GoogleAuthRequired:
         return jsonify({'ok': False, 'auth_required': True})
     except Exception as e:
+        err_msg = str(e).lower()
+        if 'invalid_grant' in err_msg or 'expired' in err_msg or 'revoked' in err_msg:
+            return jsonify({'ok': False, 'auth_required': True})
         return jsonify({'ok': False, 'error': str(e)})
 
 
@@ -2407,12 +2410,8 @@ function ejecutarSync(mesesLista) {
       }
       cargarTodo();
     } else if (d.auth_required) {
-      if (syncInfoEl) {
-        syncInfoEl.setAttribute('data-auth-message', '1');
-        syncInfoEl.innerHTML = 'Token de Google expirado. <a href="/auth/google">Reautorizar con Google</a>';
-      } else {
-        alert('Token de Google expirado. Entr\u00e1 al dashboard y us\u00e1 el enlace Reautorizar con Google.');
-      }
+      alert('Es necesario autenticar de nuevo con Google. Ser\u00e1s redirigido...');
+      window.location.href = '/auth/google';
     } else {
       if (syncInfoEl && syncInfoEl.dataset.authMessage) {
         syncInfoEl.innerHTML = '';

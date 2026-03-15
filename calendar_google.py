@@ -2,6 +2,7 @@ import os
 import json
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.auth.exceptions import RefreshError
 from google.oauth2 import service_account as google_service_account
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -62,8 +63,13 @@ def autenticar():
 
     if not creds.valid:
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            set_config('google_token', creds.to_json())
+            try:
+                creds.refresh(Request())
+                set_config('google_token', creds.to_json())
+            except (RefreshError, Exception) as e:
+                if "invalid_grant" in str(e).lower() or "expired" in str(e).lower() or "revoked" in str(e).lower():
+                    raise GoogleAuthRequired("Token expirado o revocado; reautorizar desde el dashboard.")
+                raise
         else:
             raise GoogleAuthRequired("Token expirado sin refresh; reautorizar desde el dashboard.")
 
