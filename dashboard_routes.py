@@ -45,7 +45,7 @@ def auth_google():
     """Redirige al usuario a la URL de autorización de Google OAuth (flujo web)."""
     from calendar_google import crear_flow_google
     print("host_url:", request.host_url)
-    redirect_uri = request.host_url.rstrip('/') + '/auth/callback'
+    redirect_uri = 'https://asistenteajedrez-production.up.railway.app/auth/callback'
     print("redirect_uri:", redirect_uri)
     flow = crear_flow_google(redirect_uri)
     auth_url, state = flow.authorization_url(access_type='offline', prompt='consent')
@@ -63,7 +63,7 @@ def auth_callback():
     if state_received != session.get('oauth_state'):
         return redirect('/dashboard?error=auth_state')
     session.pop('oauth_state', None)
-    redirect_uri = request.host_url.rstrip('/') + '/auth/callback'
+    redirect_uri = 'https://asistenteajedrez-production.up.railway.app/auth/callback'
     flow = crear_flow_google(redirect_uri, state=state_received)
     code = request.args.get('code')
     if not code:
