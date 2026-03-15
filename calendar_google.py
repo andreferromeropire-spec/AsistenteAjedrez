@@ -45,12 +45,31 @@ def autenticar():
     if creds is not None:
         return build('calendar', 'v3', credentials=creds)
 
-    # Token de usuario: primero DB, luego env, luego archivo
-    token_json = get_config('google_token') or os.environ.get("GOOGLE_TOKEN")
+    # Token de usuario: primero archivo (GOOGLE_TOKEN_FILE), luego DB, luego env, luego token.json
+    token_json = None
+    token_file = os.environ.get('GOOGLE_TOKEN_FILE')
+    if token_file and os.path.exists(token_file):
+        try:
+            with open(token_file, 'r') as f:
+                token_json = f.read()
+            if token_json:
+                print('autenticar: token desde GOOGLE_TOKEN_FILE')
+        except Exception as e:
+            print('autenticar: error leyendo GOOGLE_TOKEN_FILE:', e)
+    if not token_json:
+        token_json = get_config('google_token') or os.environ.get("GOOGLE_TOKEN")
+        if token_json:
+            print('autenticar: token desde', 'DB' if get_config('google_token') else 'GOOGLE_TOKEN env')
     if token_json:
         try:
-            creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
-        except Exception:
+            info = json.loads(token_json)
+            if not info.get('refresh_token') or not info.get('client_id') or not info.get('client_secret'):
+                print('autenticar: token sin refresh_token/client_id/client_secret, ignorando')
+                creds = None
+            else:
+                creds = Credentials.from_authorized_user_info(info, SCOPES)
+        except Exception as e:
+            print('autenticar: error creando Credentials:', type(e).__name__, str(e))
             creds = None
     if not creds and os.path.exists('token.json'):
         try:
@@ -59,6 +78,7 @@ def autenticar():
             creds = None
 
     if not creds:
+        print('autenticar: GoogleAuthRequired (no token valido o creds no creadas)')
         raise GoogleAuthRequired("No hay token de Google; reautorizar desde el dashboard.")
 
     if not creds.valid:

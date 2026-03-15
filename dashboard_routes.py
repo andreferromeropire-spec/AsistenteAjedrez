@@ -85,7 +85,16 @@ def auth_callback():
             'client_secret': getattr(creds, 'client_secret', None) or cc.get('client_secret'),
             'scopes': list(creds.scopes) if getattr(creds, 'scopes', None) else []
         }
-        set_config('google_token', json.dumps(token_dict))
+        token_json = json.dumps(token_dict)
+        set_config('google_token', token_json)
+        token_file = os.environ.get('GOOGLE_TOKEN_FILE')
+        if token_file:
+            try:
+                with open(token_file, 'w') as f:
+                    f.write(token_json)
+            except Exception as e:
+                print('auth_callback: no se pudo escribir GOOGLE_TOKEN_FILE:', e)
+        print('auth_callback OK: token guardado (refresh_token=', bool(token_dict.get('refresh_token')), ')')
         return redirect('/dashboard')
     except Exception as e:
         print('auth_callback error:', type(e).__name__, str(e))
