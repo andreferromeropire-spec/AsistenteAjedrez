@@ -103,7 +103,7 @@ def crear_flow_google(redirect_uri, state=None):
     if not creds_json:
         raise ValueError("GOOGLE_CREDENTIALS no definido")
     client_config = json.loads(creds_json)
-    kwargs = {"redirect_uri": redirect_uri}
+    kwargs = {"redirect_uri": redirect_uri, "autogenerate_code_verifier": False}
     if state is not None:
         kwargs["state"] = state
     return Flow.from_client_config(

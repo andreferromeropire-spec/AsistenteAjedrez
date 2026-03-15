@@ -71,9 +71,7 @@ def auth_callback():
         if not code:
             return redirect('/dashboard?error=auth_code')
         flow = crear_flow_google(redirect_uri, state=state_received)
-        # Usar la URL completa como en la doc (evita problemas con proxy http/https)
-        auth_response = redirect_uri + '?' + request.query_string.decode('utf-8')
-        flow.fetch_token(authorization_response=auth_response)
+        flow.fetch_token(code=code)
         creds = flow.credentials
         # Construir token con client_config para tener client_id, client_secret y token_uri (necesarios para refrescar)
         cc = flow.client_config
