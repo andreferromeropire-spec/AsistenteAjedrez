@@ -75,18 +75,17 @@ def auth_callback():
         auth_response = redirect_uri + '?' + request.query_string.decode('utf-8')
         flow.fetch_token(authorization_response=auth_response)
         creds = flow.credentials
-        try:
-            token_json = creds.to_json()
-        except (AttributeError, TypeError):
-            token_json = json.dumps({
-                'token': getattr(creds, 'token', None),
-                'refresh_token': getattr(creds, 'refresh_token', None),
-                'token_uri': getattr(creds, 'token_uri', None),
-                'client_id': getattr(creds, 'client_id', None),
-                'client_secret': getattr(creds, 'client_secret', None),
-                'scopes': list(creds.scopes) if getattr(creds, 'scopes', None) else []
-            })
-        set_config('google_token', token_json)
+        # Construir token con client_config para tener client_id, client_secret y token_uri (necesarios para refrescar)
+        cc = flow.client_config
+        token_dict = {
+            'token': getattr(creds, 'token', None),
+            'refresh_token': getattr(creds, 'refresh_token', None),
+            'token_uri': getattr(creds, 'token_uri', None) or cc.get('token_uri'),
+            'client_id': getattr(creds, 'client_id', None) or cc.get('client_id'),
+            'client_secret': getattr(creds, 'client_secret', None) or cc.get('client_secret'),
+            'scopes': list(creds.scopes) if getattr(creds, 'scopes', None) else []
+        }
+        set_config('google_token', json.dumps(token_dict))
         return redirect('/dashboard')
     except Exception as e:
         print('auth_callback error:', type(e).__name__, str(e))
