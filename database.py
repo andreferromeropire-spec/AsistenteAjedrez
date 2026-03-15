@@ -124,9 +124,40 @@ def crear_tablas():
         )
     """)
 
+    # Configuración clave-valor (ej: token Google renovado para OAuth web)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS configuracion (
+            clave TEXT PRIMARY KEY,
+            valor TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Base de datos lista.")
+
+def get_config(clave):
+    """Devuelve el valor de una clave en configuracion, o None."""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT valor FROM configuracion WHERE clave = ?", (clave,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def set_config(clave, valor):
+    """Guarda o actualiza una clave en configuracion."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)",
+            (clave, valor)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 
 # Esto permite correr el archivo directamente para crear las tablas
 if __name__ == "__main__":

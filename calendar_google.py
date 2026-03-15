@@ -1,12 +1,19 @@
 import os
+import json
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account as google_service_account
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from datetime import datetime, date, timedelta
-from database import get_connection
+from database import get_connection, get_config, set_config
 from clases import agendar_clase, cancelar_clase
 from alumnos import obtener_todos_los_alumnos
+
+
+class GoogleAuthRequired(Exception):
+    """Se lanza cuando no hay token válido ni refresh_token para renovar (requiere flujo OAuth web)."""
+    pass
 
 # Permisos que necesitamos: solo lectura del calendario
 SCOPES = [
@@ -14,49 +21,85 @@ SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets.readonly',
     'https://www.googleapis.com/auth/drive.readonly'
 ]
+SCOPES_CALENDAR_ONLY = ['https://www.googleapis.com/auth/calendar.readonly']
 
 # AUTENTICAR: Conecta con Google Calendar.
-# La primera vez abre el navegador para que autorices.
-# Después guarda el token en token.json para no pedir permiso de nuevo.
+# - Si GOOGLE_SERVICE_ACCOUNT_JSON y GOOGLE_CALENDAR_ID están seteados → usa cuenta de servicio.
+# - Si no → token OAuth: primero DB (configuracion), luego GOOGLE_TOKEN, luego token.json.
+#   Si no hay token válido y hay refresh_token, renueva y guarda en DB.
+#   Si no hay token válido ni refresh_token, lanza GoogleAuthRequired (flujo web en dashboard).
 def autenticar():
-    import json
     creds = None
-    
-    # Primero intenta leer el token desde variable de entorno (producción en Railway)
-    token_json = os.environ.get("GOOGLE_TOKEN")
+
+    # Opción piloto: cuenta de servicio + calendario del profe
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if sa_json and os.environ.get("GOOGLE_CALENDAR_ID"):
+        try:
+            info = json.loads(sa_json)
+            creds = google_service_account.Credentials.from_service_account_info(
+                info, scopes=SCOPES_CALENDAR_ONLY
+            )
+        except Exception:
+            creds = None
+    if creds is not None:
+        return build('calendar', 'v3', credentials=creds)
+
+    # Token de usuario: primero DB, luego env, luego archivo
+    token_json = get_config('google_token') or os.environ.get("GOOGLE_TOKEN")
     if token_json:
-        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
-    # Si no, intenta leer desde archivo local (desarrollo)
-    elif os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+        try:
+            creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+        except Exception:
+            creds = None
+    if not creds and os.path.exists('token.json'):
+        try:
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        except Exception:
+            creds = None
+
+    if not creds:
+        raise GoogleAuthRequired("No hay token de Google; reautorizar desde el dashboard.")
+
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            # Si estamos en Railway, actualizamos la variable (no se puede, pero al menos no falla)
+            set_config('google_token', creds.to_json())
         else:
-            # Solo funciona en local — en Railway el token tiene que estar válido
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        if not os.environ.get("GOOGLE_TOKEN"):
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
-    
+            raise GoogleAuthRequired("Token expirado sin refresh; reautorizar desde el dashboard.")
+
     return build('calendar', 'v3', credentials=creds)
 
-# OBTENER_EVENTOS: Trae todos los eventos de tu calendario
-# entre dos fechas específicas
+
+def crear_flow_google(redirect_uri, state=None):
+    """Crea un Flow OAuth para flujo web usando GOOGLE_CREDENTIALS (cliente tipo Aplicación web).
+    state: opcional, para el callback (mismo state que en authorization_url)."""
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+    if not creds_json:
+        raise ValueError("GOOGLE_CREDENTIALS no definido")
+    client_config = json.loads(creds_json)
+    kwargs = {"redirect_uri": redirect_uri}
+    if state is not None:
+        kwargs["state"] = state
+    return Flow.from_client_config(
+        client_config,
+        scopes=SCOPES,
+        **kwargs
+    )
+
+# OBTENER_EVENTOS: Trae todos los eventos del calendario
+# entre dos fechas. Si GOOGLE_CALENDAR_ID está definido (piloto), usa ese; si no, "primary".
 def obtener_eventos(fecha_inicio, fecha_fin):
     servicio = autenticar()
-    
+    calendar_id = os.environ.get("GOOGLE_CALENDAR_ID") or "primary"
+
     eventos = servicio.events().list(
-        calendarId='primary',
+        calendarId=calendar_id,
         timeMin=fecha_inicio.isoformat() + 'T00:00:00Z',
         timeMax=fecha_fin.isoformat() + 'T23:59:59Z',
         singleEvents=True,
         orderBy='startTime'
     ).execute()
-    
+
     return eventos.get('items', [])
 
 # BUSCAR_ALUMNO_EN_EVENTO: Intenta identificar qué alumno

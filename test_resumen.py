@@ -1,2 +1,0 @@
-from notificaciones import resumen_cobros_mensuales
-resumen_cobros_mensuales()

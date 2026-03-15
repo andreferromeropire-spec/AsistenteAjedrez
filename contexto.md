@@ -33,10 +33,7 @@ Construido con Python/Flask, deployado en Railway. El bot corre en el mismo proc
 - `calendar_google.py` — wrapper de Google Calendar API
 
 **Scripts de utilidad (no corren en producción):**
-- `cargar_clases.py` — carga clases recurrentes de un mes manualmente
-- `cargar_promociones.py` — carga promos de todos los alumnos
-- `test_bot.py` — prueba el bot en terminal sin WhatsApp
-- `sincronizar_sheets.py` — importa alumnos desde Google Sheets
+- `sincronizar_sheets.py` — importa alumnos desde Google Sheets (ID de planilla por env `GOOGLE_SHEET_ID`)
 
 ---
 
@@ -90,10 +87,11 @@ Un adulto (padre/madre) puede ser representante de varios alumnos. El pago se re
 Se calcula sumando clases de todos los alumnos de un representante y buscando el rango en la tabla de promociones.
 
 ### Sincronización con Google Calendar
-- Google Calendar es la **fuente de verdad** para las clases. El bot NO crea eventos de Calendar.
+- Google Calendar es la **fuente de verdad** para las clases. El bot NO crea ni cancela eventos en Calendar.
+- **Cancelaciones:** solo desde Google Calendar. El bot no cancela clases; si el usuario pide cancelar, responde que debe eliminar el evento en Calendar y que la sincronización lo tomará automáticamente.
 - Sync matutina (8:30): sincroniza calendario, marca clases pasadas como `dada`.
 - Sync nocturna (20:00): marca clases de HOY como `dada`, envía resumen por WhatsApp.
-- Al cancelar clase ya dada: desvincula `pago_id` (queda como crédito).
+- Al cancelar clase ya dada (desde Calendar + sync): desvincula `pago_id` (queda como crédito).
 - Eventos recurrentes infinitos → sync solo mira el mes actual.
 - Títulos de eventos ignorables se pueden registrar con `ignorar_evento`.
 
@@ -205,12 +203,13 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 
 ---
 
-## Google OAuth
+## Google: OAuth y piloto (Calendar por profe)
 
-- Token guardado en variable de entorno `GOOGLE_TOKEN_JSON` (nombre exacto, case-sensitive)
-- Generado con scopes de Calendar + Sheets + Drive
-- Si el scope en el código es más angosto que el del token → error de auth
-- En `calendar_google.py` los scopes deben coincidir exactamente con los del token
+- **Instancia Andrea:** token de usuario en `GOOGLE_TOKEN` (o `GOOGLE_TOKEN_JSON` según uso). Scopes: Calendar + Sheets + Drive. Calendario `primary`.
+- **Instancias piloto (otros profes):** opcionalmente usan **su** Calendar sin dar contraseña:
+  - Variables: `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON de la cuenta de servicio) + `GOOGLE_CALENDAR_ID` (ID del calendario del profe).
+  - El profe comparte su calendario con el email de la cuenta de servicio (permiso "Ver todos los detalles"). Ver **CALENDAR_PILOTO.md**.
+- Si ambas están seteadas, `calendar_google.py` usa cuenta de servicio y ese calendario; si no, usa token de usuario y `primary`.
 
 ---
 
@@ -219,8 +218,17 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - Push a GitHub → Railway auto-deploya
 - A veces cambios solo en `dashboard_routes.py` no triggean deploy → agregar comentario en `bot.py` para forzarlo
 - DB SQLite en volumen montado en `/data`
-- Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN_JSON`, `ANTHROPIC_API_KEY`, `TWILIO_*`
-- Gráfico ingresos en USD: `DOLAR_BLU_ARS` (cuántos pesos por 1 USD, ej. 1200), `TASA_GBP_USD` (ej. 1.27). Si no se setean, se usan defaults.
+- Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN` o `GOOGLE_TOKEN_JSON`, `ANTHROPIC_API_KEY`, `TWILIO_*`, `DASHBOARD_PASSWORD`, `SECRET_KEY`
+- Gráfico ingresos en USD: `DOLAR_BLU_ARS`, `TASA_GBP_USD`. Opcional por instancia: `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CALENDAR_ID` (ver sección Piloto).
+
+---
+
+## Piloto: varios profes (multi-instancia)
+
+- **Modelo:** 1 profe = 1 servicio en Railway = 1 DB = 1 link de dashboard (y opcionalmente 1 número de WhatsApp). No hay usuarios ni login: quien tiene el link + contraseña entra a ese dashboard.
+- **Docs:** `ONBOARDING_PILOTO.md` (checklist por profe), `INSTRUCCIONES_PARA_PILOTOS.md` (qué enviar a los colegas), `PLANILLA_ALUMNOS_PILOTO.md` (importación masiva desde Sheets), `CALENDAR_PILOTO.md` (cada profe con su Google Calendar sin compartir contraseña).
+- **Por cada servicio:** `DB_PATH` distinto (ej. `/data/chess_profe_maria.db`), `DASHBOARD_PASSWORD` distinta. Opcional: `GOOGLE_SHEET_ID` para importar alumnos desde su planilla; `GOOGLE_SERVICE_ACCOUNT_JSON` + `GOOGLE_CALENDAR_ID` para leer su Calendar (ellos comparten el calendario con el email de la cuenta de servicio).
+- **Endpoints útiles:** `/setup` (crear tablas), `/sincronizar_alumnos` (import desde Sheet si `GOOGLE_SHEET_ID` está definido), `/sincronizar_calendario` (sync Calendar), `/reactivar_clase?alumno=Nombre` (reactivar una clase cancelada en la DB, ej. desde Railway).
 
 ---
 
@@ -263,7 +271,7 @@ _(ninguno)_
 
 ## Decisiones de diseño confirmadas
 
-- Google Calendar es fuente de verdad para clases — el bot NO crea eventos
+- Google Calendar es fuente de verdad para clases — el bot NO crea ni cancela eventos; las cancelaciones se hacen desde Calendar
 - `registrar_pago()` devuelve `cursor.lastrowid` para poder vincular clases
 - Fuzzy matching: similitud = `max(sim_nombre, sim_representante)` — evita falsos rechazos
 - Fuzzy matching de representantes no pide confirmación

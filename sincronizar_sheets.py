@@ -12,7 +12,8 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly'
 ]
 
-SHEET_ID = "1LpfRUAPy-05h7IpRuZdR9iWqs_joW5xASJUQXt2GPX4"
+# Si no se setea, se usa el de Andrea (compatibilidad). Cada instancia (ej. otro profe) puede tener GOOGLE_SHEET_ID propio.
+SHEET_ID = os.environ.get("GOOGLE_SHEET_ID") or "1LpfRUAPy-05h7IpRuZdR9iWqs_joW5xASJUQXt2GPX4"
 
 def autenticar_sheets():
     from google.oauth2.credentials import Credentials

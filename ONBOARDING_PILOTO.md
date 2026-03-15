@@ -4,6 +4,21 @@ Guía para configurar una instancia nueva para un/a profe de ajedrez, con **DB p
 
 ---
 
+## Checklist rápido (para vos, por cada profe)
+
+| Paso | Qué hacer | ✓ |
+|------|-----------|---|
+| 1 | Railway: nuevo servicio desde repo, nombre ej. `ajedrez-profe-maria` | |
+| 2 | Env vars: copiar de tu instancia; cambiar `DB_PATH` (ej. `/data/chess_profe_maria.db`), `DASHBOARD_PASSWORD`, `SECRET_KEY` | |
+| 3 | Esperar Running → abrir `https://<servicio>.railway.app/setup` → ver "Tablas creadas" | |
+| 4 | Probar `https://<servicio>.railway.app/dashboard` con la contraseña | |
+| 5 | (Opcional) Twilio: número nuevo → webhook `https://<servicio>.railway.app/webhook` | |
+| 6 | Alumnos: **opción A** — cargar 2–3 desde el dashboard. **Opción B** — planilla Google Sheets; `GOOGLE_SHEET_ID` + `/sincronizar_alumnos` (ver **PLANILLA_ALUMNOS_PILOTO.md**) | |
+| 7 | Calendar (opcional): si el profe usa **su** Google Calendar, ellos comparten su calendario con la cuenta de servicio y te pasan el ID; vos ponés `GOOGLE_SERVICE_ACCOUNT_JSON` + `GOOGLE_CALENDAR_ID` en su servicio (ver **CALENDAR_PILOTO.md**). Sin eso, podés crear clases de ejemplo por bot ("di clase con X hoy"). | |
+| 8 | Enviar al profe: link del dashboard + contraseña + (si hay) número de WhatsApp + **instrucciones** (ver abajo) | |
+
+---
+
 ## 0. Modelo del piloto
 
 - **1 profe = 1 servicio en Railway = 1 DB = 1 número de WhatsApp.**
@@ -187,7 +202,20 @@ Cuando hagas la demo o la primera sesión con cada profe:
 
 ---
 
-## 6. Resumen de variables clave por instancia
+## 6. Qué enviar a cada profe
+
+Cuando la instancia esté lista, mandales:
+
+1. **Link del dashboard:** `https://<servicio-profe-x>.railway.app/dashboard`
+2. **Contraseña:** la que definiste en `DASHBOARD_PASSWORD`
+3. **Si tiene WhatsApp:** el número del bot y que le escriban "hola" para probar
+4. **Instrucciones:** el archivo **INSTRUCCIONES_PARA_PILOTOS.md** de este repo (podés copiarlo en el mensaje, pasarlo como PDF, o enviarles el link si está en un lugar que puedan ver). Ahí está qué pueden probar y cómo darte feedback.
+
+Así no tienen que configurar nada técnico y saben qué hacer desde el primer día.
+
+---
+
+## 7. Resumen de variables clave por instancia
 
 - `DB_PATH` — Ruta al archivo SQLite para esa profe (dentro del volumen Railway).
 - `DASHBOARD_PASSWORD` — Contraseña de acceso al dashboard de esa profe.
@@ -201,4 +229,11 @@ Compartidas entre todas las instancias (piloto):
 - `GOOGLE_TOKEN_JSON`
 - `TWILIO_*`
 - Cualquier otra clave global que ya uses.
+
+---
+
+## Resumen
+
+- **Para vos:** usar la checklist de la sección inicial y los pasos 2–5 de este doc.
+- **Para ellos:** enviarles dashboard + contraseña + (opcional) WhatsApp + **INSTRUCCIONES_PARA_PILOTOS.md**.
 

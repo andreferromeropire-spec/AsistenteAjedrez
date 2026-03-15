@@ -39,6 +39,39 @@ def logout():
     return redirect('/dashboard/login')
 
 
+@dashboard_bp.route('/auth/google')
+@login_required
+def auth_google():
+    """Redirige al usuario a la URL de autorización de Google OAuth (flujo web)."""
+    from calendar_google import crear_flow_google
+    redirect_uri = request.host_url.rstrip('/') + '/auth/callback'
+    flow = crear_flow_google(redirect_uri)
+    auth_url, state = flow.authorization_url(access_type='offline', prompt='consent')
+    session['oauth_state'] = state
+    return redirect(auth_url)
+
+
+@dashboard_bp.route('/auth/callback')
+@login_required
+def auth_callback():
+    """Recibe el código de Google, intercambia por token, guarda en DB y redirige al dashboard."""
+    from calendar_google import crear_flow_google
+    from database import set_config
+    state_received = request.args.get('state')
+    if state_received != session.get('oauth_state'):
+        return redirect('/dashboard?error=auth_state')
+    session.pop('oauth_state', None)
+    redirect_uri = request.host_url.rstrip('/') + '/auth/callback'
+    flow = crear_flow_google(redirect_uri, state=state_received)
+    code = request.args.get('code')
+    if not code:
+        return redirect('/dashboard?error=auth_code')
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    set_config('google_token', creds.to_json())
+    return redirect('/dashboard')
+
+
 @dashboard_bp.route('/dashboard')
 @login_required
 def dashboard():
@@ -327,6 +360,7 @@ def api_reactivar_clase():
 @dashboard_bp.route('/dashboard/api/sincronizar', methods=['POST'])
 @login_required
 def api_sincronizar():
+    from calendar_google import GoogleAuthRequired
     try:
         from sincronizacion import sincronizacion_diaria
         from datetime import date, datetime
@@ -369,6 +403,8 @@ def api_sincronizar():
             'no_identificados': todos_no_identificados,
             'detalles': detalles
         })
+    except GoogleAuthRequired:
+        return jsonify({'ok': False, 'auth_required': True})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
@@ -2347,7 +2383,12 @@ function ejecutarSync(mesesLista) {
   .then(function(d) {
     btn.disabled = false;
     btn.innerHTML = '&#128197; Sincronizar';
+    var syncInfoEl = document.getElementById('sync-info');
     if (d.ok) {
+      if (syncInfoEl && syncInfoEl.dataset.authMessage) {
+        syncInfoEl.innerHTML = '';
+        syncInfoEl.removeAttribute('data-auth-message');
+      }
       var mesNombres = mesesLista.map(function(m){ return MESES_NOMBRES[m.mes] + ' ' + m.anio; }).join(', ');
       if (d.nuevos === 0 && d.cancelados === 0 && d.modificados === 0) {
         alert('\u2705 Sin cambios en: ' + mesNombres);
@@ -2363,7 +2404,18 @@ function ejecutarSync(mesesLista) {
         alert(partes.join(String.fromCharCode(10)));
       }
       cargarTodo();
+    } else if (d.auth_required) {
+      if (syncInfoEl) {
+        syncInfoEl.setAttribute('data-auth-message', '1');
+        syncInfoEl.innerHTML = 'Token de Google expirado. <a href="/auth/google">Reautorizar con Google</a>';
+      } else {
+        alert('Token de Google expirado. Entr\u00e1 al dashboard y us\u00e1 el enlace Reautorizar con Google.');
+      }
     } else {
+      if (syncInfoEl && syncInfoEl.dataset.authMessage) {
+        syncInfoEl.innerHTML = '';
+        syncInfoEl.removeAttribute('data-auth-message');
+      }
       alert('Error: ' + (d.error || 'No se pudo sincronizar'));
     }
   })
