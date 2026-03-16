@@ -632,16 +632,26 @@ PORTAL_LOGIN_CONTENT = """
 
 
 PORTAL_HOME_CONTENT = """
-<div class="card">
-  <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}">Hola, {NOMBRE}</h2>
-  <div id="home-alumnos"></div>
-  <div class="section" id="home-recordatorios">
-    <h3 style="font-size:0.9rem;margin-top:1rem;margin-bottom:0.4rem">Recordatorios</h3>
-    <div id="recordatorios-lista"></div>
-    <div id="recordatorios-form"></div>
+<div class="portal-layout">
+  <div class="portal-main">
+    <div class="card">
+      <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}">Hola, {NOMBRE}</h2>
+      <div id="home-alumnos"></div>
+      <div style="margin-top:0.8rem">
+        <a href="/portal/logout" class="btn" id="home-logout">Salir</a>
+      </div>
+    </div>
   </div>
-  <div style="margin-top:0.8rem">
-    <a href="/portal/logout" class="btn" id="home-logout">Salir</a>
+  <div class="portal-side">
+    <div class="card" id="puzzle-card">
+      <h3 style="font-size:0.95rem;margin-bottom:0.5rem" id="puzzle-title" data-es="Puzzle del día ♟" data-en="Daily Puzzle ♟">Puzzle del día ♟</h3>
+      <div id="puzzle-content" style="font-size:0.85rem;color:var(--text-muted)">Cargando...</div>
+    </div>
+    <div class="card" id="recordatorios-card">
+      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Recordatorios</h3>
+      <div id="recordatorios-lista"></div>
+      <div id="recordatorios-form" style="margin-top:0.6rem"></div>
+    </div>
   </div>
 </div>
 <script>
