@@ -651,10 +651,10 @@ PORTAL_HOME_CONTENT = """
 <div class="portal-layout">
   <div class="portal-main">
     <div class="card">
-      <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}">Hola, {NOMBRE}</h2>
+      <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}" style="font-family:\\"Playfair Display\\",serif;font-size:1.6rem;color:var(--gold-light);margin-bottom:1rem">Hola, {NOMBRE}</h2>
       <div id="home-alumnos"></div>
-      <div style="margin-top:0.8rem">
-        <a href="/portal/logout" class="btn" id="home-logout">Salir</a>
+      <div>
+        <a href="/portal/logout" class="btn" id="home-logout" style="display:inline-block;margin-top:1rem">Salir</a>
       </div>
     </div>
   </div>
@@ -683,6 +683,16 @@ PORTAL_HOME_CONTENT = """
   }
   for(var i=0;i<resumen.length;i++){
     var r = resumen[i];
+    var clasesMes = r.clases_mes || [];
+    if (clasesMes.length === 0) {
+      var sinDiv = document.createElement('div');
+      sinDiv.style.marginTop = '0.75rem';
+      var st = document.createElement('p');
+      st.textContent = 'No hay clases registradas este mes para ' + (r.nombre || '');
+      sinDiv.appendChild(st);
+      cont.appendChild(sinDiv);
+      continue;
+    }
     var bloque = document.createElement('div');
     bloque.style.marginTop = '0.75rem';
     var titulo = document.createElement('h3');
@@ -725,7 +735,7 @@ PORTAL_HOME_CONTENT = """
     m3.appendChild(l3); m3.appendChild(v3);
 
     var m4 = document.createElement('div'); m4.className = 'metric';
-    var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.textContent = 'Pagas';
+    var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.setAttribute('data-es','AL D\\u00cdA'); l4.setAttribute('data-en','UP TO DATE'); l4.textContent = 'AL D\\u00cdA';
     var v4 = document.createElement('div'); v4.className = 'metric-value'; v4.textContent = r.clases_pagas || 0;
     m4.appendChild(l4); m4.appendChild(v4);
 
@@ -905,6 +915,7 @@ PORTAL_HOME_CONTENT = """
 
       container.appendChild(meta);
 
+      console.log('puzzle data:', JSON.stringify(data));
       if (puzzle.id) {
         var link = document.createElement('a');
         link.href = 'https://lichess.org/training/' + puzzle.id;
@@ -932,7 +943,8 @@ PORTAL_HOME_CONTENT = """
         var html = '<ul style="list-style:none;padding-left:0;font-size:0.82rem">';
         for (var i=0;i<datos.length;i++) {
           var d = datos[i];
-          var desc = d.minutos_antes + ' min antes — ' + d.alcance + ' — ' + d.canal + (d.mail_destino ? ' ('+d.mail_destino+')' : '');
+          var textoTiempo = minutosATexto(d.minutos_antes || 0);
+          var desc = textoTiempo + ' antes — ' + d.alcance + ' — ' + d.canal + (d.mail_destino ? ' ('+d.mail_destino+')' : '');
           html += '<li style="margin-bottom:0.25rem">'+desc+' <button class="btn" style="padding:0.1rem 0.4rem;font-size:0.75rem" onclick="borrarRecordatorio('+d.id+')">X</button></li>';
         }
         html += '</ul>';
@@ -943,6 +955,10 @@ PORTAL_HOME_CONTENT = """
         contRecForm.innerHTML = '<p style="font-size:0.82rem;color:var(--text-muted)">Límite alcanzado (3).</p>';
         return;
       }
+      var mailDefault = '';
+      if (resumen && resumen.length > 0 && resumen[0].mail_responsable) {
+        mailDefault = resumen[0].mail_responsable;
+      }
       var fhtml = '';
       fhtml += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">';
       fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Tiempo antes</label>';
@@ -951,13 +967,21 @@ PORTAL_HOME_CONTENT = """
       fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Alcance</label>';
       fhtml += '<select id="rec-alcance" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem"><option value="todas">Todas mis clases futuras</option><option value="proxima">Solo la próxima clase</option></select></div>';
       fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Mail</label>';
-      fhtml += '<input id="rec-mail" type="email" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:220px"></div>';
+      fhtml += '<input id="rec-mail" type="email" value="'+mailDefault+'" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:220px"></div>';
       fhtml += '<button class="btn" type="button" onclick="crearRecordatorio()">Guardar recordatorio</button>';
       fhtml += '</div>';
       contRecForm.innerHTML = fhtml;
     }).catch(function(){});
   }
 })();
+
+function minutosATexto(min) {
+  if (min < 60) return min + ' min';
+  if (min === 60) return '1 hora';
+  if (min < 1440) return (min/60) + ' horas';
+  if (min === 1440) return '24 horas';
+  return (min/60) + ' horas';
+}
 
 function crearRecordatorio() {
   var selT = document.getElementById('rec-tiempo');
