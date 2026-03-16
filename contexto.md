@@ -23,6 +23,7 @@ Construido con Python/Flask, deployado en Railway. El bot corre en el mismo proc
 - `bot.py` — lógica principal del bot, routing de acciones, `procesar_mensaje()`
 - `interprete.py` — llama a Claude Haiku para parsear mensajes en JSON de acción+datos
 - `dashboard_routes.py` — Flask Blueprint con todas las rutas del dashboard + HTML/CSS/JS embebido en un string triple-quoted
+- `portal_routes.py` — Flask Blueprint del portal de alumnos (login con Lichess/Google, vista `/portal/home`, APIs de recordatorios de mail y puzzle diario)
 - `database.py` — `get_connection()`, `crear_tablas()`
 - `clases.py` — `agendar_clase()`, `cancelar_clase()`, `resumen_clases_alumno_mes()`
 - `pagos.py` — `registrar_pago()`
@@ -71,6 +72,30 @@ id, alumno_id, fecha, monto, moneda, metodo, clases_ids (JSON), notas
 id, alumno_id, moneda, clases_desde, clases_hasta, precio_por_clase
 ```
 Rangos de precio según volumen mensual. Ej: 1-3 clases → $35, 4-6 → $32, 7+ → $30.
+
+**portal_accesos**
+```
+id, alumno_id, lichess_username, tipo_acceso, notas
+```
+- Relaciona usuarios externos (Lichess username o mail de Google) con uno o más alumnos para acceso al portal.
+
+**portal_sessions**
+```
+id, alumno_id, lichess_username, created_at, last_seen
+```
+- Sesiones del portal de alumnos (auditoría básica de accesos recientes).
+
+**recordatorios**
+```
+id, alumno_id, minutos_antes, alcance, canal, mail_destino, clase_id, activo, creado
+```
+- Configuración de recordatorios que pueden crear los alumnos desde el portal (hoy solo canal `mail`).
+
+**recordatorios_enviados**
+```
+id, recordatorio_id, clase_id, enviado_en
+```
+- Log de envíos efectivamente disparados (evita reenviar varias veces el mismo recordatorio).
 
 ---
 
