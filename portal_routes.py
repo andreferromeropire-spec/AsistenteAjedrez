@@ -753,7 +753,7 @@ PORTAL_HOME_CONTENT = """
 
     var estado = document.createElement('span');
     estado.className = 'badge estado-pago';
-    var esOk = r.estado_pago === 'al_dia';
+    var esOk = r.al_dia === true;
     var restantes = r.clases_restantes || 0;
     var sinPagar = r.clases_sin_pagar || 0;
     if (esOk && restantes === 0) {
@@ -918,11 +918,13 @@ PORTAL_HOME_CONTENT = """
       console.log('puzzle data:', JSON.stringify(data));
       if (puzzle.id) {
         var link = document.createElement('a');
-        link.href = 'https://lichess.org/training/' + puzzle.id;
+        link.href = 'https://lichess.org/training/daily';
+        link.setAttribute('data-es', 'Ver puzzle del día en Lichess');
+        link.setAttribute('data-en', 'View daily puzzle on Lichess');
         link.target = '_blank';
         link.className = 'btn';
         link.style.marginTop = '0.5rem';
-        link.textContent = 'Ver en Lichess';
+        link.textContent = 'Ver puzzle del día en Lichess';
         container.appendChild(link);
       }
 
