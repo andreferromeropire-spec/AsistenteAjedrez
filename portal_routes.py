@@ -1,5 +1,7 @@
 import os
 import json
+import hashlib
+import base64
 from datetime import datetime, date
 
 import requests
@@ -14,7 +16,7 @@ portal_bp = Blueprint("portal", __name__)
 
 def portal_login_required(f):
     def wrapper(*args, **kwargs):
-        if not session.get("portal_alumno_id"):
+        if not session.get("portal_alumno_ids"):
             return redirect("/portal")
         return f(*args, **kwargs)
     wrapper.__name__ = f.__name__
@@ -43,22 +45,33 @@ def _marcar_sesion_activa(alumno_id):
     conn.close()
 
 
-def _buscar_alumno_por_lichess(username):
+def _buscar_accesos_por_lichess(username):
     conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM alumnos WHERE lower(lichess_username) = lower(?) AND activo = 1",
+    rows = conn.execute(
+        """
+        SELECT pa.id, pa.lichess_username, pa.alumno_id, pa.notas,
+               a.nombre, a.representante
+        FROM portal_accesos pa
+        JOIN alumnos a ON a.id = pa.alumno_id
+        WHERE lower(pa.lichess_username) = lower(?)
+          AND a.activo = 1
+        """,
         (username,),
-    ).fetchone()
+    ).fetchall()
     conn.close()
-    return row
+    return rows
 
 
-def _buscar_alumno_por_mail(mail):
+def _buscar_alumnos_por_mail(mail):
     conn = get_connection()
-    row = conn.execute(
+    alumnos = conn.execute(
         "SELECT * FROM alumnos WHERE lower(mail) = lower(?) AND activo = 1",
         (mail,),
-    ).fetchone()
+    ).fetchall()
+    conn.close()
+    # Por ahora, solo consideramos alumnos cuyo mail coincide exactamente.
+    # La expansión por representante se hará en el futuro cuando exista una tabla de responsables con ID propio.
+    return alumnos
     conn.close()
     return row
 
@@ -70,7 +83,7 @@ def _pagina_no_autorizado():
 
 @portal_bp.route("/portal")
 def portal_login():
-    if session.get("portal_alumno_id"):
+    if session.get("portal_alumno_ids"):
         return redirect("/portal/home")
     html = PORTAL_HTML.replace("{PORTAL_CONTENT}", PORTAL_LOGIN_CONTENT)
     return Response(html, mimetype="text/html; charset=utf-8")
@@ -78,17 +91,24 @@ def portal_login():
 
 @portal_bp.route("/portal/auth/lichess")
 def portal_auth_lichess():
-    client_id = os.environ.get("LICHESS_CLIENT_ID")
-    if not client_id:
-        return _pagina_no_autorizado()
+    client_id = os.environ.get("LICHESS_CLIENT_ID") or "asistente-ajedrez-portal"
     state = os.urandom(16).hex()
     session["portal_lichess_state"] = state
+    # PKCE: generar code_verifier y code_challenge (S256)
+    raw_verifier = base64.urlsafe_b64encode(os.urandom(64)).decode("utf-8").rstrip("=")
+    code_verifier = raw_verifier[:64]
+    session["portal_lichess_verifier"] = code_verifier
+    sha = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    code_challenge = base64.urlsafe_b64encode(sha).decode("utf-8").rstrip("=")
+
     redirect_uri = "https://asistenteajedrez-production.up.railway.app/portal/auth/lichess/callback"
     params = {
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     query = "&".join([key + "=" + requests.utils.quote(str(value)) for key, value in params.items()])
     url = "https://lichess.org/oauth?" + query
@@ -102,9 +122,12 @@ def portal_auth_lichess_callback():
     if not code or not state or state != session.get("portal_lichess_state"):
         return _pagina_no_autorizado()
     session.pop("portal_lichess_state", None)
+    code_verifier = session.get("portal_lichess_verifier")
+    session.pop("portal_lichess_verifier", None)
+    if not code_verifier:
+        return _pagina_no_autorizado()
 
-    client_id = os.environ.get("LICHESS_CLIENT_ID")
-    client_secret = os.environ.get("LICHESS_CLIENT_SECRET")
+    client_id = os.environ.get("LICHESS_CLIENT_ID") or "asistente-ajedrez-portal"
     redirect_uri = "https://asistenteajedrez-production.up.railway.app/portal/auth/lichess/callback"
 
     try:
@@ -113,9 +136,9 @@ def portal_auth_lichess_callback():
             data={
                 "grant_type": "authorization_code",
                 "code": code,
+                "code_verifier": code_verifier,
                 "redirect_uri": redirect_uri,
                 "client_id": client_id,
-                "client_secret": client_secret,
             },
             timeout=10,
         )
@@ -134,13 +157,21 @@ def portal_auth_lichess_callback():
         if not username:
             return _pagina_no_autorizado()
 
-        alumno = _buscar_alumno_por_lichess(username)
-        if not alumno:
+        accesos = _buscar_accesos_por_lichess(username)
+        if not accesos:
             return _pagina_no_autorizado()
 
-        session["portal_alumno_id"] = alumno["id"]
-        session["portal_nombre"] = alumno["nombre"]
-        _crear_sesion_portal(alumno["id"], username)
+        alumno_ids = [r["alumno_id"] for r in accesos]
+        nombres = [r["nombre"] for r in accesos]
+        reps = [r["representante"] for r in accesos if r["representante"]]
+        nombre_header = nombres[0]
+        if reps and len(set(reps)) == 1:
+            nombre_header = reps[0]
+
+        session["portal_alumno_ids"] = alumno_ids
+        session["portal_nombre"] = nombre_header
+        if alumno_ids:
+            _crear_sesion_portal(alumno_ids[0], username)
         return redirect("/portal/home")
     except Exception:
         return _pagina_no_autorizado()
@@ -188,13 +219,20 @@ def portal_auth_google_callback():
         if not email:
             return _pagina_no_autorizado()
 
-        alumno = _buscar_alumno_por_mail(email)
-        if not alumno:
+        alumnos = _buscar_alumnos_por_mail(email)
+        if not alumnos:
             return _pagina_no_autorizado()
 
-        session["portal_alumno_id"] = alumno["id"]
-        session["portal_nombre"] = alumno["nombre"]
-        _crear_sesion_portal(alumno["id"], None)
+        alumno_ids = [a["id"] for a in alumnos]
+        reps = [a["representante"] for a in alumnos if a["representante"]]
+        nombre_header = alumnos[0]["nombre"]
+        if reps and len(set(reps)) == 1:
+            nombre_header = reps[0]
+
+        session["portal_alumno_ids"] = alumno_ids
+        session["portal_nombre"] = nombre_header
+        if alumno_ids:
+            _crear_sesion_portal(alumno_ids[0], None)
         return redirect("/portal/home")
     except Exception:
         return _pagina_no_autorizado()
@@ -203,9 +241,9 @@ def portal_auth_google_callback():
 @portal_bp.route("/portal/home")
 @portal_login_required
 def portal_home():
-    alumno_id = session.get("portal_alumno_id")
+    alumno_ids = session.get("portal_alumno_ids") or []
     nombre = session.get("portal_nombre", "")
-    if not alumno_id:
+    if not alumno_ids:
         return redirect("/portal")
 
     conn = get_connection()
@@ -213,53 +251,66 @@ def portal_home():
     mes = hoy.month
     anio = hoy.year
 
-    clases = conn.execute(
-        """
-        SELECT fecha, hora, estado
-        FROM clases
-        WHERE alumno_id = ?
-          AND substr(fecha, 1, 7) = ?
-        ORDER BY fecha, hora
-        """,
-        (alumno_id, f"{anio:04d}-{mes:02d}"),
-    ).fetchall()
+    resumen = []
+    for aid in alumno_ids:
+        clases = conn.execute(
+            """
+            SELECT fecha, hora, estado
+            FROM clases
+            WHERE alumno_id = ?
+              AND substr(fecha, 1, 7) = ?
+            ORDER BY fecha, hora
+            """,
+            (aid, f"{anio:04d}-{mes:02d}"),
+        ).fetchall()
 
-    pago = conn.execute(
-        """
-        SELECT 1 FROM pagos
-        WHERE alumno_id = ?
-          AND strftime('%m', fecha) = ?
-          AND strftime('%Y', fecha) = ?
-        LIMIT 1
-        """,
-        (alumno_id, f"{mes:02d}", f"{anio:04d}"),
-    ).fetchone()
+        pago = conn.execute(
+            """
+            SELECT 1 FROM pagos
+            WHERE alumno_id = ?
+              AND strftime('%m', fecha) = ?
+              AND strftime('%Y', fecha) = ?
+            LIMIT 1
+            """,
+            (aid, f"{mes:02d}", f"{anio:04d}"),
+        ).fetchone()
 
-    conn.close()
+        info_alumno = conn.execute(
+            "SELECT nombre FROM alumnos WHERE id = ?", (aid,)
+        ).fetchone()
 
-    estado_pago = "al_dia" if pago else "pendiente"
-    _marcar_sesion_activa(alumno_id)
-
-    clases_items = []
-    for c in clases:
-        clases_items.append(
+        clases_items = []
+        for c in clases:
+            clases_items.append(
+                {
+                    "fecha": c["fecha"],
+                    "hora": c["hora"] or "",
+                    "estado": c["estado"],
+                }
+            )
+        resumen.append(
             {
-                "fecha": c["fecha"],
-                "hora": c["hora"] or "",
-                "estado": c["estado"],
+                "id": aid,
+                "nombre": info_alumno["nombre"] if info_alumno else "",
+                "clases": clases_items,
+                "estado_pago": "al_dia" if pago else "pendiente",
             }
         )
 
+    conn.close()
+
+    if alumno_ids:
+        _marcar_sesion_activa(alumno_ids[0])
+
     contenido = PORTAL_HOME_CONTENT.replace("{NOMBRE}", nombre)
-    contenido = contenido.replace("{CLASES_JSON}", json.dumps(clases_items))
-    contenido = contenido.replace("{ESTADO_PAGO}", estado_pago)
+    contenido = contenido.replace("{RESUMEN_JSON}", json.dumps(resumen))
     html = PORTAL_HTML.replace("{PORTAL_CONTENT}", contenido)
     return Response(html, mimetype="text/html; charset=utf-8")
 
 
 @portal_bp.route("/portal/logout")
 def portal_logout():
-    session.pop("portal_alumno_id", None)
+    session.pop("portal_alumno_ids", None)
     session.pop("portal_nombre", None)
     return redirect("/portal")
 
@@ -374,33 +425,43 @@ PORTAL_LOGIN_CONTENT = """
 PORTAL_HOME_CONTENT = """
 <div class="card">
   <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}">Hola, {NOMBRE}</h2>
-  <p id="home-estado" data-es="" data-en=""></p>
-  <div class="clases-list" id="home-clases"></div>
+  <div id="home-alumnos"></div>
   <div style="margin-top:0.8rem">
     <a href="/portal/logout" class="btn" id="home-logout">Salir</a>
   </div>
 </div>
 <script>
 (function(){
-  var clases = {CLASES_JSON};
-  var estado = '{ESTADO_PAGO}';
-  var estadoEl = document.getElementById('home-estado');
-  if(estadoEl){
-    if(estado === 'al_dia'){
-      estadoEl.setAttribute('data-es', 'Estado de pagos: Al d\\u00eda \\u2713');
-      estadoEl.setAttribute('data-en', 'Payments: Up to date \\u2713');
-    } else {
-      estadoEl.setAttribute('data-es', 'Estado de pagos: Pendiente \\u2717');
-      estadoEl.setAttribute('data-en', 'Payments: Pending \\u2717');
-    }
+  var resumen = {RESUMEN_JSON};
+  var cont = document.getElementById('home-alumnos');
+  if(!cont){ return; }
+  if(!resumen || resumen.length === 0){
+    var p = document.createElement('p');
+    p.textContent = 'No hay clases registradas este mes.';
+    cont.appendChild(p);
+    return;
   }
-  var cont = document.getElementById('home-clases');
-  if(cont){
-    if(!clases || clases.length === 0){
-      cont.textContent = 'No hay clases registradas este mes.';
+  for(var i=0;i<resumen.length;i++){
+    var r = resumen[i];
+    var bloque = document.createElement('div');
+    bloque.style.marginTop = '0.75rem';
+    var titulo = document.createElement('p');
+    titulo.style.fontWeight = '600';
+    titulo.textContent = r.nombre;
+    var estado = document.createElement('p');
+    var esOk = r.estado_pago === 'al_dia';
+    estado.setAttribute('data-es', esOk ? 'Estado de pagos: Al d\\u00eda \\u2713' : 'Estado de pagos: Pendiente \\u2717');
+    estado.setAttribute('data-en', esOk ? 'Payments: Up to date \\u2713' : 'Payments: Pending \\u2717');
+    estado.className = esOk ? 'status-ok' : 'status-bad';
+    var lista = document.createElement('div');
+    lista.className = 'clases-list';
+    if(!r.clases || r.clases.length === 0){
+      var vacio = document.createElement('div');
+      vacio.textContent = 'No hay clases registradas este mes.';
+      lista.appendChild(vacio);
     } else {
-      for(var i=0;i<clases.length;i++){
-        var c = clases[i];
+      for(var j=0;j<r.clases.length;j++){
+        var c = r.clases[j];
         var row = document.createElement('div');
         row.className = 'clase-item';
         var left = document.createElement('div');
@@ -410,9 +471,13 @@ PORTAL_HOME_CONTENT = """
         right.textContent = c.estado;
         row.appendChild(left);
         row.appendChild(right);
-        cont.appendChild(row);
+        lista.appendChild(row);
       }
     }
+    bloque.appendChild(titulo);
+    bloque.appendChild(estado);
+    bloque.appendChild(lista);
+    cont.appendChild(bloque);
   }
 })();
 </script>

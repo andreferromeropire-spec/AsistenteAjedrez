@@ -265,6 +265,59 @@ def api_alumnos():
     return jsonify([dict(a) for a in alumnos])
 
 
+@dashboard_bp.route('/dashboard/api/portal_accesos')
+@login_required
+def api_portal_accesos():
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT pa.id, pa.lichess_username, pa.alumno_id, pa.notas,
+               a.nombre
+        FROM portal_accesos pa
+        JOIN alumnos a ON a.id = pa.alumno_id
+        ORDER BY lower(pa.lichess_username), a.nombre
+    """).fetchall()
+    conn.close()
+    return jsonify([
+        {
+            'id': r['id'],
+            'lichess_username': r['lichess_username'],
+            'alumno_id': r['alumno_id'],
+            'alumno_nombre': r['nombre'],
+            'notas': r['notas'] or ''
+        }
+        for r in rows
+    ])
+
+
+@dashboard_bp.route('/dashboard/api/portal_accesos', methods=['POST'])
+@login_required
+def api_portal_accesos_crear():
+    data = request.get_json() or {}
+    lichess_username = (data.get('lichess_username') or '').strip()
+    alumno_id = data.get('alumno_id')
+    notas = (data.get('notas') or '').strip()
+    if not lichess_username or not alumno_id:
+        return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO portal_accesos (lichess_username, alumno_id, notas, creado) VALUES (?,?,?,datetime('now'))",
+        (lichess_username, int(alumno_id), notas)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/dashboard/api/portal_accesos/<int:acceso_id>', methods=['DELETE'])
+@login_required
+def api_portal_accesos_borrar(acceso_id):
+    conn = get_connection()
+    conn.execute("DELETE FROM portal_accesos WHERE id = ?", (acceso_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @dashboard_bp.route('/dashboard/api/clases')
 @login_required
 def api_clases():
@@ -1002,6 +1055,7 @@ tr:hover td{background:var(--gold-dim)}
         <button class="tab-btn" onclick="showTab('pagos',this)">Pagos</button>
         <button class="tab-btn" onclick="showTab('deuda',this)">Deuda</button>
         <button class="tab-btn" onclick="showTab('alumnos',this)">Alumnos</button>
+        <button class="tab-btn" onclick="showTab('portal',this)">Portal</button>
         <button class="tab-btn" onclick="showTab('graficos',this)">Graficos</button>
       </div>
 
@@ -1106,6 +1160,40 @@ tr:hover td{background:var(--gold-dim)}
         <div class="table-wrap">
           <table><thead><tr><th>ID</th><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Clases</th><th>Pago</th><th></th></tr></thead>
           <tbody id="t-alumnos"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-portal">
+        <div class="section">
+          <div class="section-title">Accesos al portal</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Lichess username</th><th>Alumno</th><th>Notas</th><th></th></tr>
+              </thead>
+              <tbody id="t-portal-accesos"><tr><td colspan="4" class="empty">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+          <div style="margin-top:1rem">
+            <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Agregar acceso</h3>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">
+              <div>
+                <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Lichess username</label>
+                <input id="portal-lichess-input" type="text" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem">
+              </div>
+              <div>
+                <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Alumno</label>
+                <select id="portal-alumno-select" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:180px">
+                  <option value="">Seleccionar...</option>
+                </select>
+              </div>
+              <div style="flex:1 1 160px">
+                <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Notas</label>
+                <input id="portal-notas-input" type="text" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem">
+              </div>
+              <button class="btn" type="button" onclick="crearPortalAcceso()">Agregar</button>
+            </div>
+          </div>
         </div>
       </div>
 

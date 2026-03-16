@@ -132,12 +132,7 @@ def crear_tablas():
         )
     """)
 
-    # Nuevas columnas/tablas para portal de alumnos
-    try:
-        cursor.execute("ALTER TABLE alumnos ADD COLUMN lichess_username TEXT")
-    except:
-        pass  # Ya existe, ignorar
-
+    # Nuevas tablas para portal de alumnos
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS portal_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,6 +140,17 @@ def crear_tablas():
             lichess_username TEXT,
             created_at TEXT NOT NULL,
             last_seen TEXT NOT NULL,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS portal_accesos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lichess_username TEXT NOT NULL,
+            alumno_id INTEGER NOT NULL,
+            notas TEXT,
+            creado TEXT,
             FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
         )
     """)
