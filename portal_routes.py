@@ -9,6 +9,7 @@ from flask import Blueprint, Response, request, session, redirect
 
 from database import get_connection
 from calendar_google import crear_flow_google
+from dashboard_routes import SHARED_CSS
 
 
 portal_bp = Blueprint("portal", __name__)
@@ -323,53 +324,65 @@ PORTAL_HTML = """<!DOCTYPE html>
 <title>Alumno Portal</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:15px}
-body{font-family:'DM Sans',sans-serif;background:#0c1018;color:#d0dce8;min-height:100vh}
-header{display:flex;align-items:center;justify-content:space-between;padding:0.9rem 1.5rem;background:#161e28;border-bottom:1px solid #253040;box-shadow:0 2px 12px rgba(0,0,0,0.4)}
-.header-left{display:flex;align-items:center;gap:0.7rem}
-.header-left h1{font-family:'Playfair Display',serif;font-size:1.05rem;color:#4d8fd4}
-.lang-toggle{display:flex;align-items:center;gap:0.3rem;font-size:0.8rem}
-.lang-toggle button{background:#1c2530;border:1px solid #253040;color:#d0dce8;padding:0.25rem 0.6rem;border-radius:4px;cursor:pointer;font-size:0.78rem}
-.lang-toggle button.active{border-color:#4d8fd4;background:rgba(77,143,212,0.12)}
-main{padding:1.5rem 1.5rem;max-width:720px;margin:0 auto}
-.card{background:#161e28;border:1px solid #253040;border-radius:8px;padding:1.25rem 1.4rem;box-shadow:0 2px 10px rgba(0,0,0,0.4);margin-bottom:1rem}
-.card h2{font-family:'Playfair Display',serif;font-size:1.15rem;margin-bottom:0.5rem;color:#4d8fd4}
-.card p{font-size:0.9rem;color:#b8ccdf;margin-bottom:0.4rem}
+""" + SHARED_CSS + """
+main{padding:1.5rem 1.75rem;max-width:960px;margin:0 auto}
+.portal-header-sub{font-size:0.8rem;color:var(--text-muted);}
 .btn-row{display:flex;gap:0.6rem;margin-top:0.8rem;flex-wrap:wrap}
-.btn{background:#1c2530;border:1px solid #253040;color:#d0dce8;padding:0.45rem 0.9rem;border-radius:4px;cursor:pointer;font-size:0.82rem;display:inline-flex;align-items:center;gap:0.4rem;text-decoration:none}
-.btn:hover{border-color:#4d8fd4}
-.status-ok{color:#4a9e7a}
-.status-bad{color:#c0524a}
-.clases-list{margin-top:0.5rem;font-size:0.85rem}
-.clase-item{display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid #1a2438}
-.clase-item:last-child{border-bottom:none}
-.clase-meta{font-size:0.8rem;color:#6a8faa}
-.unauth-msg{font-size:0.9rem;color:#b8ccdf;line-height:1.5}
-.unauth-msg strong{color:#4d8fd4}
+.unauth-msg{font-size:0.9rem;line-height:1.5}
 </style>
 </head>
 <body>
 <header>
   <div class="header-left">
     <span style="font-size:1.4rem">&#9823;</span>
-    <h1 id="portal-title">Alumno Portal</h1>
+    <div>
+      <h1 id="portal-title" data-es="Portal de alumnos" data-en="Student Portal">Portal de alumnos</h1>
+      <div class="portal-header-sub" id="portal-subtitle" data-es="Acceso para alumnos" data-en="Student access">Acceso para alumnos</div>
+    </div>
   </div>
-  <div class="lang-toggle">
-    <span id="lang-label">Idioma:</span>
-    <button type="button" id="btn-es" class="active">ES</button>
-    <button type="button" id="btn-en">EN</button>
+  <div class="header-right">
+    <div class="theme-group">
+      <button class="theme-btn active" onclick="setTheme('light',this)">&#9728;</button>
+      <button class="theme-btn" onclick="setTheme('dark',this)">&#9790;</button>
+      <button class="theme-btn" onclick="setTheme('navy',this)">&#127754;</button>
+    </div>
+    <div class="lang-toggle">
+      <span id="lang-label">Idioma:</span>
+      <button type="button" class="btn" id="btn-es">ES</button>
+      <button type="button" class="btn" id="btn-en">EN</button>
+    </div>
   </div>
 </header>
 <main>
   {PORTAL_CONTENT}
 </main>
 <script>
+function setTheme(tema, btn) {
+  document.documentElement.setAttribute('data-theme', tema);
+  try { localStorage.setItem('dashboard-theme', tema); } catch(e) {}
+  var btns = document.querySelectorAll('.theme-btn');
+  var i;
+  for (i = 0; i < btns.length; i++) { btns[i].classList.remove('active'); }
+  if (btn) { btn.classList.add('active'); }
+}
+(function() {
+  var saved;
+  try { saved = localStorage.getItem('dashboard-theme') || 'light'; } catch(e) { saved = 'light'; }
+  document.documentElement.setAttribute('data-theme', saved);
+  var idxMap = {light:0, dark:1, navy:2};
+  var idx = idxMap[saved];
+  if (idx === undefined) { idx = 0; }
+  var btns = document.querySelectorAll('.theme-btn');
+  var i;
+  for (i = 0; i < btns.length; i++) { btns[i].classList.remove('active'); }
+  if (btns[idx]) { btns[idx].classList.add('active'); }
+})();
 (function(){
-  var lang = localStorage.getItem('portal_lang') || 'es';
+  var lang;
+  try { lang = localStorage.getItem('portal_lang') || 'es'; } catch(e) { lang = 'es'; }
   function setLang(l){
     lang = l;
-    localStorage.setItem('portal_lang', l);
+    try { localStorage.setItem('portal_lang', l); } catch(e) {}
     var esBtn = document.getElementById('btn-es');
     var enBtn = document.getElementById('btn-en');
     if(esBtn && enBtn){
@@ -378,21 +391,32 @@ main{padding:1.5rem 1.5rem;max-width:720px;margin:0 auto}
     }
     var el;
     el = document.getElementById('portal-title');
-    if(el){ el.textContent = (l === 'es') ? 'Alumno Portal' : 'Student Portal'; }
+    if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
+    el = document.getElementById('portal-subtitle');
+    if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
     el = document.getElementById('login-subtitle');
-    if(el){ el.textContent = (l === 'es') ? 'Acceso para alumnos' : 'Student access'; }
+    if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
     el = document.getElementById('login-btn-lichess');
-    if(el){ el.textContent = (l === 'es') ? 'Entrar con Lichess' : 'Sign in with Lichess'; }
+    if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
     el = document.getElementById('login-btn-google');
-    if(el){ el.textContent = (l === 'es') ? 'Entrar con Google' : 'Sign in with Google'; }
+    if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
     el = document.getElementById('home-saludo');
     if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
-    el = document.getElementById('home-estado');
-    if(el){ el.textContent = (l === 'es') ? el.getAttribute('data-es') : el.getAttribute('data-en'); }
-    el = document.getElementById('home-clases-titulo');
-    if(el){ el.textContent = (l === 'es') ? 'Clases del mes' : 'This month lessons'; }
-    el = document.getElementById('home-logout');
-    if(el){ el.textContent = (l === 'es') ? 'Salir' : 'Logout'; }
+    var estados = document.querySelectorAll('.estado-pago');
+    var i;
+    for (i = 0; i < estados.length; i++) {
+      var e = estados[i];
+      var esTxt = e.getAttribute('data-es');
+      var enTxt = e.getAttribute('data-en');
+      e.textContent = (l === 'es') ? esTxt : enTxt;
+    }
+    var badges = document.querySelectorAll('.badge-estado-clase');
+    for (i = 0; i < badges.length; i++) {
+      var b = badges[i];
+      var esT = b.getAttribute('data-es');
+      var enT = b.getAttribute('data-en');
+      b.textContent = (l === 'es') ? esT : enT;
+    }
     el = document.getElementById('unauth-title');
     if(el){ el.textContent = (l === 'es') ? 'Acceso no autorizado' : 'Access not allowed'; }
     el = document.getElementById('unauth-text');
@@ -412,11 +436,14 @@ main{padding:1.5rem 1.5rem;max-width:720px;margin:0 auto}
 
 PORTAL_LOGIN_CONTENT = """
 <div class="card">
-  <h2 id="login-title">Alumno Portal</h2>
-  <p id="login-subtitle">Acceso para alumnos</p>
+  <div class="logo">
+    <div class="piece">&#9823;</div>
+    <h2 id="login-title" data-es="Portal de alumnos" data-en="Student Portal">Portal de alumnos</h2>
+    <p id="login-subtitle" data-es="Acceso para alumnos" data-en="Student access">Acceso para alumnos</p>
+  </div>
   <div class="btn-row">
-    <a href="/portal/auth/lichess" class="btn" id="login-btn-lichess">Entrar con Lichess</a>
-    <a href="/portal/auth/google" class="btn" id="login-btn-google">Entrar con Google</a>
+    <a href="/portal/auth/lichess" class="btn" id="login-btn-lichess" data-es="Entrar con Lichess" data-en="Sign in with Lichess">Entrar con Lichess</a>
+    <a href="/portal/auth/google" class="btn" id="login-btn-google" data-es="Entrar con Google" data-en="Sign in with Google">Entrar con Google</a>
   </div>
 </div>
 """
@@ -448,11 +475,12 @@ PORTAL_HOME_CONTENT = """
     var titulo = document.createElement('p');
     titulo.style.fontWeight = '600';
     titulo.textContent = r.nombre;
-    var estado = document.createElement('p');
+    var estado = document.createElement('span');
+    estado.className = 'badge estado-pago';
     var esOk = r.estado_pago === 'al_dia';
-    estado.setAttribute('data-es', esOk ? 'Estado de pagos: Al d\\u00eda \\u2713' : 'Estado de pagos: Pendiente \\u2717');
-    estado.setAttribute('data-en', esOk ? 'Payments: Up to date \\u2713' : 'Payments: Pending \\u2717');
-    estado.className = esOk ? 'status-ok' : 'status-bad';
+    estado.setAttribute('data-es', esOk ? 'Al d\\u00eda \\u2713' : 'Pendiente');
+    estado.setAttribute('data-en', esOk ? 'Up to date \\u2713' : 'Pending');
+    if(esOk){ estado.className += ' badge-green'; } else { estado.className += ' badge-red'; }
     var lista = document.createElement('div');
     lista.className = 'clases-list';
     if(!r.clases || r.clases.length === 0){
@@ -460,19 +488,48 @@ PORTAL_HOME_CONTENT = """
       vacio.textContent = 'No hay clases registradas este mes.';
       lista.appendChild(vacio);
     } else {
+      var tabla = document.createElement('table');
+      var thead = document.createElement('thead');
+      var trh = document.createElement('tr');
+      var th1 = document.createElement('th'); th1.textContent = 'Fecha';
+      var th2 = document.createElement('th'); th2.textContent = 'Hora';
+      var th3 = document.createElement('th'); th3.textContent = 'Estado';
+      trh.appendChild(th1); trh.appendChild(th2); trh.appendChild(th3);
+      thead.appendChild(trh);
+      var tbody = document.createElement('tbody');
       for(var j=0;j<r.clases.length;j++){
         var c = r.clases[j];
-        var row = document.createElement('div');
-        row.className = 'clase-item';
-        var left = document.createElement('div');
-        left.textContent = c.fecha + ' ' + (c.hora || '');
-        var right = document.createElement('div');
-        right.className = 'clase-meta';
-        right.textContent = c.estado;
-        row.appendChild(left);
-        row.appendChild(right);
-        lista.appendChild(row);
+        var row = document.createElement('tr');
+        var fParts = c.fecha ? c.fecha.split('-') : null;
+        var fechaTxt = c.fecha;
+        if(fParts && fParts.length === 3){
+          var anio = parseInt(fParts[0],10);
+          var mes = parseInt(fParts[1],10)-1;
+          var dia = parseInt(fParts[2],10);
+          var d = new Date(anio, mes, dia);
+          var dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+          var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+          fechaTxt = dias[d.getDay()] + ' ' + (dia<10?'0'+dia:dia) + ' ' + meses[mes];
+        }
+        var tdF = document.createElement('td');
+        tdF.textContent = fechaTxt;
+        var tdH = document.createElement('td');
+        tdH.textContent = c.hora || '';
+        var tdE = document.createElement('td');
+        var badge = document.createElement('span');
+        badge.className = 'badge badge-estado-clase';
+        if(c.estado === 'agendada'){ badge.className += ' badge-gold'; badge.setAttribute('data-es','Agendada'); badge.setAttribute('data-en','Scheduled'); }
+        else if(c.estado === 'dada'){ badge.className += ' badge-green'; badge.setAttribute('data-es','Dada'); badge.setAttribute('data-en','Done'); }
+        else { badge.className += ' badge-red'; badge.setAttribute('data-es','Cancelada'); badge.setAttribute('data-en','Cancelled'); }
+        tdE.appendChild(badge);
+        row.appendChild(tdF);
+        row.appendChild(tdH);
+        row.appendChild(tdE);
+        tbody.appendChild(row);
       }
+      tabla.appendChild(thead);
+      tabla.appendChild(tbody);
+      lista.appendChild(tabla);
     }
     bloque.appendChild(titulo);
     bloque.appendChild(estado);

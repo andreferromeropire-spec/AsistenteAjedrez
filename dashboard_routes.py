@@ -13,6 +13,43 @@ from database import get_connection
 dashboard_bp = Blueprint('dashboard', __name__)
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "ajedrez2026")
 
+# Estilos compartidos entre dashboard y portal
+SHARED_CSS = """
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+::root{--gold:#1a56a0;--gold-light:#1a56a0;--gold-dim:rgba(26,86,160,0.08);--green:#1e7a52;--green-bg:rgba(30,122,82,0.1);--red:#b03030;--red-bg:rgba(176,48,48,0.1)}
+[data-theme="light"]{--bg:#ffffff;--bg2:#f0f5fa;--surface:#ffffff;--surface2:#eaf1f8;--border:#b8cfe0;--text:#0a1628;--text-dim:#2c4a6a;--text-muted:#6a8faa;--shadow:rgba(10,40,80,0.08)}
+[data-theme="dark"]{--bg:#0c1018;--bg2:#111820;--surface:#161e28;--surface2:#1c2530;--border:#253040;--text:#d0dce8;--text-dim:#5a7090;--text-muted:#354555;--shadow:rgba(0,0,0,0.4)}
+[data-theme="navy"]{--bg:#07090f;--bg2:#0b0e18;--surface:#0f1420;--surface2:#131928;--border:#1a2438;--text:#b8ccdf;--text-dim:#4a6280;--text-muted:#253545;--shadow:rgba(0,0,0,0.5);--gold:#4d8fd4;--gold-light:#4d8fd4;--gold-dim:rgba(77,143,212,0.12);--green:#4a9e7a;--red:#c0524a}
+html{font-size:15px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background 0.25s,color 0.25s}
+header{display:flex;align-items:center;justify-content:space-between;padding:0.9rem 1.75rem;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 2px 12px var(--shadow)}
+.header-left{display:flex;align-items:center;gap:0.75rem}
+.header-left h1{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--gold-light)}
+.header-right{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
+select,.btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.75rem;border-radius:4px;font-family:'DM Sans',sans-serif;font-size:0.82rem;cursor:pointer;outline:none;transition:border-color 0.2s,background 0.2s}
+select:focus,.btn:hover{border-color:var(--gold)}
+.btn{display:flex;align-items:center;gap:0.35rem}
+.theme-group{display:flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.theme-btn{background:var(--surface2);border:none;color:var(--text-dim);padding:0.4rem 0.6rem;cursor:pointer;font-size:0.85rem;transition:background 0.15s,color 0.15s;border-right:1px solid var(--border)}
+.theme-btn:last-child{border-right:none}
+.theme-btn.active{background:var(--gold-dim);color:var(--gold-light)}
+.theme-btn:hover:not(.active){background:var(--border)}
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:5px;box-shadow:0 1px 4px var(--shadow)}
+table{width:100%;border-collapse:collapse;font-size:0.83rem}
+thead{background:var(--surface2)}
+th{padding:0.65rem 0.9rem;text-align:left;font-size:0.67rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border)}
+td{padding:0.65rem 0.9rem;border-bottom:1px solid var(--bg2);color:var(--text);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--gold-dim)}
+.badge{display:inline-block;padding:0.18rem 0.5rem;border-radius:3px;font-size:0.68rem;font-weight:500;letter-spacing:0.04em;text-transform:uppercase}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-gold{background:var(--gold-dim);color:var(--gold-light)}
+.badge-gray{background:var(--bg2);color:var(--text-dim)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.25rem 1.4rem;box-shadow:0 2px 10px var(--shadow);margin-bottom:1rem}
+.empty{padding:2.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem}
+"""
+
 
 def login_required(f):
     @wraps(f)
