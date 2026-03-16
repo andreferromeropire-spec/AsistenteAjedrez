@@ -137,7 +137,12 @@ Las acciones posibles son:
     datos necesarios: titulo (el título del evento a ignorar, tal como aparece)
     Ejemplos: "ignorar: Andrea y Lucia de Elizalde", "ignorá ese evento", "no es una clase, ignoralo"
 
-20. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+20. "actualizar_lichess" - quiere actualizar el usuario de Lichess de un alumno
+    datos necesarios: nombre_alumno, lichess_username
+    Ejemplos: "el lichess de Lucas es lucas123", "actualizar lichess de Grace a grace_chess",
+              "lichess de Henry: henry_chess", "cambiá el lichess de Fiona a fiona_lichess"
+
+21. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.
@@ -151,6 +156,15 @@ Para aclaracion_alumno: si respondió con número, devolvé numero_opcion como e
 Si respondió con nombre, devolvé nombre_alumno.
 
 Fecha de hoy: {__import__('datetime').date.today().isoformat()}
+
+Recordá:
+- Para actualizar_lichess, extraé SIEMPRE nombre_alumno y lichess_username.
+  nombre_alumno es el nombre tal como lo diría Andrea ("Lucas", "Grace", "Henry").
+  lichess_username es el nombre de usuario exacto que aparece después de "es", "a" o ":".
+  Ejemplos:
+    "el lichess de Lucas es lucas123" → nombre_alumno: "Lucas", lichess_username: "lucas123"
+    "actualizar lichess de Grace a grace_chess" → nombre_alumno: "Grace", lichess_username: "grace_chess"
+    "lichess de Henry: henry_chess" → nombre_alumno: "Henry", lichess_username: "henry_chess"
 
 Devolvé SOLO el JSON, sin explicaciones ni texto adicional."""
 

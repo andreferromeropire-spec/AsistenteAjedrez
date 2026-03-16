@@ -1053,6 +1053,25 @@ def ejecutar_accion(accion, datos, numero):
         else:
             return "Respondé con 1 (inactivo), 2 (borrado definitivo) o 3 (cancelar)."
 
+    elif accion == "actualizar_lichess":
+        nombre_buscado = datos.get("nombre_alumno", "")
+        nuevo_usuario = datos.get("lichess_username", "")
+        if not nombre_buscado or not nuevo_usuario:
+            return "Necesito el nombre del alumno y el nuevo usuario de Lichess."
+
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
+        if not alumno:
+            return aviso
+
+        conn = __import__("database").get_connection()
+        conn.execute(
+            "UPDATE alumnos SET lichess_username = ? WHERE id = ?",
+            (nuevo_usuario, alumno["id"]),
+        )
+        conn.commit()
+        conn.close()
+        return f"Listo, lichess de {alumno['nombre']} actualizado a {nuevo_usuario}."
+
     elif accion == "actualizar_promo":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
