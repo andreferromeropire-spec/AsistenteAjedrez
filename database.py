@@ -155,6 +155,32 @@ def crear_tablas():
         )
     """)
 
+    # Recordatorios para portal de alumnos
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS recordatorios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            minutos_antes INTEGER NOT NULL,
+            alcance TEXT NOT NULL DEFAULT 'todas',
+            canal TEXT NOT NULL DEFAULT 'mail',
+            mail_destino TEXT,
+            clase_id INTEGER,
+            activo INTEGER DEFAULT 1,
+            creado TEXT,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS recordatorios_enviados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recordatorio_id INTEGER,
+            clase_id INTEGER,
+            enviado_en TEXT,
+            UNIQUE(recordatorio_id, clase_id)
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Base de datos lista.")

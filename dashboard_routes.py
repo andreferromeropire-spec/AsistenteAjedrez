@@ -366,6 +366,34 @@ def api_portal_accesos_borrar(acceso_id):
     return jsonify({'ok': True})
 
 
+@dashboard_bp.route('/dashboard/api/recordatorios_alumnos')
+@login_required
+def api_recordatorios_alumnos():
+    conn = get_connection()
+    filas = conn.execute("""
+        SELECT r.id, r.alumno_id, r.minutos_antes, r.alcance, r.canal,
+               r.mail_destino, r.creado, a.nombre
+        FROM recordatorios r
+        JOIN alumnos a ON a.id = r.alumno_id
+        WHERE r.activo = 1
+        ORDER BY a.nombre, r.minutos_antes
+    """).fetchall()
+    conn.close()
+    return jsonify([
+        {
+            'id': f['id'],
+            'alumno_id': f['alumno_id'],
+            'alumno_nombre': f['nombre'],
+            'minutos_antes': f['minutos_antes'],
+            'alcance': f['alcance'],
+            'canal': f['canal'],
+            'mail_destino': f['mail_destino'] or '',
+            'creado': f['creado'],
+        }
+        for f in filas
+    ])
+
+
 @dashboard_bp.route('/dashboard/api/clases')
 @login_required
 def api_clases():
@@ -1243,6 +1271,17 @@ tr:hover td{background:var(--gold-dim)}
             </div>
           </div>
         </div>
+        <div class="section">
+          <div class="section-title">Recordatorios configurados por alumnos</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Alumno</th><th>Tiempo antes</th><th>Alcance</th><th>Canal</th><th>Mail destino</th><th>Creado</th></tr>
+              </thead>
+              <tbody id="t-portal-recordatorios"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div class="tab-panel" id="tab-graficos">
@@ -1461,6 +1500,7 @@ function cargarTodo() {
   cargarPagos();
   cargarDeudores();
   cargarAlumnos();
+   cargarPortalRecordatorios();
   cargarUltimaSync();
   // Recargar cobros si esa pestaña está activa
   if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
@@ -1641,7 +1681,38 @@ function cargarAlumnos() {
       return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="font-size:0.8rem;color:var(--text-muted)">'+lichess+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
     }).join('') || '<tr><td colspan="11" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
+
+    // Popular select de alumnos para portal
+    var sel = document.getElementById('portal-alumno-select');
+    if (sel) {
+      var opts = ['<option value="">Seleccionar...</option>'].concat(datos.map(function(a) {
+        var label = a.nombre;
+        if (a.representante) label += ' (' + a.representante + ')';
+        return '<option value="'+a.id+'">'+label+'</option>';
+      }));
+      sel.innerHTML = opts.join('');
+    }
   });
+}
+
+function cargarPortalRecordatorios() {
+  fetch('/dashboard/api/recordatorios_alumnos').then(function(r){ return r.json(); }).then(function(datos){
+    var tb = document.getElementById('t-portal-recordatorios');
+    if (!tb) return;
+    if (!datos || !datos.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="empty">Sin recordatorios</td></tr>';
+      return;
+    }
+    var html = datos.map(function(r){
+      var tiempo = r.minutos_antes + ' min';
+      var alcance = r.alcance;
+      var canal = r.canal;
+      var mail = r.mail_destino || '';
+      var creado = r.creado || '';
+      return '<tr><td>'+r.alumno_nombre+'</td><td>'+tiempo+'</td><td>'+alcance+'</td><td>'+canal+'</td><td>'+mail+'</td><td>'+creado+'</td></tr>';
+    }).join('');
+    tb.innerHTML = html;
+  }).catch(function(){});
 }
 
 function cargarGraficos() {

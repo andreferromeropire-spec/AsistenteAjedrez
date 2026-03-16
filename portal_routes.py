@@ -389,6 +389,93 @@ def portal_home():
     return Response(html, mimetype="text/html; charset=utf-8")
 
 
+@portal_bp.route("/portal/api/recordatorios")
+@portal_login_required
+def api_portal_recordatorios():
+    alumno_ids = session.get("portal_alumno_ids") or []
+    if not alumno_ids:
+        return Response(json.dumps([]), mimetype="application/json")
+    alumno_id = alumno_ids[0]
+    conn = get_connection()
+    recs = conn.execute(
+        """
+        SELECT id, minutos_antes, alcance, canal, mail_destino, activo, creado
+        FROM recordatorios
+        WHERE alumno_id = ? AND activo = 1 AND canal = 'mail'
+        ORDER BY minutos_antes
+        """,
+        (alumno_id,),
+    ).fetchall()
+    conn.close()
+    return Response(
+        json.dumps(
+            [
+                {
+                    "id": r["id"],
+                    "minutos_antes": r["minutos_antes"],
+                    "alcance": r["alcance"],
+                    "canal": r["canal"],
+                    "mail_destino": r["mail_destino"] or "",
+                    "creado": r["creado"],
+                }
+                for r in recs
+            ]
+        ),
+        mimetype="application/json",
+    )
+
+
+@portal_bp.route("/portal/api/recordatorios", methods=["POST"])
+@portal_login_required
+def api_portal_recordatorios_crear():
+    alumno_ids = session.get("portal_alumno_ids") or []
+    if not alumno_ids:
+        return Response(json.dumps({"ok": False, "error": "No hay alumno en sesión"}), mimetype="application/json", status=400)
+    alumno_id = alumno_ids[0]
+    data = request.get_json() or {}
+    minutos_antes = int(data.get("minutos_antes") or 0)
+    alcance = (data.get("alcance") or "todas").strip()
+    canal = (data.get("canal") or "mail").strip()
+    mail_destino = (data.get("mail_destino") or "").strip()
+    clase_id = data.get("clase_id")
+    if canal != "mail":
+        return Response(json.dumps({"ok": False, "error": "Canal no soportado"}), mimetype="application/json", status=400)
+    if minutos_antes <= 0:
+        return Response(json.dumps({"ok": False, "error": "Tiempo antes inválido"}), mimetype="application/json", status=400)
+    conn = get_connection()
+    cant_activos = conn.execute(
+        "SELECT COUNT(*) as n FROM recordatorios WHERE alumno_id = ? AND activo = 1",
+        (alumno_id,),
+    ).fetchone()["n"]
+    if cant_activos >= 3:
+        conn.close()
+        return Response(json.dumps({"ok": False, "error": "Límite de recordatorios activos alcanzado (3)"}), mimetype="application/json", status=400)
+    conn.execute(
+        "INSERT INTO recordatorios (alumno_id, minutos_antes, alcance, canal, mail_destino, clase_id, activo, creado) VALUES (?,?,?,?,?,?,1,datetime('now'))",
+        (alumno_id, minutos_antes, alcance, canal, mail_destino, clase_id),
+    )
+    conn.commit()
+    conn.close()
+    return Response(json.dumps({"ok": True}), mimetype="application/json")
+
+
+@portal_bp.route("/portal/api/recordatorios/<int:rec_id>", methods=["DELETE"])
+@portal_login_required
+def api_portal_recordatorios_borrar(rec_id):
+    alumno_ids = session.get("portal_alumno_ids") or []
+    if not alumno_ids:
+        return Response(json.dumps({"ok": False, "error": "No hay alumno en sesión"}), mimetype="application/json", status=400)
+    alumno_id = alumno_ids[0]
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM recordatorios WHERE id = ? AND alumno_id = ?",
+        (rec_id, alumno_id),
+    )
+    conn.commit()
+    conn.close()
+    return Response(json.dumps({"ok": True}), mimetype="application/json")
+
+
 @portal_bp.route("/portal/logout")
 def portal_logout():
     session.pop("portal_alumno_ids", None)
@@ -533,6 +620,11 @@ PORTAL_HOME_CONTENT = """
 <div class="card">
   <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}">Hola, {NOMBRE}</h2>
   <div id="home-alumnos"></div>
+  <div class="section" id="home-recordatorios">
+    <h3 style="font-size:0.9rem;margin-top:1rem;margin-bottom:0.4rem">Recordatorios</h3>
+    <div id="recordatorios-lista"></div>
+    <div id="recordatorios-form"></div>
+  </div>
   <div style="margin-top:0.8rem">
     <a href="/portal/logout" class="btn" id="home-logout">Salir</a>
   </div>
@@ -717,7 +809,81 @@ PORTAL_HOME_CONTENT = """
     bloque.appendChild(histContainer);
     cont.appendChild(bloque);
   }
+
+  // Cargar recordatorios (simple, para el primer alumno en sesión)
+  var contRecLista = document.getElementById('recordatorios-lista');
+  var contRecForm = document.getElementById('recordatorios-form');
+  if (contRecLista && contRecForm) {
+    fetch('/portal/api/recordatorios').then(function(r){ return r.json(); }).then(function(datos){
+      if (!datos || !datos.length) {
+        contRecLista.innerHTML = '<p style="font-size:0.82rem;color:var(--text-muted)">Sin recordatorios configurados.</p>';
+      } else {
+        var html = '<ul style="list-style:none;padding-left:0;font-size:0.82rem">';
+        for (var i=0;i<datos.length;i++) {
+          var d = datos[i];
+          var desc = d.minutos_antes + ' min antes — ' + d.alcance + ' — ' + d.canal + (d.mail_destino ? ' ('+d.mail_destino+')' : '');
+          html += '<li style="margin-bottom:0.25rem">'+desc+' <button class="btn" style="padding:0.1rem 0.4rem;font-size:0.75rem" onclick="borrarRecordatorio('+d.id+')">X</button></li>';
+        }
+        html += '</ul>';
+        contRecLista.innerHTML = html;
+      }
+      var activos = (datos || []).length;
+      if (activos >= 3) {
+        contRecForm.innerHTML = '<p style="font-size:0.82rem;color:var(--text-muted)">Límite alcanzado (3).</p>';
+        return;
+      }
+      var fhtml = '';
+      fhtml += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">';
+      fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Tiempo antes</label>';
+      fhtml += '<select id="rec-tiempo" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem">';
+      fhtml += '<option value="30">30 min</option><option value="60">1 hora</option><option value="120">2 horas</option><option value="1440">24 horas</option></select></div>';
+      fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Alcance</label>';
+      fhtml += '<select id="rec-alcance" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem"><option value="todas">Todas mis clases futuras</option><option value="proxima">Solo la próxima clase</option></select></div>';
+      fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Mail</label>';
+      fhtml += '<input id="rec-mail" type="email" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:220px"></div>';
+      fhtml += '<button class="btn" type="button" onclick="crearRecordatorio()">Guardar recordatorio</button>';
+      fhtml += '</div>';
+      contRecForm.innerHTML = fhtml;
+    }).catch(function(){});
+  }
 })();
+
+function crearRecordatorio() {
+  var selT = document.getElementById('rec-tiempo');
+  var selA = document.getElementById('rec-alcance');
+  var mailEl = document.getElementById('rec-mail');
+  if (!selT || !selA || !mailEl) return;
+  var minutos = parseInt(selT.value, 10);
+  var alcance = selA.value;
+  var mail = mailEl.value.trim();
+  if (!mail) { alert('Ingresá un mail destino.'); return; }
+  fetch('/portal/api/recordatorios', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({minutos_antes: minutos, alcance: alcance, canal: 'mail', mail_destino: mail})
+  }).then(function(r){ return r.json(); }).then(function(res){
+    if (!res.ok) {
+      alert('Error: ' + (res.error || 'No se pudo guardar el recordatorio'));
+    } else {
+      location.reload();
+    }
+  }).catch(function(){
+    alert('Error de conexión.');
+  });
+}
+
+function borrarRecordatorio(id) {
+  if (!confirm('¿Borrar este recordatorio?')) return;
+  fetch('/portal/api/recordatorios/' + id, {method: 'DELETE'}).then(function(r){ return r.json(); }).then(function(res){
+    if (!res.ok) {
+      alert('Error: ' + (res.error || 'No se pudo borrar el recordatorio'));
+    } else {
+      location.reload();
+    }
+  }).catch(function(){
+    alert('Error de conexión.');
+  });
+}
 </script>
 """
 
