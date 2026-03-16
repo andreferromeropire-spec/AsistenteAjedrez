@@ -247,6 +247,11 @@ def api_alumnos():
     alumnos = conn.execute("""
         SELECT a.id, a.nombre, a.representante, a.pais, a.moneda,
                a.metodo_pago, a.modalidad, a.whatsapp, a.mail,
+               (
+                 SELECT GROUP_CONCAT(pa.lichess_username, ', ')
+                 FROM portal_accesos pa
+                 WHERE pa.alumno_id = a.id
+               ) AS lichess_usernames,
                COUNT(CASE WHEN c.estado='agendada'
                      AND strftime('%m',c.fecha)=?
                      AND strftime('%Y',c.fecha)=?
@@ -1158,8 +1163,8 @@ tr:hover td{background:var(--gold-dim)}
       <div class="tab-panel" id="tab-alumnos">
         <div class="filters"><input type="text" placeholder="Buscar nombre o representante..." oninput="filtrarTabla('t-alumnos',this.value)"></div>
         <div class="table-wrap">
-          <table><thead><tr><th>ID</th><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Clases</th><th>Pago</th><th></th></tr></thead>
-          <tbody id="t-alumnos"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody></table>
+          <table><thead><tr><th>ID</th><th>Nombre</th><th>Representante</th><th>Pais</th><th>Moneda</th><th>Metodo</th><th>Modalidad</th><th>Lichess</th><th>Clases</th><th>Pago</th><th></th></tr></thead>
+          <tbody id="t-alumnos"><tr><td colspan="11" class="empty">Cargando...</td></tr></tbody></table>
         </div>
       </div>
 
@@ -1585,12 +1590,13 @@ function cargarAlumnos() {
     var html = datos.map(function(a) {
       var pago = a.pago_este_mes ? '<span class="badge badge-green">Si</span>' : '<span class="badge badge-red">No</span>';
       var n = a.nombre.replace(/"/g, '&quot;');
+      var lichess = a.lichess_usernames ? '♞ ' + a.lichess_usernames : '-';
       var acciones = '<div class="actions-cell">'
         + '<button class="btn-icon btn-editar" title="Ver / editar" data-nombre="'+n+'">&#9998;</button>'
         + '<button class="btn-icon danger btn-borrar-alumno" title="Borrar" data-nombre="'+n+'">&#128465;</button>'
         + '</div>';
-      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
-    }).join('') || '<tr><td colspan="9" class="empty">Sin alumnos</td></tr>';
+      return '<tr><td style="font-size:0.75rem;color:var(--text-muted);font-family:monospace">#'+a.id+'</td><td><strong>'+a.nombre+'</strong></td><td>'+(a.representante||'-')+'</td><td>'+(a.pais||'-')+'</td><td><span class="badge badge-gold">'+(a.moneda||'-')+'</span></td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.metodo_pago||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(a.modalidad||'-')+'</td><td style="font-size:0.8rem;color:var(--text-muted)">'+lichess+'</td><td style="text-align:center">'+a.clases_mes+'</td><td style="text-align:center">'+pago+'</td><td>'+acciones+'</td></tr>';
+    }).join('') || '<tr><td colspan="11" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
   });
 }

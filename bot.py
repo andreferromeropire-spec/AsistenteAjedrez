@@ -877,6 +877,21 @@ def ejecutar_accion(accion, datos, numero):
             respuesta += f"• Modalidad: {alumno['modalidad'] or '—'}\n"
             respuesta += f"• Alias: {alumno['alias'] or '—'}\n"
             respuesta += f"• Notas: {alumno['notas_recordatorio'] or '—'}\n\n"
+            # Lichess desde portal_accesos (puede haber más de uno)
+            try:
+                conn_l = __import__("database").get_connection()
+                filas = conn_l.execute(
+                    "SELECT lichess_username FROM portal_accesos WHERE alumno_id = ?",
+                    (alumno["id"],)
+                ).fetchall()
+                conn_l.close()
+                if filas:
+                    usuarios = ", ".join([f["lichess_username"] for f in filas if f["lichess_username"]])
+                    respuesta += f"Lichess: {usuarios}\n\n"
+                else:
+                    respuesta += "Lichess: no cargado\n\n"
+            except Exception:
+                respuesta += "Lichess: no cargado\n\n"
             respuesta += formatear_promo(obtener_promo(alumno["id"]))
             clases_mes = clases_del_mes_alumno(alumno["id"], hoy.month, hoy.year)
             if clases_mes:
@@ -1064,13 +1079,22 @@ def ejecutar_accion(accion, datos, numero):
             return aviso
 
         conn = __import__("database").get_connection()
+        # Verificar si ya existe ese acceso para ese alumno
+        existe = conn.execute(
+            "SELECT 1 FROM portal_accesos WHERE lower(lichess_username) = lower(?) AND alumno_id = ?",
+            (nuevo_usuario, alumno["id"]),
+        ).fetchone()
+        if existe:
+            conn.close()
+            return "Ese usuario de Lichess ya estaba cargado para ese alumno."
+
         conn.execute(
-            "UPDATE alumnos SET lichess_username = ? WHERE id = ?",
+            "INSERT INTO portal_accesos (lichess_username, alumno_id, creado) VALUES (?,?,datetime('now'))",
             (nuevo_usuario, alumno["id"]),
         )
         conn.commit()
         conn.close()
-        return f"Listo, lichess de {alumno['nombre']} actualizado a {nuevo_usuario}."
+        return f"Listo, Lichess '{nuevo_usuario}' asociado a {alumno['nombre']}."
 
     elif accion == "actualizar_promo":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
