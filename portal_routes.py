@@ -252,6 +252,16 @@ def portal_home():
     mes = hoy.month
     anio = hoy.year
 
+    # Mail del responsable (del primer alumno)
+    mail_responsable = ""
+    if alumno_ids:
+        row_mail = conn.execute(
+            "SELECT mail FROM alumnos WHERE id = ?",
+            (alumno_ids[0],),
+        ).fetchone()
+        if row_mail and row_mail["mail"]:
+            mail_responsable = row_mail["mail"]
+
     resumen = []
     for aid in alumno_ids:
         # Clases del mes actual (para la tabla)
@@ -375,6 +385,7 @@ def portal_home():
                 "clases_sin_pagar": clases_sin_pagar,
                 "clases_mes": clases_items,
                 "historial": historial,
+                "mail_responsable": mail_responsable,
             }
         )
 
@@ -492,10 +503,14 @@ PORTAL_HTML = """<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 """ + SHARED_CSS + """
-main{padding:1.5rem 1.75rem;max-width:960px;margin:0 auto}
+main{padding:1.5rem 1.75rem;max-width:1120px;margin:0 auto}
 .portal-header-sub{font-size:0.8rem;color:var(--text-muted);}
 .btn-row{display:flex;gap:0.6rem;margin-top:0.8rem;flex-wrap:wrap}
 .unauth-msg{font-size:0.9rem;line-height:1.5}
+.portal-layout{display:grid;grid-template-columns:2fr 1fr;gap:1.25rem;align-items:flex-start}
+@media(max-width:768px){.portal-layout{grid-template-columns:1fr}.portal-side{order:-1}}
+.puzzle-img{width:100%;border-radius:4px;border:1px solid var(--border);background:var(--surface2)}
+.chip{display:inline-block;padding:0.18rem 0.45rem;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:0.7rem;color:var(--text-dim);margin:0 0.25rem 0.25rem 0}
 </style>
 </head>
 <body>
