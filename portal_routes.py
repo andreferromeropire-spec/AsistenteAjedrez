@@ -256,10 +256,10 @@ def portal_home():
     mail_responsable = ""
     if alumno_ids:
         row_mail = conn.execute(
-            "SELECT mail FROM alumnos WHERE id = ?",
+            "SELECT mail FROM alumnos WHERE id = ? AND mail IS NOT NULL AND mail != ''",
             (alumno_ids[0],),
         ).fetchone()
-        if row_mail and row_mail["mail"]:
+        if row_mail:
             mail_responsable = row_mail["mail"]
 
     resumen = []
@@ -769,7 +769,7 @@ PORTAL_HOME_CONTENT = """
     if(esOk){ estado.className += ' badge-green'; } else { estado.className += ' badge-red'; }
     var lista = document.createElement('div');
     lista.className = 'clases-list';
-    if(!r.clases || r.clases.length === 0){
+    if(!r.clases_mes || r.clases_mes.length === 0){
       var vacio = document.createElement('div');
       vacio.textContent = 'No hay clases registradas este mes.';
       lista.appendChild(vacio);
@@ -783,8 +783,8 @@ PORTAL_HOME_CONTENT = """
       trh.appendChild(th1); trh.appendChild(th2); trh.appendChild(th3);
       thead.appendChild(trh);
       var tbody = document.createElement('tbody');
-      for(var j=0;j<r.clases.length;j++){
-        var c = r.clases[j];
+      for(var j=0;j<r.clases_mes.length;j++){
+        var c = r.clases_mes[j];
         var row = document.createElement('tr');
         var fParts = c.fecha ? c.fecha.split('-') : null;
         var fechaTxt = c.fecha;
