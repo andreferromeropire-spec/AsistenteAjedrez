@@ -254,9 +254,10 @@ def portal_home():
 
     resumen = []
     for aid in alumno_ids:
+        # Clases del mes actual (para la tabla)
         clases = conn.execute(
             """
-            SELECT fecha, hora, estado
+            SELECT fecha, hora, estado, ausente, pago_id
             FROM clases
             WHERE alumno_id = ?
               AND substr(fecha, 1, 7) = ?
@@ -265,16 +266,52 @@ def portal_home():
             (aid, f"{anio:04d}-{mes:02d}"),
         ).fetchall()
 
-        pago = conn.execute(
+        # Próxima clase futura agendada
+        proxima = conn.execute(
             """
-            SELECT 1 FROM pagos
+            SELECT fecha, hora
+            FROM clases
             WHERE alumno_id = ?
-              AND strftime('%m', fecha) = ?
-              AND strftime('%Y', fecha) = ?
+              AND estado = 'agendada'
+              AND fecha >= date('now')
+            ORDER BY fecha ASC, hora ASC
             LIMIT 1
             """,
-            (aid, f"{mes:02d}", f"{anio:04d}"),
+            (aid,),
         ).fetchone()
+
+        # Contadores del mes actual
+        contadores = conn.execute(
+            """
+            SELECT
+              COUNT(CASE WHEN estado='agendada'
+                         AND substr(fecha,1,7)=?
+                    THEN 1 END) AS clases_agendadas,
+              COUNT(CASE WHEN estado IN ('agendada','dada')
+                         AND substr(fecha,1,7)=?
+                         AND fecha <= date('now')
+                    THEN 1 END) AS clases_dadas,
+              COUNT(CASE WHEN pago_id IS NOT NULL
+                         AND estado IN ('agendada','dada')
+                         AND substr(fecha,1,7)=?
+                    THEN 1 END) AS clases_pagas
+            FROM clases
+            WHERE alumno_id = ?
+            """,
+            (
+                f"{anio:04d}-{mes:02d}",
+                f"{anio:04d}-{mes:02d}",
+                f"{anio:04d}-{mes:02d}",
+                aid,
+            ),
+        ).fetchone()
+
+        clases_agendadas = contadores["clases_agendadas"] or 0
+        clases_dadas = contadores["clases_dadas"] or 0
+        clases_pagas = contadores["clases_pagas"] or 0
+        clases_restantes = max(clases_pagas - clases_dadas, 0)
+        al_dia = clases_pagas >= clases_dadas
+        clases_sin_pagar = 0 if al_dia else (clases_dadas - clases_pagas)
 
         info_alumno = conn.execute(
             "SELECT nombre FROM alumnos WHERE id = ?", (aid,)
@@ -287,14 +324,57 @@ def portal_home():
                     "fecha": c["fecha"],
                     "hora": c["hora"] or "",
                     "estado": c["estado"],
+                    "ausente": c["ausente"] or 0,
                 }
             )
+
+        # Historial de últimos 3 meses anteriores
+        historial = []
+        for offset in range(1, 4):
+            m = mes - offset
+            y = anio
+            if m <= 0:
+                m += 12
+                y -= 1
+            etiqueta = f"{y:04d}-{m:02d}"
+            datos_hist = conn.execute(
+                """
+                SELECT
+                  COUNT(CASE WHEN estado IN ('agendada','dada') THEN 1 END) AS clases_dadas,
+                  COUNT(CASE WHEN pago_id IS NOT NULL AND estado IN ('agendada','dada') THEN 1 END) AS clases_pagas
+                FROM clases
+                WHERE alumno_id = ? AND substr(fecha,1,7) = ?
+                """,
+                (aid, etiqueta),
+            ).fetchone()
+            if datos_hist and (datos_hist["clases_dadas"] or datos_hist["clases_pagas"]):
+                historial.append(
+                    {
+                        "mes": m,
+                        "anio": y,
+                        "clases_dadas": datos_hist["clases_dadas"] or 0,
+                        "clases_pagas": datos_hist["clases_pagas"] or 0,
+                    }
+                )
+
         resumen.append(
             {
                 "id": aid,
                 "nombre": info_alumno["nombre"] if info_alumno else "",
-                "clases": clases_items,
-                "estado_pago": "al_dia" if pago else "pendiente",
+                "proxima_clase": {
+                    "fecha": proxima["fecha"],
+                    "hora": proxima["hora"] or "",
+                }
+                if proxima
+                else None,
+                "clases_agendadas": clases_agendadas,
+                "clases_dadas": clases_dadas,
+                "clases_pagas": clases_pagas,
+                "clases_restantes": clases_restantes,
+                "al_dia": al_dia,
+                "clases_sin_pagar": clases_sin_pagar,
+                "clases_mes": clases_items,
+                "historial": historial,
             }
         )
 
@@ -472,14 +552,77 @@ PORTAL_HOME_CONTENT = """
     var r = resumen[i];
     var bloque = document.createElement('div');
     bloque.style.marginTop = '0.75rem';
-    var titulo = document.createElement('p');
-    titulo.style.fontWeight = '600';
+    var titulo = document.createElement('h3');
+    titulo.style.fontSize = '0.95rem';
+    titulo.style.marginBottom = '0.4rem';
     titulo.textContent = r.nombre;
+
+    // Métricas tipo dashboard
+    var metrics = document.createElement('div');
+    metrics.className = 'metrics';
+    var m1 = document.createElement('div'); m1.className = 'metric';
+    var l1 = document.createElement('div'); l1.className = 'metric-label'; l1.textContent = 'Próxima clase';
+    var v1 = document.createElement('div'); v1.className = 'metric-value';
+    if (r.proxima_clase && r.proxima_clase.fecha) {
+      var fParts = r.proxima_clase.fecha.split('-');
+      var fechaTxt = r.proxima_clase.fecha;
+      if (fParts.length === 3) {
+        var anio = parseInt(fParts[0],10);
+        var mes = parseInt(fParts[1],10)-1;
+        var dia = parseInt(fParts[2],10);
+        var d = new Date(anio, mes, dia);
+        var dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+        var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        fechaTxt = dias[d.getDay()] + ' ' + (dia<10?'0'+dia:dia) + ' ' + meses[mes] + ' · ' + (r.proxima_clase.hora || '');
+      }
+      v1.textContent = fechaTxt;
+    } else {
+      v1.textContent = 'Sin clases agendadas';
+    }
+    m1.appendChild(l1); m1.appendChild(v1);
+
+    var m2 = document.createElement('div'); m2.className = 'metric';
+    var l2 = document.createElement('div'); l2.className = 'metric-label'; l2.textContent = 'Clases este mes';
+    var v2 = document.createElement('div'); v2.className = 'metric-value'; v2.textContent = r.clases_agendadas || 0;
+    m2.appendChild(l2); m2.appendChild(v2);
+
+    var m3 = document.createElement('div'); m3.className = 'metric';
+    var l3 = document.createElement('div'); l3.className = 'metric-label'; l3.textContent = 'Dadas';
+    var v3 = document.createElement('div'); v3.className = 'metric-value'; v3.textContent = r.clases_dadas || 0;
+    m3.appendChild(l3); m3.appendChild(v3);
+
+    var m4 = document.createElement('div'); m4.className = 'metric';
+    var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.textContent = 'Pagas';
+    var v4 = document.createElement('div'); v4.className = 'metric-value'; v4.textContent = r.clases_pagas || 0;
+    m4.appendChild(l4); m4.appendChild(v4);
+
+    var m5 = document.createElement('div'); m5.className = 'metric';
+    var l5 = document.createElement('div'); l5.className = 'metric-label'; l5.textContent = 'Clases restantes';
+    var v5 = document.createElement('div'); v5.className = 'metric-value'; v5.textContent = r.clases_restantes || 0;
+    if ((r.clases_restantes || 0) > 0) { v5.className += ' green'; }
+    m5.appendChild(l5); m5.appendChild(v5);
+
+    metrics.appendChild(m1);
+    metrics.appendChild(m2);
+    metrics.appendChild(m3);
+    metrics.appendChild(m4);
+    metrics.appendChild(m5);
+
     var estado = document.createElement('span');
     estado.className = 'badge estado-pago';
     var esOk = r.estado_pago === 'al_dia';
-    estado.setAttribute('data-es', esOk ? 'Al d\\u00eda \\u2713' : 'Pendiente');
-    estado.setAttribute('data-en', esOk ? 'Up to date \\u2713' : 'Pending');
+    var restantes = r.clases_restantes || 0;
+    var sinPagar = r.clases_sin_pagar || 0;
+    if (esOk && restantes === 0) {
+      estado.setAttribute('data-es', 'Al d\\u00eda \\u2713');
+      estado.setAttribute('data-en', 'Up to date \\u2713');
+    } else if (esOk && restantes > 0) {
+      estado.setAttribute('data-es', 'Al d\\u00eda \\u2713 · ' + restantes + ' clases a favor');
+      estado.setAttribute('data-en', 'Up to date \\u2713 · ' + restantes + ' classes ahead');
+    } else {
+      estado.setAttribute('data-es', (sinPagar || 0) + ' clases sin pagar');
+      estado.setAttribute('data-en', (sinPagar || 0) + ' unpaid classes');
+    }
     if(esOk){ estado.className += ' badge-green'; } else { estado.className += ' badge-red'; }
     var lista = document.createElement('div');
     lista.className = 'clases-list';
@@ -531,9 +674,47 @@ PORTAL_HOME_CONTENT = """
       tabla.appendChild(tbody);
       lista.appendChild(tabla);
     }
+
+    // Historial (colapsable)
+    var historial = r.historial || [];
+    var histContainer = document.createElement('div');
+    histContainer.style.marginTop = '0.6rem';
+    if (historial.length > 0) {
+      var toggle = document.createElement('a');
+      toggle.href = 'javascript:void(0)';
+      toggle.style.fontSize = '0.8rem';
+      toggle.style.display = 'inline-block';
+      toggle.style.marginBottom = '0.3rem';
+      toggle.setAttribute('data-es', 'Ver historial');
+      toggle.setAttribute('data-en', 'View history');
+      toggle.textContent = 'Ver historial';
+      var panel = document.createElement('div');
+      panel.style.display = 'none';
+      panel.style.fontSize = '0.8rem';
+      var mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      for (var h = 0; h < historial.length; h++) {
+        var item = historial[h];
+        var p = document.createElement('p');
+        var nombreMes = mesesNombres[item.mes] || item.mes;
+        var texto = nombreMes + ' ' + item.anio + ' — ' + item.clases_dadas + ' clases dadas, ' + item.clases_pagas + ' pagas';
+        if (item.clases_dadas === item.clases_pagas) {
+          texto += ' ✓';
+        }
+        p.textContent = texto;
+        panel.appendChild(p);
+      }
+      toggle.addEventListener('click', function(){
+        panel.style.display = (panel.style.display === 'none' || panel.style.display === '') ? 'block' : 'none';
+      });
+      histContainer.appendChild(toggle);
+      histContainer.appendChild(panel);
+    }
+
     bloque.appendChild(titulo);
+    bloque.appendChild(metrics);
     bloque.appendChild(estado);
     bloque.appendChild(lista);
+    bloque.appendChild(histContainer);
     cont.appendChild(bloque);
   }
 })();

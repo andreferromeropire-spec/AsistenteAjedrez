@@ -34,6 +34,12 @@ select:focus,.btn:hover{border-color:var(--gold)}
 .theme-btn:last-child{border-right:none}
 .theme-btn.active{background:var(--gold-dim);color:var(--gold-light)}
 .theme-btn:hover:not(.active){background:var(--border)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:1.5rem;box-shadow:0 2px 8px var(--shadow)}
+.metric{background:var(--surface);padding:1.1rem 1.25rem}
+.metric-label{font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.3rem}
+.metric-value{font-size:1.3rem;font-weight:300;color:var(--gold-light);line-height:1}
+.metric-value.green{color:var(--green)}
+.metric-value.red{color:var(--red)}
 .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:5px;box-shadow:0 1px 4px var(--shadow)}
 table{width:100%;border-collapse:collapse;font-size:0.83rem}
 thead{background:var(--surface2)}
