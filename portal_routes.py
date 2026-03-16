@@ -487,6 +487,22 @@ def api_portal_recordatorios_borrar(rec_id):
     return Response(json.dumps({"ok": True}), mimetype="application/json")
 
 
+@portal_bp.route("/portal/api/puzzle_diario")
+def api_portal_puzzle_diario():
+    try:
+        resp = requests.get(
+            "https://lichess.org/api/puzzle/daily",
+            headers={"Accept": "application/json"},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return Response(json.dumps({"error": "no disponible"}), mimetype="application/json", status=200)
+        data = resp.json()
+        return Response(json.dumps(data), mimetype="application/json", status=200)
+    except Exception:
+        return Response(json.dumps({"error": "no disponible"}), mimetype="application/json", status=200)
+
+
 @portal_bp.route("/portal/logout")
 def portal_logout():
     session.pop("portal_alumno_ids", None)
@@ -503,7 +519,7 @@ PORTAL_HTML = """<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 """ + SHARED_CSS + """
-main{padding:1.5rem 1.75rem;max-width:1120px;margin:0 auto}
+main{padding:1.5rem 1.75rem;max-width:1440px;margin:0 auto}
 .portal-header-sub{font-size:0.8rem;color:var(--text-muted);}
 .btn-row{display:flex;gap:0.6rem;margin-top:0.8rem;flex-wrap:wrap}
 .unauth-msg{font-size:0.9rem;line-height:1.5}
@@ -833,6 +849,76 @@ PORTAL_HOME_CONTENT = """
     bloque.appendChild(lista);
     bloque.appendChild(histContainer);
     cont.appendChild(bloque);
+  }
+
+  // Puzzle diario (desde backend para evitar CORS)
+  var puzzleCont = document.getElementById('puzzle-content');
+  if (puzzleCont) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/portal/api/puzzle_diario');
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState !== 4) return;
+      if (xhr.status !== 200) {
+        puzzleCont.textContent = 'Puzzle no disponible hoy';
+        return;
+      }
+      var data;
+      try {
+        data = JSON.parse(xhr.responseText || '{}');
+      } catch (e) {
+        puzzleCont.textContent = 'Puzzle no disponible hoy';
+        return;
+      }
+      if (!data || data.error) {
+        puzzleCont.textContent = 'Puzzle no disponible hoy';
+        return;
+      }
+      var puzzle = data.puzzle || {};
+      var game = data.game || {};
+      var container = document.createElement('div');
+      container.style.display = 'flex';
+      container.style.flexDirection = 'column';
+      container.style.gap = '0.5rem';
+
+      if (game.id) {
+        var img = document.createElement('img');
+        img.src = 'https://lichess1.org/game/export/gif/thumbnail/' + game.id + '.gif';
+        img.className = 'puzzle-img';
+        img.alt = 'Puzzle del dia';
+        container.appendChild(img);
+      }
+
+      var meta = document.createElement('div');
+      meta.style.fontSize = '0.8rem';
+
+      if (puzzle.rating) {
+        var diff = document.createElement('div');
+        diff.textContent = 'Elo ' + puzzle.rating;
+        meta.appendChild(diff);
+      }
+
+      if (puzzle.themes && puzzle.themes.length) {
+        var themes = document.createElement('div');
+        themes.textContent = 'Temas: ' + puzzle.themes.join(', ');
+        meta.appendChild(themes);
+      }
+
+      container.appendChild(meta);
+
+      if (puzzle.id) {
+        var link = document.createElement('a');
+        link.href = 'https://lichess.org/training/' + puzzle.id;
+        link.target = '_blank';
+        link.className = 'btn';
+        link.style.marginTop = '0.5rem';
+        link.textContent = 'Ver en Lichess';
+        container.appendChild(link);
+      }
+
+      puzzleCont.innerHTML = '';
+      puzzleCont.appendChild(container);
+    };
+    xhr.send();
   }
 
   // Cargar recordatorios (simple, para el primer alumno en sesión)
