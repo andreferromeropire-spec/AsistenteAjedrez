@@ -1,223 +1,100 @@
-# AsistenteAjedrez — Bot de WhatsApp + dashboard para clases de ajedrez individuales
+## ♟️ AsistenteAjedrez
+> Bot de WhatsApp + dashboard web para gestionar clases de ajedrez individuales
+
+🇬🇧 [English version](README.en.md)
 
 ![Demo](docs/demo.png)
 
----
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Flask](https://img.shields.io/badge/Flask-3.x-green)
+![SQLite](https://img.shields.io/badge/SQLite-DB-lightgrey)
+![Twilio](https://img.shields.io/badge/WhatsApp-Twilio-25D366)
+![Claude](https://img.shields.io/badge/NLP-Claude%20Haiku-orange)
+![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E)
 
-## Problema que resuelve
+### ¿Qué es?
+AsistenteAjedrez automatiza la gestión del negocio de clases de ajedrez online: alumnos, pagos, calendario y recordatorios. La profesora escribe por WhatsApp en lenguaje natural («Lucas pagó 28 dólares», «di clase con Henry hoy») y el sistema registra todo; un dashboard web completa la vista con listados, gráficos y sincronización con Google Calendar.
 
-Soy Andrea, profesora de ajedrez online. Tengo alumnos en distintos países, monedas y horarios, y antes llevaba todo en planillas: quién pagó, cuántas clases debe, qué precio tiene cada familia y cuándo vino cada alumno.  
-Ese sistema manual era frágil, lento y muy fácil de romper. AsistenteAjedrez automatiza esta gestión para que pueda concentrarme en enseñar, no en perseguir deudas ni actualizar Excel.
+### El problema que resuelve
+Soy Andrea, profesora de ajedrez online. Tengo alumnos en distintos países, monedas y horarios, y antes llevaba todo en planillas: quién pagó, cuántas clases debe, qué precio tiene cada familia y cuándo vino cada alumno. Ese sistema manual era frágil, lento y muy fácil de romper. AsistenteAjedrez automatiza esta gestión para que pueda concentrarme en enseñar, no en perseguir deudas ni actualizar Excel.
 
----
+### Funcionalidades
+- ✅ Bot de WhatsApp que entiende mensajes en lenguaje natural (pagos, clases, consultas de deuda)
+- ✅ Registro automático de pagos asociados a clases del mes (USD, GBP, ARS; Wise, PayPal, transferencia)
+- ✅ Precios promocionales por volumen (tiered pricing) y paquetes de clases
+- ✅ Representantes: un padre/madre paga por varios hijos con precio combinado
+- ✅ Sincronización con Google Calendar como fuente de verdad (agendada → dada / cancelada)
+- ✅ Dashboard web: alumnos, pagos, clases, gráficos de ingresos, temas claro/oscuro/navy
+- ✅ Chat embebido en el dashboard para usar el bot desde el navegador
+- ✅ Portal de alumnos (Lichess/Google): ver clases del mes, puzzle diario, recordatorios por mail
+- ✅ Ausencias (se cobra) vs cancelaciones (no se cobra, queda crédito)
+- ✅ Historial de pagos con opción de borrar
 
-## Funcionalidades principales
+### Stack tecnológico
+| Capa           | Tecnología              | Uso                          |
+|----------------|-------------------------|------------------------------|
+| Backend        | Python + Flask          | API, webhook bot, dashboard   |
+| Base de datos  | SQLite                  | Una DB por instancia/profe   |
+| WhatsApp       | Twilio Messaging API    | Recepción y envío de mensajes|
+| NLP            | Claude API (Haiku)      | Interpretar mensajes en texto|
+| Calendario     | Google Calendar API     | Fuente de verdad de clases   |
+| Deploy         | Railway                 | Auto-deploy desde GitHub     |
+| Tareas         | APScheduler             | Sync y recordatorios por mail|
 
-- **Bot de WhatsApp inteligente**  
-  Entiende mensajes en lenguaje natural, por ejemplo:
-  - "Lucas pagó 28 dólares"
-  - "Di clase con Henry hoy"
-  - "¿Quién debe este mes?"
-  - "Cuánto gané en marzo en GBP"
+### Arquitectura (flujo)
+```
+WhatsApp → Twilio → Flask (bot.py)
+                        ↓
+                 interprete.py → Claude API → {acción, datos}
+                        ↓
+                 clases.py / pagos.py / alumnos.py / promociones.py
+                        ↓
+                 SQLite + calendar_google.py (sync con Google Calendar)
+                        ↓
+                 Dashboard (dashboard_routes.py) + Portal alumnos (portal_routes.py)
+```
 
-- **Registro automático de pagos**  
-  - Asocia pagos a las clases del mes según el alumno o representante.  
-  - Soporta múltiples monedas: USD, GBP, ARS.  
-  - Admite métodos como Wise, PayPal y transferencia bancaria.
+### Variables de entorno
+| Variable                  | Requerida | Descripción                                      |
+|--------------------------|-----------|--------------------------------------------------|
+| DB_PATH                  | ✅        | Ruta al archivo SQLite                           |
+| SECRET_KEY               | ✅        | Clave secreta de Flask                           |
+| DASHBOARD_PASSWORD       | ✅        | Contraseña del dashboard                         |
+| TWILIO_ACCOUNT_SID       | ✅        | SID de cuenta Twilio                             |
+| TWILIO_AUTH_TOKEN        | ✅        | Token de autenticación Twilio                    |
+| TWILIO_WHATSAPP_NUMBER   | ✅        | Número WhatsApp (ej. whatsapp:+549...)          |
+| ANTHROPIC_API_KEY        | ✅        | API key de Anthropic (Claude)                    |
+| GOOGLE_CREDENTIALS       | ✅        | JSON OAuth de Google (string)                    |
+| GOOGLE_CALENDAR_ID       | ✅        | ID del calendario (ej. primary)                  |
+| DOLAR_BLU_ARS            | ❌        | Tipo de cambio ARS/USD para gráficos            |
+| TASA_GBP_USD             | ❌        | Tipo de cambio GBP/USD                           |
+| RAILWAY_PUBLIC_DOMAIN    | ❌        | Dominio público en Railway (URLs absolutas)     |
 
-- **Precios promocionales por volumen (tiered pricing)**  
-  - Calcula el precio por clase según la cantidad total de clases en el mes.  
-  - Soporta paquetes (ej. 10 clases) y modalidad mensual vs clase suelta.
-
-- **Gestión de representantes**  
-  - Un padre/madre puede pagar por varios hijos.  
-  - El sistema suma todas las clases de la familia para aplicar el precio combinado correcto.
-
-- **Sincronización con Google Calendar**  
-  - Google Calendar es la *fuente de verdad* para las clases.  
-  - Importa automáticamente las clases agendadas y actualiza estados (agendada, dada, cancelada).
-
-- **Dashboard web para la profesora**  
-  - Lista de alumnos con estado de pagos y deuda.  
-  - Registro manual de clases y pagos cuando hace falta.  
-  - Gráficos de ingresos por moneda y por período.  
-  - Tema claro / oscuro / navy.  
-  - Chat embebido para usar el bot directamente desde el navegador.
-
-- **Ausencias vs cancelaciones**  
-  - Ausente (no vino a una clase dada): se cobra igual.  
-  - Cancelada con anticipación: no se cobra y queda como crédito.
-
-- **Historial de pagos y clases**  
-  - Historial navegable con la opción de borrar pagos puntuales.  
-  - Relación clara entre clases y pagos asociados.
-
----
-
-## Arquitectura / Stack
-
-**Backend**
-
-- Python 3 + Flask (API + vistas HTML embebidas)
-- Integración con Claude API (modelo `claude-haiku`) para NLP
-- Integración con Twilio Messaging API para WhatsApp
-- Integración con Google Calendar API
-
-**Datos**
-
-- SQLite (un archivo por instancia de profesora)
-- Migraciones y creación de tablas gestionadas por `database.py`
-
-**Infraestructura**
-
-- Hosting en Railway
-- Control de versiones con Git y GitHub
-
-**Archivos principales**
-
-- `bot.py` — servidor Flask + lógica principal del bot de WhatsApp
-- `interprete.py` — integración con Claude API y mapeo a acciones internas
-- `dashboard_routes.py` — rutas y UI del dashboard web (HTML/CSS/JS embebido)
-- `portal_routes.py` — portal de alumnos (login con Lichess/Google, recordatorios, puzzle diario)
-- `clases.py` — funciones para gestionar clases y estados
-- `pagos.py` — registro y consulta de pagos
-- `alumnos.py` — CRUD de alumnos y búsqueda inteligente
-- `promociones.py` — lógica de precios por volumen y combos
-- `calendar_google.py` — wrapper de Google Calendar
-- `sincronizacion.py` — sincronización periódica con el calendario
-- `notificaciones.py` — tareas programadas (sync y recordatorios)
-- `database.py` — conexión SQLite y creación/mantenimiento de tablas
-
----
-
-## Cómo funciona (flujo simplificado)
-
-1. **Mensaje entrante**  
-   Un padre o alumno envía un mensaje por WhatsApp. Twilio lo reenvía al webhook de Flask (`bot.py`).
-
-2. **Interpretación del mensaje**  
-   `interprete.py` llama a Claude (modelo Haiku) con el texto y recibe una estructura JSON con `{acción, datos}`.
-
-3. **Ejecución de la acción**  
-   `bot.py` decide qué hacer: registrar un pago, registrar una clase, consultar deuda, etc.  
-   Llama a las funciones especializadas en `clases.py`, `pagos.py`, `alumnos.py`, `promociones.py`.
-
-4. **Consistencia con Calendar**  
-   `sincronizacion.py` y `calendar_google.py` sincronizan con Google Calendar para:
-   - Crear/actualizar el estado de clases en la base de datos.
-   - Marcar clases dadas o canceladas según los eventos del calendario.
-
-5. **Dashboard y portal**  
-   - El dashboard (`dashboard_routes.py`) consume la misma base de datos para mostrar alumnos, clases, pagos y gráficos.  
-   - El portal de alumnos (`portal_routes.py`) permite a familias consultar su situación, ver clases del mes, puzzle diario y configurar recordatorios por mail.
-
-6. **Notificaciones y tareas automáticas**  
-   `notificaciones.py` y tareas programadas (APScheduler) ejecutan sincronizaciones y envían recordatorios sin intervención manual.
-
----
-
-## Instalación y configuración local
-
-Requisitos previos:
-
-- Python 3.10+
-- SQLite3
-- Cuenta de Twilio con un número de WhatsApp de prueba o productivo
-- Proyecto en Google Cloud con Calendar API habilitada
-- Cuenta en Anthropic para usar Claude API
-- Cuenta en Railway (opcional para deploy remoto)
-
-**1. Clonar el repositorio**
-
+### Setup local
 ```bash
 git clone https://github.com/tu-usuario/AsistenteAjedrez.git
 cd AsistenteAjedrez
-```
-
-**2. Crear y activar un entorno virtual**
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # en Windows: .venv\Scripts\activate
-```
-
-**3. Instalar dependencias**
-
-```bash
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-**4. Configurar variables de entorno**
-
-Crear un archivo `.env` (o exportarlas en tu shell) con al menos:
-
-```bash
-export DB_PATH=asistente_ajedrez.db
-export SECRET_KEY=un_secret_flask_seguro
-export DASHBOARD_PASSWORD=tu_password_dashboard
-
-export TWILIO_ACCOUNT_SID=...
-export TWILIO_AUTH_TOKEN=...
-export TWILIO_WHATSAPP_NUMBER=whatsapp:+123456789
-
-export ANTHROPIC_API_KEY=...
-
-export GOOGLE_CREDENTIALS='{"installed": {...}}'  # JSON OAuth de Google
-export GOOGLE_CALENDAR_ID=primary  # o el ID específico de calendario
-```
-
-**5. Inicializar la base de datos**
-
-```bash
+# Configurá las variables de entorno (ver tabla anterior)
 python -c "from database import crear_tablas; crear_tablas()"
-```
-
-**6. Ejecutar el servidor local**
-
-```bash
 FLASK_APP=bot.py FLASK_ENV=development flask run
 ```
+Dashboard: `http://localhost:5000/dashboard`. Para probar WhatsApp desde tu máquina, exponé la ruta del webhook con ngrok.
 
-- El dashboard quedará disponible en `http://localhost:5000/dashboard`.
-- El webhook de Twilio debe apuntar a `/bot` (o la ruta configurada en `bot.py`), usando ngrok o similar si querés probar WhatsApp desde tu máquina.
-
----
-
-## Variables de entorno necesarias
-
-| Nombre                    | Descripción                                                                 | Requerida |
-|---------------------------|-----------------------------------------------------------------------------|-----------|
-| `DB_PATH`                 | Ruta al archivo SQLite de la instancia                                     | Sí        |
-| `SECRET_KEY`              | Clave secreta de Flask para sesiones                                       | Sí        |
-| `DASHBOARD_PASSWORD`      | Contraseña para acceder al dashboard web                                   | Sí        |
-| `TWILIO_ACCOUNT_SID`      | SID de cuenta Twilio                                                       | Sí        |
-| `TWILIO_AUTH_TOKEN`       | Token de autenticación Twilio                                              | Sí        |
-| `TWILIO_WHATSAPP_NUMBER`  | Número de WhatsApp Twilio (formato `whatsapp:+...`)                        | Sí        |
-| `ANTHROPIC_API_KEY`       | API key de Anthropic para Claude                                          | Sí        |
-| `GOOGLE_CREDENTIALS`      | JSON OAuth de Google (como string)                                         | Sí        |
-| `GOOGLE_CALENDAR_ID`      | ID del calendario que se usa como fuente de verdad                         | Sí        |
-| `DOLAR_BLU_ARS`           | Tipo de cambio de referencia ARS/USD                                      | No        |
-| `TASA_GBP_USD`            | Tipo de cambio GBP/USD para gráficos                                       | No        |
-| `RAILWAY_PUBLIC_DOMAIN`   | Dominio en Railway (para URLs absolutas en producción)                    | No        |
-
----
-
-## Estado del proyecto
-
+### Estado del proyecto
 - **En producción** con alumnos reales.
-- **En desarrollo activo** para mejoras de UX, portal de alumnos y soporte a más idiomas.
+- **Desarrollo activo**: mejoras de UX, portal de alumnos y más idiomas.
+
+### Próximos pasos
+- Portal de alumnos más completo (historial, comprobantes descargables).
+- Panel para configurar promociones y precios sin tocar código.
+- Soporte a más canales (ej. Telegram).
+- Reportes mensuales automáticos por mail.
+
+### Autora
+**Andrea** — Profesora de ajedrez online (Argentina, USA, UK). AsistenteAjedrez nació de la necesidad de dejar atrás las planillas y tener un sistema que acompañe el crecimiento de la escuela: claridad en cobros, trazabilidad y saber quién está al día en todo momento.
 
 ---
-
-## Próximas funcionalidades
-
-- Portal de alumnos más rico: histórico completo, descarga de comprobantes.
-- Panel para que la profesora configure promociones y precios sin tocar código.
-- Soporte de más canales de mensaje (ej. Telegram) reutilizando la misma lógica.
-- Reportes automáticos mensuales por mail para la profesora.
-
----
-
-## Sobre la autora
-
-Andrea es profesora de ajedrez con alumnos en Argentina, Estados Unidos y Reino Unido. Este proyecto nació de una necesidad real: dejar atrás las planillas manuales y tener un sistema que acompañe el crecimiento de su escuela de ajedrez. El código se construyó con foco en la claridad, la trazabilidad de los cobros y la tranquilidad de saber quién debe y quién está al día, en todo momento.
+*Proyecto en producción — bot + dashboard para gestión de clases de ajedrez.*
