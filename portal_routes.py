@@ -86,8 +86,7 @@ def _pagina_no_autorizado():
 def portal_login():
     if session.get("portal_alumno_ids"):
         return redirect("/portal/home")
-    html = PORTAL_HTML.replace("{PORTAL_CONTENT}", PORTAL_LOGIN_CONTENT)
-    return Response(html, mimetype="text/html; charset=utf-8")
+    return redirect("/login")
 
 
 @portal_bp.route("/portal/auth/lichess")
@@ -327,6 +326,24 @@ def portal_home():
             "SELECT nombre FROM alumnos WHERE id = ?", (aid,)
         ).fetchone()
 
+        # Progreso de entrenamiento de patrones
+        prog = conn.execute(
+            """
+            SELECT
+              COUNT(*) AS ejercicios,
+              AVG(rating_cambio) AS rating_prom,
+              MAX(fecha) AS ultima_fecha
+            FROM progreso_entrenamiento
+            WHERE alumno_id = ?
+            """,
+            (aid,),
+        ).fetchone()
+        entrenamiento = {
+            "ejercicios": prog["ejercicios"] or 0 if prog else 0,
+            "rating_prom": prog["rating_prom"] or 0.0 if prog else 0.0,
+            "ultima_fecha": prog["ultima_fecha"] or "" if prog else "",
+        }
+
         clases_items = []
         for c in clases:
             clases_items.append(
@@ -386,6 +403,7 @@ def portal_home():
                 "clases_mes": clases_items,
                 "historial": historial,
                 "mail_responsable": mail_responsable,
+                "entrenamiento": entrenamiento,
             }
         )
 
@@ -501,6 +519,64 @@ def api_portal_puzzle_diario():
         return Response(json.dumps(data), mimetype="application/json", status=200)
     except Exception:
         return Response(json.dumps({"error": "no disponible"}), mimetype="application/json", status=200)
+
+
+@portal_bp.route("/portal/entrenamiento")
+@portal_login_required
+def portal_entrenamiento():
+    alumno_ids = session.get("portal_alumno_ids") or []
+    if not alumno_ids:
+        return redirect("/portal")
+    conn = get_connection()
+    placeholders = ",".join(["?"] * len(alumno_ids))
+    rows = conn.execute(
+        f"""
+        SELECT a.id, a.nombre,
+               COUNT(p.id) AS ejercicios,
+               COALESCE(AVG(p.rating_cambio), 0.0) AS rating_prom,
+               MAX(p.fecha) AS ultima_fecha
+        FROM alumnos a
+        LEFT JOIN progreso_entrenamiento p ON p.alumno_id = a.id
+        WHERE a.id IN ({placeholders})
+        GROUP BY a.id, a.nombre
+        ORDER BY a.nombre
+        """,
+        alumno_ids,
+    ).fetchall()
+    conn.close()
+    # HTML sencillo reutilizando estilos del portal
+    filas = []
+    for r in rows:
+        filas.append(
+            "<tr>"
+            + "<td>" + (r["nombre"] or "") + "</td>"
+            + "<td>" + str(r["ejercicios"] or 0) + "</td>"
+            + "<td>" + ("{:.1f}".format(r["rating_prom"]) if r["rating_prom"] is not None else "0.0") + "</td>"
+            + "<td>" + (r["ultima_fecha"] or "-") + "</td>"
+            + "</tr>"
+        )
+    cuerpo = "".join(filas) if filas else '<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--text-muted)">Sin ejercicios registrados todavía.</td></tr>'
+    contenido = """
+<div class="card">
+  <h2 style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--gold-light);margin-bottom:0.75rem">Progreso de entrenamiento</h2>
+  <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.75rem">
+    Resumen de los ejercicios de patrones resueltos por cada alumno asociado a esta cuenta.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Alumno</th><th>Ejercicios</th><th>Rating medio</th><th>Última actividad</th></tr>
+      </thead>
+      <tbody>""" + cuerpo + """</tbody>
+    </table>
+  </div>
+  <div style="margin-top:0.75rem">
+    <a href="/portal/home" class="btn">Volver al portal</a>
+  </div>
+</div>
+"""
+    html = PORTAL_HTML.replace("{PORTAL_CONTENT}", contenido)
+    return Response(html, mimetype="text/html; charset=utf-8")
 
 
 @portal_bp.route("/portal/logout")
@@ -668,6 +744,16 @@ PORTAL_HOME_CONTENT = """
       <div id="recordatorios-lista"></div>
       <div id="recordatorios-form" style="margin-top:0.6rem"></div>
     </div>
+    <div class="card" id="trainer-card">
+      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Entrenamiento de patrones</h3>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.6rem">
+        Practicá tácticas y patrones típicos en el tablero interactivo.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:0.4rem">
+        <a href="/trainer" class="btn" style="width:100%;justify-content:center">Entrar al entrenamiento</a>
+        <a href="/portal/entrenamiento" class="btn" style="width:100%;justify-content:center">Ver mi progreso</a>
+      </div>
+    </div>
   </div>
 </div>
 <script>
@@ -750,6 +836,15 @@ PORTAL_HOME_CONTENT = """
     metrics.appendChild(m3);
     metrics.appendChild(m4);
     metrics.appendChild(m5);
+
+    // Resumen simple de entrenamiento (si hay datos)
+    if (r.entrenamiento && r.entrenamiento.ejercicios) {
+      var m6 = document.createElement('div'); m6.className = 'metric';
+      var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.textContent = 'Ejercicios trainer';
+      var v6 = document.createElement('div'); v6.className = 'metric-value'; v6.textContent = r.entrenamiento.ejercicios || 0;
+      m6.appendChild(l6); m6.appendChild(v6);
+      metrics.appendChild(m6);
+    }
 
     var estado = document.createElement('span');
     estado.className = 'badge estado-pago';

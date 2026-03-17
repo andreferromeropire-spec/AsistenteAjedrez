@@ -1,56 +1,42 @@
 """
-Módulo de persistencia SQLite para sesiones y resultados del entrenador táctico.
+Módulo de persistencia para el entrenador táctico.
+
+Versión integrada con la base de datos global del proyecto:
+- La tabla progreso_entrenamiento se crea en database.crear_tablas().
+- Este módulo expone helpers para guardar progreso desde el trainer o el bot.
 """
 
+from ..database import get_connection
+
+
+def guardar_progreso_entrenamiento(alumno_id, tipo_patrones, dificultad, resultado, tiempo_segundos, rating_cambio=0.0):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO progreso_entrenamiento
+        (alumno_id, tipo_patrones, dificultad, resultado, tiempo_segundos, rating_cambio)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (alumno_id, tipo_patrones, dificultad, resultado, tiempo_segundos, rating_cambio),
+    )
+    conn.commit()
+    conn.close()
+
+
+# -----------------------------------------------------------------------------
+# ESQUEMA LEGACY LOCAL (sessions/results) - si seguís usando el trainer standalone
+# -----------------------------------------------------------------------------
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-#  Tabla de progreso de entrenamiento
-from datetime import datetime
-
-class ProgresoEntrenamiento(db.Model):
-    __tablename__ = 'progreso_entrenamiento'
-    id = db.Column(db.Integer, primary_key=True)
-    alumno_id = db.Column(db.Integer, db.ForeignKey('alumnos.id'))  # ← ajustá 'alumnos.id' según el nombre real de tu tabla Alumno
-    fecha = db.Column(db.DateTime, default=datetime.utcnow)
-    tipo_patrones = db.Column(db.String(100))
-    dificultad = db.Column(db.Integer)
-    resultado = db.Column(db.String(50))
-    tiempo_segundos = db.Column(db.Integer)
-    rating_cambio = db.Column(db.Float, default=0.0)
-
-# -----------------------------------------------------------------------------
-# ESQUEMA DE BASE DE DATOS
-# -----------------------------------------------------------------------------
-# sessions:
-#   id              INTEGER PRIMARY KEY
-#   date            TEXT    -- fecha de la sesión (ISO o timestamp)
-#   mode            TEXT    -- quick_training | board_inventory | speed_directed
-#   elo_range       TEXT    -- ej. "0-800", "800-1400", "1400-9999"
-#   total_exercises INTEGER
-#
-# results:
-#   id               INTEGER PRIMARY KEY
-#   session_id       INTEGER REFERENCES sessions(id)
-#   puzzle_id        TEXT
-#   theme            TEXT
-#   puzzle_rating    INTEGER
-#   correct          INTEGER -- 0 o 1
-#   response_time_ms INTEGER
-#   board_zone       TEXT    -- "queenside" | "kingside" | "center" | NULL
-#   prediction_score REAL    -- 0.0 a 1.0
-#   was_trap         INTEGER -- 0 o 1
-#   uncertain        INTEGER -- 0 o 1
-#   time_vs_minimum  REAL    -- ratio tiempo_real/tiempo_minimo
-# -----------------------------------------------------------------------------
-
 DB_PATH: str = str(Path(__file__).parent / "chess_pattern_trainer.db")
 
 
-def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Obtiene una conexión a la base de datos SQLite."""
+def get_local_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
+    """Conexión a la DB local del trainer (no la global del proyecto)."""
     path = db_path or DB_PATH
     return sqlite3.connect(path)
 

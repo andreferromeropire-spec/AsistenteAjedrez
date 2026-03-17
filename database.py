@@ -181,6 +181,21 @@ def crear_tablas():
         )
     """)
 
+    # Progreso del entrenador táctico de patrones (trainer/)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS progreso_entrenamiento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER,
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+            tipo_patrones TEXT,
+            dificultad INTEGER,
+            resultado TEXT,
+            tiempo_segundos INTEGER,
+            rating_cambio REAL DEFAULT 0.0,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Base de datos lista.")

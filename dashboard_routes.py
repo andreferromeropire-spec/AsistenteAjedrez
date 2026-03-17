@@ -61,12 +61,13 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get('dashboard_logged_in'):
-            return redirect('/dashboard/login')
+            return redirect('/login')
         return f(*args, **kwargs)
     return decorated
 
 
 @dashboard_bp.route('/dashboard/login', methods=['GET', 'POST'])
+@dashboard_bp.route('/login', methods=['GET', 'POST'])
 def login():
     error = ''
     if request.method == 'POST':
@@ -81,7 +82,7 @@ def login():
 @dashboard_bp.route('/dashboard/logout')
 def logout():
     session.pop('dashboard_logged_in', None)
-    return redirect('/dashboard/login')
+    return redirect('/login')
 
 
 @dashboard_bp.route('/auth/google')
@@ -717,6 +718,39 @@ def api_ingresos_anuales():
     })
 
 
+@dashboard_bp.route('/dashboard/api/entrenamiento_resumen')
+@login_required
+def api_entrenamiento_resumen():
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT a.id, a.nombre, a.representante,
+               COUNT(p.id) AS ejercicios,
+               COALESCE(AVG(p.rating_cambio), 0.0) AS rating_prom,
+               MAX(p.fecha) AS ultima_fecha
+        FROM alumnos a
+        LEFT JOIN progreso_entrenamiento p ON p.alumno_id = a.id
+        WHERE a.activo = 1
+        GROUP BY a.id, a.nombre, a.representante
+        ORDER BY a.nombre
+        """
+    ).fetchall()
+    conn.close()
+    datos = []
+    for r in rows:
+        datos.append(
+            {
+                "id": r["id"],
+                "nombre": r["nombre"],
+                "representante": r["representante"] or "",
+                "ejercicios": r["ejercicios"] or 0,
+                "rating_prom": float(r["rating_prom"] or 0.0),
+                "ultima_fecha": r["ultima_fecha"] or "",
+            }
+        )
+    return jsonify(datos)
+
+
 @dashboard_bp.route('/dashboard/api/clases_sin_pagar')
 @login_required
 def api_clases_sin_pagar():
@@ -896,38 +930,101 @@ LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Ajedrez</title>
+<title>AsistenteAjedrez — Acceso</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:#f5f0e8;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.card{background:#fff;border:1px solid #e0d8cc;border-radius:6px;padding:3rem 2.5rem;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(0,0,0,0.08)}
-.logo{text-align:center;margin-bottom:2.5rem}
-.logo .piece{font-size:2.5rem;margin-bottom:0.5rem}
-.logo h1{font-family:'Playfair Display',serif;font-size:1.4rem;color:#2c2416}
-.logo p{color:#999;font-size:0.8rem;margin-top:0.3rem;letter-spacing:0.1em;text-transform:uppercase}
-label{display:block;color:#888;font-size:0.75rem;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.5rem}
-input[type=password]{width:100%;background:#faf8f5;border:1px solid #e0d8cc;border-radius:4px;color:#2c2416;padding:0.85rem 1rem;font-size:1rem;font-family:'DM Sans',sans-serif;outline:none;transition:border-color 0.2s}
-input[type=password]:focus{border-color:#b48c50}
-.error{color:#c0392b;font-size:0.8rem;margin-top:0.75rem}
-.auth-error-banner{margin-bottom:1rem;padding:0.75rem 1rem;background:var(--red-bg);border:1px solid var(--red);border-radius:6px}.auth-error-banner .error{margin:0}.auth-error-banner a{color:var(--gold-light);text-decoration:underline}
-button{width:100%;margin-top:1.5rem;background:#b48c50;color:#fff;border:none;border-radius:4px;padding:0.9rem;font-size:0.85rem;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background 0.2s}
-button:hover{background:#9a7540}
+body{font-family:'DM Sans',sans-serif;background:#f5f0e8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem}
+.login-container{max-width:900px;width:100%;display:flex;flex-direction:column;gap:2rem}
+.login-header{text-align:center}
+.login-header h1{font-family:'Playfair Display',serif;font-size:1.7rem;color:#2c2416;margin-bottom:0.25rem}
+.login-header p{color:#7a6a54;font-size:0.9rem}
+.cards-row{display:grid;grid-template-columns:2fr 1.2fr;gap:1.5rem;align-items:stretch}
+@media(max-width:768px){.cards-row{grid-template-columns:1fr}}
+.card{background:#fff;border:1px solid #e0d8cc;border-radius:8px;padding:2rem 1.75rem;box-shadow:0 8px 40px rgba(0,0,0,0.08);display:flex;flex-direction:column;gap:1rem}
+.card-header{display:flex;align-items:center;justify-content:space-between;gap:0.5rem}
+.card-title{display:flex;align-items:center;gap:0.5rem}
+.card-title-icon{font-size:1.6rem}
+.card-title-text{font-family:'Playfair Display',serif;font-size:1.1rem;color:#2c2416}
+.badge-pill{font-size:0.68rem;border-radius:999px;padding:0.15rem 0.6rem;border:1px solid #e0d8cc;color:#7a6a54;text-transform:uppercase;letter-spacing:0.08em}
+.card p{color:#7a6a54;font-size:0.85rem;line-height:1.5}
+.btn-primary,.btn-secondary{width:100%;background:#b48c50;color:#fff;border:none;border-radius:4px;padding:0.9rem;font-size:0.85rem;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background 0.2s,transform 0.05s}
+.btn-secondary{background:#faf8f5;color:#2c2416;border:1px solid #e0d8cc}
+.btn-primary:hover{background:#9a7540}
+.btn-secondary:hover{background:#f0e5d7}
+.btn-primary:active,.btn-secondary:active{transform:translateY(1px)}
+.login-footer{text-align:center;font-size:0.78rem;color:#a39580}
+.role-switch{font-size:0.8rem;color:#7a6a54}
+.role-link{color:#b48c50;text-decoration:underline;cursor:pointer}
+.error{color:#c0392b;font-size:0.78rem;margin-top:0.5rem}
+.form-group{margin-top:0.75rem}
+label{display:block;color:#888;font-size:0.75rem;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.35rem}
+input[type=password]{width:100%;background:#faf8f5;border:1px solid #e0d8cc;border-radius:4px;color:#2c2416;padding:0.75rem 0.95rem;font-size:0.95rem;font-family:'DM Sans',sans-serif;outline:none;transition:border-color 0.2s,box-shadow 0.2s}
+input[type=password]:focus{border-color:#b48c50;box-shadow:0 0 0 1px rgba(180,140,80,0.15)}
 </style>
+<script>
+function setRole(role) {
+  var alumnaCard = document.getElementById('card-alumna');
+  var profeCard = document.getElementById('card-profe');
+  if (role === 'profe') {
+    alumnaCard.style.order = '2';
+    profeCard.style.order = '1';
+  } else {
+    alumnaCard.style.order = '1';
+    profeCard.style.order = '2';
+  }
+}
+</script>
 </head>
 <body>
-<div class="card">
-  <div class="logo">
-    <div class="piece">&#9823;</div>
-    <h1>Ajedrez Dashboard</h1>
-    <p>Panel de gestion</p>
+<div class="login-container">
+  <div class="login-header">
+    <h1>Entrar a AsistenteAjedrez</h1>
+    <p>Elegí si sos alumna / responsable o profesora para continuar.</p>
   </div>
-  <form method="POST">
-    <label for="password">Contrasena</label>
-    <input type="password" id="password" name="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autofocus>
-    ERRORBLOCK
-    <button type="submit">Ingresar</button>
-  </form>
+  <div class="cards-row">
+    <div class="card" id="card-alumna" style="order:1">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-title-icon">&#9817;</div>
+          <div class="card-title-text">Soy alumna / responsable</div>
+        </div>
+        <span class="badge-pill">Portal de alumnos</span>
+      </div>
+      <p>Accedé al portal para ver tus clases, pagos y practicar patrones tácticos. Podés entrar con tu cuenta de Lichess o Google.</p>
+      <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.5rem">
+        <a href="/portal/auth/lichess"><button type="button" class="btn-primary">&#9823; Entrar con Lichess</button></a>
+        <a href="/portal/auth/google"><button type="button" class="btn-secondary">&#128231; Entrar con Google</button></a>
+      </div>
+      <div class="role-switch">
+        ¿Sos profesora? <span class="role-link" onclick="setRole('profe')">Cambiar a acceso de profesora</span>
+      </div>
+    </div>
+    <div class="card" id="card-profe" style="order:2">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-title-icon">&#9818;</div>
+          <div class="card-title-text">Soy profesora</div>
+        </div>
+        <span class="badge-pill">Dashboard docente</span>
+      </div>
+      <p>Entrá al panel de gestión para ver alumnos, clases, cobros y el resumen diario. Solo la profesora usa este acceso.</p>
+      <form method="POST">
+        <div class="form-group">
+          <label for="password">Contraseña del dashboard</label>
+          <input type="password" id="password" name="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
+          ERRORBLOCK
+        </div>
+        <button type="submit" class="btn-primary">Entrar al dashboard</button>
+      </form>
+      <div class="role-switch">
+        ¿Querés entrar como alumna / responsable? <span class="role-link" onclick="setRole('alumna')">Cambiar a acceso de alumna</span>
+      </div>
+    </div>
+  </div>
+  <div class="login-footer">
+    AsistenteAjedrez — bot de WhatsApp + portal de alumnos
+  </div>
 </div>
 </body>
 </html>"""
@@ -1132,6 +1229,7 @@ tr:hover td{background:var(--gold-dim)}
         <button class="tab-btn" onclick="showTab('deuda',this)">Deuda</button>
         <button class="tab-btn" onclick="showTab('alumnos',this)">Alumnos</button>
         <button class="tab-btn" onclick="showTab('portal',this)">Portal</button>
+        <button class="tab-btn" onclick="showTab('entrenamiento',this)">Entrenamiento</button>
         <button class="tab-btn" onclick="showTab('graficos',this)">Graficos</button>
       </div>
 
@@ -1279,6 +1377,23 @@ tr:hover td{background:var(--gold-dim)}
                 <tr><th>Alumno</th><th>Tiempo antes</th><th>Alcance</th><th>Canal</th><th>Mail destino</th><th>Creado</th></tr>
               </thead>
               <tbody id="t-portal-recordatorios"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-entrenamiento">
+        <div class="section">
+          <div class="section-title">Entrenamiento de patrones</div>
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.6rem">
+            Resumen de los ejercicios del entrenador táctico por alumno.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Alumno</th><th>Representante</th><th>Ejercicios</th><th>Rating medio</th><th>Última actividad</th></tr>
+              </thead>
+              <tbody id="t-entrenamiento"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1500,7 +1615,8 @@ function cargarTodo() {
   cargarPagos();
   cargarDeudores();
   cargarAlumnos();
-   cargarPortalRecordatorios();
+  cargarPortalRecordatorios();
+  cargarEntrenamiento();
   cargarUltimaSync();
   // Recargar cobros si esa pestaña está activa
   if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
@@ -1667,6 +1783,24 @@ function cargarDeudores() {
     document.getElementById('totales-deuda').innerHTML = chips;
   });
 }
+
+  function cargarEntrenamiento() {
+    fetch('/dashboard/api/entrenamiento_resumen').then(function(r){ return r.json(); }).then(function(datos){
+      var tb = document.getElementById('t-entrenamiento');
+      if (!tb) return;
+      if (!datos || !datos.length) {
+        tb.innerHTML = '<tr><td colspan="5" class="empty">Sin ejercicios registrados todavía.</td></tr>';
+        return;
+      }
+      var html = datos.map(function(d){
+        var rep = d.representante ? d.representante : '-';
+        var rating = (d.rating_prom || 0).toFixed(1);
+        var ultima = d.ultima_fecha || '-';
+        return '<tr><td>'+d.nombre+'</td><td>'+rep+'</td><td>'+d.ejercicios+'</td><td>'+rating+'</td><td>'+ultima+'</td></tr>';
+      }).join('');
+      tb.innerHTML = html;
+    }).catch(function(){});
+  }
 
 function cargarAlumnos() {
   api('alumnos').then(function(datos) {
