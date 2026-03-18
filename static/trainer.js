@@ -1099,6 +1099,15 @@ $(document).ready(function() {
     if (savedLang && TRANSLATIONS[savedLang]) sessionState.lang = savedLang
     sessionState.soundEnabled = window.localStorage.getItem('trainer_sound') !== 'false'
   } catch (e) {}
+
+  // Mostrar nombre de usuario del portal (si fue guardado por el portal)
+  try {
+    var nombrePortal = window.localStorage.getItem('portal_nombre') || ''
+    if (nombrePortal) {
+      var el = document.getElementById('trainer-user-name')
+      if (el) { el.textContent = nombrePortal }
+    }
+  } catch (e) {}
   updateLegendTexts()
   updateLangButtons()
   $('#btn-sound-toggle').text(sessionState.soundEnabled ? '\uD83D\uDD0A' : '\uD83D\uDD07')

@@ -102,6 +102,9 @@ LEVEL_FILTERS = {
 
 @trainer_bp.route("/trainer")
 def trainer_index():
+    # Requiere sesión de portal: si no hay alumnos en sesión, redirigir a /login
+    if not session.get("portal_alumno_ids"):
+        return redirect("/login")
     return render_template("trainer.html")
 
 

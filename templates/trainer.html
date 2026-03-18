@@ -440,7 +440,10 @@
 </head>
 <body>
     <div id="lang-toggle">
+        <button type="button" id="btn-exit-portal" class="btn-exit" style="position:fixed;left:0.75rem;top:0.75rem;z-index:20"
+                onclick="window.location.href='/portal/home'">← Portal</button>
         <button type="button" id="btn-sound-toggle" aria-label="Sonido" title="Sonido">🔊</button>
+        <span id="trainer-user-name" style="margin:0 0.5rem;font-size:0.8rem;color:var(--texto-secundario);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
         <button type="button" class="lang-btn" data-lang="es">ES</button>
         <button type="button" class="lang-btn" data-lang="en">EN</button>
     </div>
