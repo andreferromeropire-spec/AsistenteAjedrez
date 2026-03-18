@@ -12,6 +12,18 @@
 ![Claude](https://img.shields.io/badge/NLP-Claude%20Haiku-orange)
 ![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E)
 
+### Demo
+- Placeholder captura: `docs/demo.png`
+- Sugeridas (agregalas cuando puedas): `docs/portal.png`, `docs/trainer.png`, `docs/dashboard.png`
+
+### Cómo probar (rápido)
+- Portal alumnos: `/login` → “Soy alumna / responsable” → Lichess/Google → `/portal/home`
+- Entrenamiento: en el portal → “Entrar al entrenamiento” → `/trainer` → resolver ejercicios → “← Portal”
+- Progreso: `/portal/entrenamiento`
+- Dashboard docente: `/login` → “Soy profesora” → password → `/dashboard`
+
+Checklist completa: ver [docs/TEST_PLAN.md](docs/TEST_PLAN.md)
+
 ### ¿Qué es?
 AsistenteAjedrez automatiza la gestión del negocio de clases de ajedrez online: alumnos, pagos, calendario y recordatorios. La profesora escribe por WhatsApp en lenguaje natural («Lucas pagó 28 dólares», «di clase con Henry hoy») y el sistema registra todo; un dashboard web completa la vista con listados, gráficos y sincronización con Google Calendar.
 
@@ -51,8 +63,10 @@ WhatsApp → Twilio → Flask (bot.py)
                         ↓
                  SQLite + calendar_google.py (sync con Google Calendar)
                         ↓
-                 Dashboard (dashboard_routes.py) + Portal alumnos (portal_routes.py)
+                 Dashboard (dashboard_routes.py) + Portal alumnos (portal_routes.py) + Trainer (/trainer)
 ```
+
+Más detalle: ver [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ### Variables de entorno
 | Variable                  | Requerida | Descripción                                      |
@@ -66,9 +80,17 @@ WhatsApp → Twilio → Flask (bot.py)
 | ANTHROPIC_API_KEY        | ✅        | API key de Anthropic (Claude)                    |
 | GOOGLE_CREDENTIALS       | ✅        | JSON OAuth de Google (string)                    |
 | GOOGLE_CALENDAR_ID       | ✅        | ID del calendario (ej. primary)                  |
+| RESEND_API_KEY           | ❌        | API key para enviar mails de recordatorios       |
+| RESEND_FROM              | ❌        | Remitente verificado (ej. notificaciones@...)    |
 | DOLAR_BLU_ARS            | ❌        | Tipo de cambio ARS/USD para gráficos            |
 | TASA_GBP_USD             | ❌        | Tipo de cambio GBP/USD                           |
 | RAILWAY_PUBLIC_DOMAIN    | ❌        | Dominio público en Railway (URLs absolutas)     |
+
+### Deploy en Railway (resumen)
+1. Conectar repo GitHub a Railway (auto-deploy al push).
+2. Configurar variables de entorno (DB_PATH, SECRET_KEY, DASHBOARD_PASSWORD, credenciales Google, Twilio, Claude).
+3. Asegurar volumen para SQLite (DB_PATH apuntando al volumen).
+4. Probar `/login`, `/portal/home`, `/trainer` y `/dashboard`.
 
 ### Setup local
 ```bash

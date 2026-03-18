@@ -12,6 +12,18 @@
 ![Claude](https://img.shields.io/badge/NLP-Claude%20Haiku-orange)
 ![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E)
 
+### Demo
+- Screenshot placeholder: `docs/demo.png`
+- Suggested screenshots (add when ready): `docs/portal.png`, `docs/trainer.png`, `docs/dashboard.png`
+
+### Quick test (manual)
+- Student portal: `/login` → “Soy alumna / responsable” → Lichess/Google → `/portal/home`
+- Trainer: from portal → “Entrar al entrenamiento” → `/trainer` → solve a few exercises → “← Portal”
+- Progress: `/portal/entrenamiento`
+- Teacher dashboard: `/login` → “Soy profesora” → password → `/dashboard`
+
+Full checklist: see [docs/TEST_PLAN.md](docs/TEST_PLAN.md)
+
 ### What is it?
 AsistenteAjedrez automates the back office for an online chess teaching business: students, payments, scheduling and reminders. The teacher sends natural-language messages over WhatsApp («Lucas paid 28 dollars», «I taught Henry today») and the system records everything; a web dashboard provides lists, charts and sync with Google Calendar.
 
@@ -51,8 +63,10 @@ WhatsApp → Twilio → Flask (bot.py)
                         ↓
                  SQLite + calendar_google.py (sync with Google Calendar)
                         ↓
-                 Dashboard (dashboard_routes.py) + Student portal (portal_routes.py)
+                 Dashboard (dashboard_routes.py) + Student portal (portal_routes.py) + Trainer (/trainer)
 ```
+
+More details: see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ### Environment variables
 | Variable                  | Required | Description                                   |
@@ -66,9 +80,17 @@ WhatsApp → Twilio → Flask (bot.py)
 | ANTHROPIC_API_KEY         | ✅       | Anthropic API key (Claude)                    |
 | GOOGLE_CREDENTIALS        | ✅       | Google OAuth JSON (string)                    |
 | GOOGLE_CALENDAR_ID        | ✅       | Calendar ID (e.g. primary)                   |
+| RESEND_API_KEY            | ❌       | API key for reminder emails (Resend)          |
+| RESEND_FROM               | ❌       | Verified sender (e.g. notifications@...)      |
 | DOLAR_BLU_ARS             | ❌       | ARS/USD rate for charts                       |
 | TASA_GBP_USD              | ❌       | GBP/USD rate                                  |
 | RAILWAY_PUBLIC_DOMAIN     | ❌       | Railway public domain (absolute URLs)         |
+
+### Deploy on Railway (quick)
+1. Connect the GitHub repo to Railway (auto-deploy on push).
+2. Set environment variables (DB_PATH, SECRET_KEY, DASHBOARD_PASSWORD, Google creds, Twilio, Claude).
+3. Ensure SQLite uses a Railway volume (DB_PATH points to the mounted volume).
+4. Verify `/login`, `/portal/home`, `/trainer`, and `/dashboard`.
 
 ### Local setup
 ```bash
