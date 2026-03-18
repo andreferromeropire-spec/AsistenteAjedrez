@@ -4,6 +4,7 @@ import random
 from flask import Blueprint, render_template, jsonify, request, session
 
 from trainer import puzzle_loader, exercise_logic, database as trainer_db, statistics as trainer_stats
+from trainer_progress import guardar_progreso_entrenamiento
 
 
 trainer_bp = Blueprint("trainer", __name__)
@@ -284,6 +285,15 @@ def trainer_api_result():
         )
     finally:
         conn.close()
+
+    # Guardar resumen agregado en la tabla global de progreso, usando el alumno asociado al portal
+    alumno_id = session.get("trainer_alumno_id")
+    if alumno_id:
+        dificultad = int(p.get('Rating', 0)) if p.get('Rating') is not None else 0
+        resultado = 'correcto' if len(missed) == 0 and len(false_positives) == 0 else 'incorrecto'
+        tiempo_segundos = int(elapsed_ms) // 1000 if elapsed_ms else 0
+        # Por ahora, rating_cambio se deja 0.0; más adelante se puede definir una métrica de cambio
+        guardar_progreso_entrenamiento(alumno_id, 'vulnerables', dificultad, resultado, tiempo_segundos, 0.0)
 
     return jsonify({
         'correct': len(missed) == 0 and len(false_positives) == 0,

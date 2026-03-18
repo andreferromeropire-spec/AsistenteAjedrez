@@ -261,6 +261,10 @@ def portal_home():
         if row_mail:
             mail_responsable = row_mail["mail"]
 
+    # Para el trainer, tomamos por ahora el primer alumno como contexto principal
+    if alumno_ids:
+        session["trainer_alumno_id"] = alumno_ids[0]
+
     resumen = []
     for aid in alumno_ids:
         # Clases del mes actual (para la tabla)
