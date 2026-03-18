@@ -115,7 +115,8 @@ def trainer_session_start():
     if level not in LEVEL_FILTERS:
         level = 'beginner'
 
-    df = puzzle_loader.load_puzzles('puzzles/lichess_db_puzzle.csv')
+    # Usamos la ruta por defecto definida en trainer/puzzle_loader.py
+    df = puzzle_loader.load_puzzles(str(puzzle_loader.DEFAULT_PUZZLE_CSV))
     puzzles = puzzle_loader.filter_puzzles(df, None, 800, 1400, 10)
 
     filter_fn = LEVEL_FILTERS.get(level, LEVEL_FILTERS['beginner'])
