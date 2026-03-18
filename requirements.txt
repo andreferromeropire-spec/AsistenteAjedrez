@@ -13,3 +13,4 @@ oauth2client
 python-chess
 pandas
 pillow
+resend
