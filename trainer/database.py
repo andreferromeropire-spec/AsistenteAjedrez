@@ -1,27 +1,11 @@
 """
 Módulo de persistencia para el entrenador táctico.
 
-Versión integrada con la base de datos global del proyecto:
-- La tabla progreso_entrenamiento se crea en database.crear_tablas().
-- Este módulo expone helpers para guardar progreso desde el trainer o el bot.
+Nota:
+- La tabla progreso_entrenamiento vive en la base de datos global del proyecto (database.py).
+- Si querés guardar progreso agregado desde el trainer hacia esa tabla, hacelo con un helper separado
+  en el proyecto principal que importe este módulo o use directamente database.get_connection().
 """
-
-from ..database import get_connection
-
-
-def guardar_progreso_entrenamiento(alumno_id, tipo_patrones, dificultad, resultado, tiempo_segundos, rating_cambio=0.0):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO progreso_entrenamiento
-        (alumno_id, tipo_patrones, dificultad, resultado, tiempo_segundos, rating_cambio)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (alumno_id, tipo_patrones, dificultad, resultado, tiempo_segundos, rating_cambio),
-    )
-    conn.commit()
-    conn.close()
 
 
 # -----------------------------------------------------------------------------
