@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entrenador táctico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --fondo: #1a1a2e;
+            --panel: #16213e;
+            --panel-alt: #1e2d47;
+            --texto: #eaeaea;
+            --texto-secundario: #8899aa;
+            --acento: #4CAF50;
+            --acento-hover: #45a049;
+            --error: #E05C5C;
+            --warning: #E8871A;
+            --highlight: #F6F669;
+            --border: #2a3a5a;
+            --font-size-base: 15px;
+            --btn-padding: 10px 20px;
+            --btn-font-size: 1em;
+            --border-radius: 10px;
+            --shadow: 0 2px 12px rgba(0,0,0,0.3);
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Inter', sans-serif;
+            font-size: var(--font-size-base);
+            background-color: var(--fondo);
+            color: var(--texto);
+        }
+        .screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            width: 100%;
+            animation: fadeIn 0.2s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes streakPop {
+            from { transform: translateX(-50%) scale(0.7); opacity: 0; }
+            to { transform: translateX(-50%) scale(1); opacity: 1; }
+        }
+        #screen-training {
+            justify-content: center;
+        }
+        .contenedor-principal {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 1.5rem;
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 1rem;
+            box-sizing: border-box;
+        }
+        .zona-tablero {
+            flex-shrink: 0;
+        }
+        #board-wrapper {
+            position: relative;
+            margin: 0 auto;
+        }
+        #board {
+            width: 100% !important;
+            aspect-ratio: 1;
+            margin: 0 auto;
+            background-color: var(--panel);
+            border-radius: var(--border-radius);
+            display: block;
+        }
+        .zona-panel {
+            flex: 0 0 300px;
+            min-width: 0;
+        }
+        #panel {
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 120px;
+            background: var(--panel-alt);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 1rem;
+        }
+        #exercise-progress-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+        #exercise-progress-fill {
+            height: 4px;
+            width: 0;
+            background: var(--acento);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        #timer-container {
+            background: var(--panel-alt);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            display: inline-flex;
+            align-items: center;
+        }
+        #decision-timer.timer-warning { color: var(--warning); }
+        #decision-timer.timer-ok { color: var(--acento); }
+        .btn-confirm, .btn-primary, .btn-secondary, .btn-menu {
+            padding: var(--btn-padding);
+            font-size: var(--btn-font-size);
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            margin-top: 8px;
+            width: 100%;
+            transition: all 0.15s ease;
+        }
+        .btn-confirm:focus, .btn-primary:focus, .btn-secondary:focus, .btn-menu:focus,
+        .profile-btn:focus, .lang-btn:focus, .btn-exit:focus {
+            outline: 2px solid var(--acento);
+            outline-offset: 2px;
+        }
+        .btn-confirm:active, .btn-primary:active, .btn-secondary:active { transform: scale(0.97); }
+        .btn-confirm { background: #2d4a7a; color: var(--texto); }
+        .btn-confirm:hover:not(:disabled) { background: #3d5a8a; }
+        .btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: var(--acento); color: white; box-shadow: 0 1px 4px rgba(76,175,80,0.3); }
+        .btn-primary:hover { background: var(--acento-hover); }
+        .btn-secondary { background: var(--panel-alt); color: var(--texto); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: #2a3a5a; }
+        #feedback.feedback-correct {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 3px solid var(--acento);
+            padding: 10px 12px;
+            border-radius: 0 6px 6px 0;
+        }
+        #feedback.feedback-wrong {
+            background: rgba(224, 92, 92, 0.1);
+            border-left: 3px solid var(--error);
+            padding: 10px 12px;
+            border-radius: 0 6px 6px 0;
+        }
+        #feedback { animation: fadeIn 0.3s ease; }
+        .summary-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .summary-label { color: var(--texto-secundario); font-size: 0.9em; }
+        .summary-value { font-size: 1.2em; font-weight: 600; color: var(--texto); }
+        .summary-insight {
+            margin-top: 12px;
+            padding: 8px;
+            background: var(--panel-alt);
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: var(--texto);
+            line-height: 1.5;
+        }
+        .summary-transfer {
+            margin-top: 16px;
+            padding: 10px;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 6px;
+            color: var(--acento);
+            font-size: 0.9em;
+            font-style: italic;
+        }
+        .home-container,
+        .info-container {
+            width: 100%;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        .home-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 2rem;
+            text-align: center;
+        }
+        #home-title { font-size: 1.75rem; margin-bottom: 0.5rem; color: var(--texto); }
+        #home-subtitle { color: var(--texto-secundario); margin-bottom: 0; }
+        .home-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 320px;
+            margin-top: 1.5rem;
+        }
+        .btn-menu { border-radius: var(--border-radius); }
+        #profile-selector .profile-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.95em;
+            color: var(--texto-secundario);
+        }
+        .profile-btn {
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--texto);
+            font-size: 0.9em;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.15s ease;
+        }
+        .profile-btn:hover { background: var(--panel-alt); }
+        .profile-btn.profile-btn-active { border-color: var(--acento); background: rgba(76, 175, 80, 0.15); }
+        .level-selector-title { margin: 0 0 8px 0; font-size: 0.95em; color: var(--texto-secundario); }
+        .level-option {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px 12px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            cursor: pointer;
+            font-size: 0.9em;
+            color: var(--texto);
+            transition: all 0.15s ease;
+        }
+        .level-option:hover { background: var(--panel-alt); }
+        .level-option.level-option-active { border-color: var(--acento); background: rgba(76, 175, 80, 0.12); }
+        .level-option .level-name { font-weight: 600; }
+        .level-option .level-desc { color: var(--texto-secundario); font-size: 0.85em; }
+        .level-option .level-stats { margin-left: auto; color: var(--acento); font-size: 0.85em; }
+        .home-history {
+            margin-top: 2rem;
+            padding: 1rem 1.25rem;
+            max-width: 320px;
+            background: var(--panel);
+            border-radius: var(--border-radius);
+            font-size: 0.9em;
+            color: var(--texto-secundario);
+            text-align: left;
+            line-height: 1.6;
+        }
+        .home-history .history-row { display: block; }
+        .home-history .history-improved { color: var(--acento); margin-top: 8px; }
+        .btn-transfer-answer {
+            padding: var(--btn-padding);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--texto);
+            cursor: pointer;
+            font-size: var(--btn-font-size);
+            font-family: 'Inter', sans-serif;
+            transition: all 0.15s ease;
+        }
+        .btn-transfer-answer:hover { background: var(--panel-alt); }
+        .btn-transfer-answer.selected { background: var(--acento); border-color: var(--acento); }
+        .info-container {
+            padding: 2rem 1.5rem;
+            line-height: 1.7;
+        }
+        .info-container h2 { margin-bottom: 1.5rem; color: var(--texto); }
+        .info-container h4 { margin-top: 1.25rem; padding-left: 12px; border-left: 3px solid var(--acento); color: var(--texto); }
+        .info-container p { margin-bottom: 1rem; }
+        .info-container .code-like { background: var(--panel-alt); padding: 8px 12px; border-radius: 6px; }
+        .btn-exit {
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            z-index: 1000;
+            background: var(--panel);
+            color: var(--texto);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 0.9em;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.15s ease;
+        }
+        .btn-exit:hover { background: var(--error); border-color: var(--error); }
+        .btn-profile-gear {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            z-index: 1000;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--texto-secundario);
+            font-size: 1.2em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .btn-profile-gear:hover { background: var(--panel-alt); color: var(--texto); }
+        .btn-profile-gear:focus { outline: 2px solid var(--acento); outline-offset: 2px; }
+        #profile-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #profile-overlay.profile-overlay-visible { pointer-events: auto; opacity: 1; }
+        .profile-overlay-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+        }
+        .profile-overlay-content {
+            position: relative;
+            background: var(--panel);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+        .profile-overlay-title { margin: 0 0 1rem 0; color: var(--texto); }
+        .profile-overlay-buttons { display: flex; flex-direction: column; gap: 8px; }
+        #profile-overlay .profile-btn { width: 100%; min-height: 44px; }
+        #lang-toggle {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+            display: flex;
+            gap: 6px;
+        }
+        #lang-toggle .lang-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--texto);
+            font-size: 0.85em;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+        }
+        #lang-toggle .lang-btn.active { background: var(--acento); border-color: var(--acento); }
+        #btn-sound-toggle {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--texto);
+            font-size: 1em;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        #btn-sound-toggle:hover { background: var(--panel-alt); }
+        #btn-sound-toggle:focus { outline: 2px solid var(--acento); outline-offset: 2px; }
+        @media (min-width: 768px) {
+            #panel { min-height: 560px; max-height: none; }
+        }
+        @media (max-width: 767px) {
+            #screen-training {
+                justify-content: center;
+            }
+            .contenedor-principal {
+                flex-direction: column;
+                align-items: center;
+                gap: 0;
+                padding: 0;
+                max-width: 100vw;
+            }
+            .zona-tablero {
+                width: 100vw;
+            }
+            #board-wrapper {
+                width: 100vw !important;
+                max-width: 100vw;
+            }
+            .zona-panel {
+                flex: none;
+                width: 100%;
+                max-width: 100vw;
+            }
+            #panel {
+                width: 100%;
+                border-radius: 0;
+                border-top: 1px solid var(--border);
+                max-height: 45vh;
+                overflow-y: auto;
+            }
+            .btn-confirm, .btn-primary, .btn-secondary {
+                position: sticky;
+                bottom: 0;
+                z-index: 10;
+                background: var(--panel);
+                border-top: 1px solid var(--border);
+                margin: 0;
+                border-radius: 0;
+                width: 100%;
+                min-height: 44px;
+            }
+            .home-container { padding: 1.5rem 1rem; }
+            .level-option { padding: 12px; }
+            .btn-exit { top: 0.75rem; left: 0.75rem; min-width: 44px; min-height: 44px; }
+            #lang-toggle { top: 0.75rem; right: 0.75rem; }
+            .btn-profile-gear { bottom: 0.75rem; right: 0.75rem; }
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+</head>
+<body>
+    <div id="lang-toggle">
+        <button type="button" id="btn-sound-toggle" aria-label="Sonido" title="Sonido">🔊</button>
+        <button type="button" class="lang-btn" data-lang="es">ES</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+    </div>
+
+    <div id="screen-home" class="screen">
+        <div class="home-container">
+            <h1 id="home-title"></h1>
+            <p id="home-subtitle"></p>
+            <div id="level-suggestion-banner" class="summary-insight" style="display:none; margin-top:1rem; max-width:320px;"></div>
+            <div id="level-selector" style="display:none; margin-top:1.5rem; max-width:320px;"></div>
+            <div id="profile-selector" style="display:none; margin-top:1rem; max-width:320px;">
+                <span id="profile-label" class="profile-label"></span>
+                <div id="profile-buttons" style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" class="profile-btn" data-profile="small"></button>
+                    <button type="button" class="profile-btn" data-profile="standard"></button>
+                    <button type="button" class="profile-btn" data-profile="comfort"></button>
+                </div>
+            </div>
+            <div class="home-menu">
+                <button type="button" id="btn-new-round" class="btn-primary btn-menu"></button>
+                <button type="button" id="btn-how-to-play" class="btn-secondary btn-menu"></button>
+                <button type="button" id="btn-why-this" class="btn-secondary btn-menu"></button>
+            </div>
+            <div id="home-history" class="home-history"></div>
+        </div>
+    </div>
+
+    <div id="screen-how-to-play" class="screen" style="display:none">
+        <div class="info-container">
+            <h2 id="htp-title"></h2>
+            <div id="htp-content"></div>
+            <button type="button" id="btn-htp-back" class="btn-secondary btn-menu"></button>
+        </div>
+    </div>
+
+    <div id="screen-why-this" class="screen" style="display:none">
+        <div class="info-container">
+            <h2 id="why-title"></h2>
+            <div id="why-content"></div>
+            <button type="button" id="btn-why-back" class="btn-secondary btn-menu"></button>
+        </div>
+    </div>
+
+    <div id="screen-training" class="screen" style="display:none">
+        <button type="button" id="btn-exit-training" class="btn-exit"></button>
+        <button type="button" id="btn-profile-gear" class="btn-profile-gear" title="Visualización" aria-label="Visualización">⚙️</button>
+        <div class="contenedor-principal">
+            <div class="zona-tablero">
+                <div id="board-wrapper" style="position:relative; max-width:100%;">
+                    <div id="board" style="width:100%"></div>
+                    <div id="scan-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></div>
+                </div>
+            </div>
+            <div class="zona-panel">
+                <div id="panel">
+                    <div id="exercise-progress-bar">
+                        <div id="exercise-progress-fill"></div>
+                    </div>
+                    <div id="timer-container" style="margin: 8px 0; display:none;">
+                        <span id="decision-timer" style="font-size:1.4em; font-weight:600;">0.0s</span>
+                        <button type="button" id="btn-toggle-timer" style="margin-left:8px; background:none; border:none; color:var(--texto-secundario); font-size:0.8em; cursor:pointer;"></button>
+                    </div>
+                    <button type="button" id="btn-show-timer" style="display:none; margin: 8px 0; background:none; border:none; color:var(--texto-secundario); font-size:0.8em; cursor:pointer;"></button>
+                    <div id="scan-sector-indicator" style="display:none; font-size:0.85em; margin-top:4px;"></div>
+                    <div id="progress">Ejercicio 1 de 10</div>
+                    <div id="instruction">Cargando...</div>
+                    <div id="legend" style="display:none">
+                        <span id="legend-hanging" style="color:#E05C5C"></span><br>
+                        <span id="legend-vulnerable" style="color:#B8860B"></span>
+                    </div>
+                    <div id="feedback" style="display:none;"></div>
+                    <div id="feedback-scan-time" class="feedback-scan" style="display:none;"></div>
+                    <div id="feedback-transfer" style="display:none;"></div>
+                    <div id="btn-area"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-summary" class="screen" style="display:none">
+        <div class="info-container">
+            <div id="summary-content"></div>
+            <div id="transfer-question" class="summary-insight" style="display:none;">
+                <p id="transfer-q-text"></p>
+                <div id="transfer-q-buttons" style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                    <button type="button" class="btn-transfer-answer" data-val="0">0</button>
+                    <button type="button" class="btn-transfer-answer" data-val="1">1</button>
+                    <button type="button" class="btn-transfer-answer" data-val="2">2</button>
+                    <button type="button" class="btn-transfer-answer" data-val="more">+</button>
+                </div>
+                <p id="transfer-q-response" style="display:none; color:#7FC97F; margin-top:8px;"></p>
+            </div>
+            <button type="button" id="btn-summary-new" class="btn-primary btn-menu"></button>
+            <button type="button" id="btn-summary-home" class="btn-secondary btn-menu"></button>
+        </div>
+    </div>
+
+    <div id="profile-overlay" class="profile-overlay">
+        <div class="profile-overlay-backdrop"></div>
+        <div class="profile-overlay-content">
+            <p class="profile-overlay-title" id="profile-overlay-title">Visualización</p>
+            <div class="profile-overlay-buttons">
+                <button type="button" class="profile-btn" data-profile="small"></button>
+                <button type="button" class="profile-btn" data-profile="standard"></button>
+                <button type="button" class="profile-btn" data-profile="comfort"></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='trainer.js') }}"></script>
+</body>
+</html>

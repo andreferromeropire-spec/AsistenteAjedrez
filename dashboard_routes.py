@@ -69,6 +69,10 @@ def login_required(f):
 @dashboard_bp.route('/dashboard/login', methods=['GET', 'POST'])
 @dashboard_bp.route('/login', methods=['GET', 'POST'])
 def login():
+    # Si ya hay sesión activa, redirigir al destino adecuado
+    if session.get('dashboard_logged_in'):
+        return redirect('/dashboard')
+    # En el futuro podríamos agregar: si hay portal_alumno_ids -> /portal/home
     error = ''
     if request.method == 'POST':
         if request.form.get('password') == DASHBOARD_PASSWORD:

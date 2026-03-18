@@ -12,6 +12,7 @@ from pagos import registrar_pago, quien_debe_este_mes, total_cobrado_en_mes, his
 from clases import agendar_clase, resumen_clases_alumno_mes, reprogramar_clase
 from dashboard_routes import dashboard_bp
 from portal_routes import portal_bp
+from trainer_routes import trainer_bp
 from apscheduler.schedulers.background import BackgroundScheduler
 from notificaciones_portal import enviar_recordatorios_pendientes
 
@@ -23,6 +24,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-2026")
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(portal_bp)
+app.register_blueprint(trainer_bp)
 
 # Scheduler para recordatorios del portal
 try:
