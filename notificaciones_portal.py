@@ -1,31 +1,29 @@
 import os
-import smtplib
-from email.mime.text import MIMEText
 from datetime import datetime, timedelta
+
+import resend
 
 from database import get_connection
 
 
 def _enviar_mail(destino, asunto, cuerpo):
-    smtp_user = os.environ.get("SMTP_USER")
-    smtp_pass = os.environ.get("SMTP_PASSWORD")
-    if not smtp_user or not smtp_pass:
-        print("notificaciones_portal: SMTP_USER o SMTP_PASSWORD no configurados, no se envían mails.")
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print("notificaciones_portal: RESEND_API_KEY no configurada, no se envían mails.")
         return False
     try:
-        msg = MIMEText(cuerpo)
-        msg["Subject"] = asunto
-        msg["From"] = smtp_user
-        msg["To"] = destino
-
-        server = smtplib.SMTP("smtp.zoho.com", 587, timeout=15)
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, [destino], msg.as_string())
-        server.quit()
+        resend.api_key = api_key
+        resend.Emails.send(
+            {
+                "from": os.environ.get("RESEND_FROM", "notificaciones@tudominio.com"),
+                "to": [destino],
+                "subject": asunto,
+                "text": cuerpo,
+            }
+        )
         return True
     except Exception as e:
-        print("notificaciones_portal: error enviando mail:", repr(e))
+        print("notificaciones_portal: error enviando mail con Resend:", repr(e))
         return False
 
 
