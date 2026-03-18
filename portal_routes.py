@@ -521,26 +521,26 @@ def api_portal_puzzle_diario():
         return Response(json.dumps({"error": "no disponible"}), mimetype="application/json", status=200)
 
 
-@portal_bp.route("/trainer")
-@portal_login_required
-def portal_trainer():
+# @portal_bp.route("/trainer")
+#@portal_login_required
+#def portal_trainer():
     # Placeholder simple hasta integrar la UI completa del trainer
-    contenido = """
-<div class="card">
-  <h2 style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--gold-light);margin-bottom:0.75rem">Entrenamiento de patrones</h2>
-  <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.75rem">
-    Próximamente vas a poder resolver ejercicios tácticos interactivos directamente desde este portal.
-  </p>
-  <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem">
-    Por ahora, podés ver tu resumen de progreso en la sección <strong>Progreso de entrenamiento</strong>.
-  </p>
-  <div style="margin-top:0.75rem">
-    <a href="/portal/entrenamiento" class="btn">Ver mi progreso</a>
-  </div>
-</div>
-"""
-    html = PORTAL_HTML.replace("{PORTAL_CONTENT}", contenido)
-    return Response(html, mimetype="text/html; charset=utf-8")
+    #contenido = """
+    #<div class="card">
+    #<h2 style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--gold-light);margin-bottom:0.75rem">Entrenamiento de patrones</h2>
+    #<p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.75rem">
+  #  Próximamente vas a poder resolver ejercicios tácticos interactivos directamente desde este portal.
+  #</p>
+    #<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem">
+    #Por ahora, podés ver tu resumen de progreso en la sección <strong>Progreso de entrenamiento</strong>.
+    #</p>
+  #<div style="margin-top:0.75rem">
+    #<a href="/portal/entrenamiento" class="btn">Ver mi progreso</a>
+  #</div>
+#</div>
+    #"""
+    #html = PORTAL_HTML.replace("{PORTAL_CONTENT}", contenido)
+    #return Response(html, mimetype="text/html; charset=utf-8")
 
 
 @portal_bp.route("/portal/entrenamiento")

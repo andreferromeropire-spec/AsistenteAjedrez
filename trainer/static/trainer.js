@@ -574,7 +574,7 @@ function startSession() {
     })
   } catch (e) {}
   $('#instruction').text(t('loading'))
-  $.get('/api/session/start?level=' + encodeURIComponent(sessionState.selectedLevel), function(data) {
+  $.get('/trainer/api/session/start?level=' + encodeURIComponent(sessionState.selectedLevel), function(data) {
     sessionState.sessionId = data.session_id
     sessionState.totalPuzzles = data.total
     sessionState.level = data.level || sessionState.selectedLevel
@@ -801,7 +801,7 @@ function submitAnswer() {
   $('#btn-area').empty()
 
   $.ajax({
-    url: '/api/result',
+    url: '/trainer/api/result',
     method: 'POST',
     contentType: 'application/json',
     data: JSON.stringify({
@@ -977,7 +977,7 @@ function nextPuzzle() {
     showSummary()
     return
   }
-  $.get('/api/puzzle/' + nextIndex, function(data) {
+  $.get('/trainer/api/puzzle/' + nextIndex, function(data) {
     loadPuzzle(data)
   })
 }
@@ -1042,7 +1042,7 @@ function showSummary() {
   $('#btn-summary-new').text(t('summaryBtnNewRound'))
   $('#btn-summary-home').text(t('summaryBtnHome'))
 
-  $.get('/api/session/summary/' + sessionState.sessionId, function(data) {
+  $.get('/trainer/api/session/summary/' + sessionState.sessionId, function(data) {
     sessionState.summaryData = data
     renderSummaryContent(data)
     bindTransferAnswerButtons()
