@@ -265,6 +265,10 @@ def portal_home():
     if alumno_ids:
         session["trainer_alumno_id"] = alumno_ids[0]
 
+    # Para el trainer, tomamos por ahora el primer alumno como contexto principal
+    if alumno_ids:
+        session["trainer_alumno_id"] = alumno_ids[0]
+
     resumen = []
     for aid in alumno_ids:
         # Clases del mes actual (para la tabla)
@@ -418,6 +422,7 @@ def portal_home():
 
     contenido = PORTAL_HOME_CONTENT.replace("{NOMBRE}", nombre)
     contenido = contenido.replace("{RESUMEN_JSON}", json.dumps(resumen))
+    contenido = contenido.replace("PORTAL_NOMBRE_JSON", json.dumps(nombre))
     html = PORTAL_HTML.replace("{PORTAL_CONTENT}", contenido)
     return Response(html, mimetype="text/html; charset=utf-8")
 
@@ -560,7 +565,10 @@ def portal_entrenamiento():
         SELECT a.id, a.nombre,
                COUNT(p.id) AS ejercicios,
                COALESCE(AVG(p.rating_cambio), 0.0) AS rating_prom,
-               MAX(p.fecha) AS ultima_fecha
+               MAX(p.fecha) AS ultima_fecha,
+               SUM(CASE WHEN p.resultado = 'correcto' THEN 1 ELSE 0 END) AS correctos,
+               SUM(CASE WHEN p.resultado = 'incorrecto' THEN 1 ELSE 0 END) AS incorrectos,
+               COALESCE(AVG(p.tiempo_segundos), 0.0) AS tiempo_promedio
         FROM alumnos a
         LEFT JOIN progreso_entrenamiento p ON p.alumno_id = a.id
         WHERE a.id IN ({placeholders})
@@ -572,26 +580,58 @@ def portal_entrenamiento():
     conn.close()
     # HTML sencillo reutilizando estilos del portal
     filas = []
+    mejor_record = None
     for r in rows:
+        ejercicios = r["ejercicios"] or 0
+        correctos = r["correctos"] or 0
+        incorrectos = r["incorrectos"] or 0
+        porc = (100.0 * correctos / ejercicios) if ejercicios else 0.0
+        tiempo_prom = float(r["tiempo_promedio"] or 0.0)
+        if ejercicios:
+            ratio = correctos / float(ejercicios)
+            if mejor_record is None or ratio > mejor_record["ratio"]:
+                mejor_record = {
+                    "nombre": r["nombre"],
+                    "correctos": correctos,
+                    "ejercicios": ejercicios,
+                    "porc": porc,
+                    "ratio": ratio,
+                }
         filas.append(
             "<tr>"
             + "<td>" + (r["nombre"] or "") + "</td>"
-            + "<td>" + str(r["ejercicios"] or 0) + "</td>"
+            + "<td>" + str(ejercicios) + "</td>"
+            + "<td>" + "{:.0f}%".format(porc) + "</td>"
+            + "<td>" + "{:.1f}s".format(tiempo_prom) + "</td>"
             + "<td>" + ("{:.1f}".format(r["rating_prom"]) if r["rating_prom"] is not None else "0.0") + "</td>"
             + "<td>" + (r["ultima_fecha"] or "-") + "</td>"
             + "</tr>"
         )
-    cuerpo = "".join(filas) if filas else '<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--text-muted)">Sin ejercicios registrados todavía.</td></tr>'
+    cuerpo = "".join(filas) if filas else '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--text-muted)">Sin ejercicios registrados todavía.</td></tr>'
+
+    resumen_record = ""
+    if mejor_record:
+        resumen_record = (
+            "<p style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem\">"
+            "Mejor registro: <strong>{nombre}</strong> — {correctos}/{ejercicios} aciertos ({porc:.0f}%)."
+            "</p>"
+        ).format(
+            nombre=mejor_record["nombre"],
+            correctos=mejor_record["correctos"],
+            ejercicios=mejor_record["ejercicios"],
+            porc=mejor_record["porc"],
+        )
     contenido = """
 <div class="card">
   <h2 style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--gold-light);margin-bottom:0.75rem">Progreso de entrenamiento</h2>
   <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.75rem">
     Resumen de los ejercicios de patrones resueltos por cada alumno asociado a esta cuenta.
   </p>
+  """ + resumen_record + """
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Alumno</th><th>Ejercicios</th><th>Rating medio</th><th>Última actividad</th></tr>
+        <tr><th>Alumno</th><th>Ejercicios</th><th>% acierto</th><th>Tiempo medio</th><th>Rating medio</th><th>Última actividad</th></tr>
       </thead>
       <tbody>""" + cuerpo + """</tbody>
     </table>
@@ -785,6 +825,12 @@ PORTAL_HOME_CONTENT = """
 <script>
 (function(){
   var resumen = {RESUMEN_JSON};
+  var portalNombre = PORTAL_NOMBRE_JSON;
+  try {
+    if (portalNombre) {
+      localStorage.setItem('portal_nombre', portalNombre);
+    }
+  } catch(e) {}
   var cont = document.getElementById('home-alumnos');
   if(!cont){ return; }
   if(!resumen || resumen.length === 0){
