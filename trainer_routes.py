@@ -1,7 +1,7 @@
 import chess
 import random
 
-from flask import Blueprint, render_template, jsonify, request, session
+from flask import Blueprint, render_template, jsonify, request, session, redirect
 
 from trainer import puzzle_loader, exercise_logic, database as trainer_db, statistics as trainer_stats
 from trainer_progress import guardar_progreso_entrenamiento
