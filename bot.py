@@ -294,8 +294,9 @@ def ejecutar_accion(accion, datos, numero):
                 resultados.append(f"• {alumno_rep['nombre']}: {monto_alumno} {moneda} ({n} clases, días {fechas_str})")
 
             rep_nombre = alumnos_del_rep[0]["representante"]
+            resultados_unidos = "\n".join(resultados)
             return (f"✅ Pago registrado para {rep_nombre}:\n"
-                    f"{'\n'.join(resultados)}\n"
+                    f"{resultados_unidos}\n"
                     f"• Total: {monto_total} {moneda} ({total_clases} clases × {precio_unit}/clase)")
 
         # ── Caso normal: buscar por nombre de alumno ──
