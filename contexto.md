@@ -18,6 +18,7 @@ Construido con Python/Flask, deployado en Railway. El bot corre en el mismo proc
 | Calendario | Google Calendar API |
 | Hosting | Railway (~$5-7/mes) |
 | Deploy | Push a GitHub → Railway auto-deploya |
+| Python | **3.11+** en local y Railway; en **f-strings** no usar barra invertida dentro de `{...}` (en 3.11 falla; en 3.12 se relajó) — calcular antes en una variable y concatenar o interpolar sin `\` en la expresión. |
 
 **Archivos principales:**
 - `bot.py` — lógica principal del bot, routing de acciones, `procesar_mensaje()`
@@ -32,9 +33,31 @@ Construido con Python/Flask, deployado en Railway. El bot corre en el mismo proc
 - `sincronizacion.py` — sync con Google Calendar
 - `notificaciones.py` — APScheduler para sync matutina (8:30) y nocturna (20:00)
 - `calendar_google.py` — wrapper de Google Calendar API
+- `demo_routes.py` — Blueprint Flask con rutas **`/demo/*`**: login simulado, dashboard/portal/trainer con banner DEMO, intercept de APIs del dashboard, reemplazos de enlaces (`/demo/login`, `/demo/trainer`, etc.)
+- `demo_data.py` — datos ficticios (`DEMO_ALUMNOS`, `DEMO_PORTAL_RESUMEN`, etc.) para la demo
+- `CONTEXTO_DEMO.md` — arquitectura y decisiones de la demo pública (detalle)
 
 **Scripts de utilidad (no corren en producción):**
 - `sincronizar_sheets.py` — importa alumnos desde Google Sheets (ID de planilla por env `GOOGLE_SHEET_ID`)
+
+---
+
+## Demo pública (`/demo/*`)
+
+Vitrina sin login real ni escritura en la DB principal. El blueprint se registra en **`bot.py`**.
+
+| Ruta | Rol |
+|------|-----|
+| **`/demo/login`** | Mismo HTML que **`LOGIN_HTML`** (`/login`): banner demo; Lichess/Google → **`/demo/portal`**; formulario profesora (cualquier contraseña) → **`/demo/dashboard`** vía JS (`preventDefault`). |
+| **`/demo/dashboard`** | Reutiliza `DASHBOARD_HTML`; script en `<head>` que define **`DEMO_DATA`** (JSON desde Python) y un intercept de `fetch`/`XHR` para APIs GET del dashboard; chat POST sigue simulado; datos de `demo_data.py` + lista fija de clases demo. |
+| **`/demo/portal`** | `PORTAL_HTML` + contenido home con resumen ficticio; enlaces internos reescritos a rutas `/demo/...`. |
+| **`/demo/trainer`** | `trainer.html` + banner; salida del trainer apunta al flujo demo. |
+
+**`DEMO_BANNER_SNIPPET`** (en `demo_routes.py`): pill DEMO, enlaces entre demos y al portfolio, toggles de tema e idioma (`data-es` / `data-en`), estados vacíos informativos en pestañas del dashboard que no cargan en demo, toast e intercept de **POST/PUT/DELETE** para acciones sin backend (con excepción del chat del dashboard demo). El JS del intercept **no** usa formato `%` de Python en el cuerpo: los datos van en **`DEMO_DATA`** y se concatena el script.
+
+**Helpers de HTML:** `aplicar_enlaces_demo_login_logout`, `aplicar_rutas_navegacion_demo`, `aplicar_todas_las_rutas_demo` — reemplazan `Salir`, `/login`, `/trainer`, `/portal/...` por equivalentes **`/demo/...`** donde corresponde.
+
+Documentación ampliada: **`CONTEXTO_DEMO.md`**.
 
 ---
 
@@ -230,7 +253,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 
 ## Google: OAuth y piloto (Calendar por profe)
 
-- **Instancia Andrea:** token de usuario en `GOOGLE_TOKEN` (o `GOOGLE_TOKEN_JSON` según uso). Scopes: Calendar + Sheets + Drive. Calendario `primary`.
+- **Instancia Andrea:** token de usuario en **`GOOGLE_TOKEN_JSON`** (nombre exacto en env según despliegue). Scopes: Calendar + Sheets + Drive. Calendario `primary`.
 - **Instancias piloto (otros profes):** opcionalmente usan **su** Calendar sin dar contraseña:
   - Variables: `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON de la cuenta de servicio) + `GOOGLE_CALENDAR_ID` (ID del calendario del profe).
   - El profe comparte su calendario con el email de la cuenta de servicio (permiso "Ver todos los detalles"). Ver **CALENDAR_PILOTO.md**.
@@ -243,7 +266,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - Push a GitHub → Railway auto-deploya
 - A veces cambios solo en `dashboard_routes.py` no triggean deploy → agregar comentario en `bot.py` para forzarlo
 - DB SQLite en volumen montado en `/data`
-- Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN` o `GOOGLE_TOKEN_JSON`, `ANTHROPIC_API_KEY`, `TWILIO_*`, `DASHBOARD_PASSWORD`, `SECRET_KEY`
+- Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN_JSON` (u otras vars de Google según instancia), `ANTHROPIC_API_KEY`, `TWILIO_*`, `DASHBOARD_PASSWORD`, `SECRET_KEY`
 - Gráfico ingresos en USD: `DOLAR_BLU_ARS`, `TASA_GBP_USD`. Opcional por instancia: `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CALENDAR_ID` (ver sección Piloto).
 
 ---
@@ -315,9 +338,10 @@ Pegar esto en `.cursor/rules/asistente_ajedrez.mdc` para que Cursor entienda el 
 # AsistenteAjedrez — Reglas del proyecto
 
 ## Stack
-- Python 3 + Flask, SQLite (DB_PATH), Railway, GitHub auto-deploy
+- Python 3.11+ + Flask, SQLite (DB_PATH), Railway, GitHub auto-deploy
 - JS embebido como string triple-quoted en dashboard_routes.py (>2000 líneas)
 - Claude Haiku para NLP, Twilio para WhatsApp
+- Demo pública: `demo_routes.py` (`/demo/login`, `/demo/dashboard`, `/demo/portal`, `/demo/trainer`) — ver `CONTEXTO_DEMO.md`
 
 ## Convenciones de código
 - Español para nombres de variables, funciones y comentarios
@@ -357,4 +381,5 @@ Archivos clave: bot.py (lógica), interprete.py (NLP con Claude Haiku), dashboar
 Regla crítica: procesar_mensaje() en bot.py maneja pendientes especiales ANTES del bloque isdigit().
 Regla crítica JS: nunca function declarations anidadas, siempre /dashboard/api/ en fetch.
 Google Calendar es fuente de verdad — el bot nunca crea eventos.
+Demo pública: /demo/* (demo_routes.py + CONTEXTO_DEMO.md).
 ```

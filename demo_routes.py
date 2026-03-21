@@ -1,7 +1,7 @@
 import json
 from datetime import date
 
-from flask import Blueprint, Response, render_template
+from flask import Blueprint, Response, render_template, session
 
 from dashboard_routes import DASHBOARD_HTML, LOGIN_HTML
 from demo_data import DEMO_ALUMNOS, DEMO_INGRESOS, DEMO_PORTAL_RESUMEN
@@ -1137,7 +1137,9 @@ def demo_portal():
 
 @demo_bp.route("/demo/trainer")
 def demo_trainer():
-    # Reutilizamos el mismo HTML del trainer real, sólo agregando el banner DEMO.
+    # Misma app y APIs que /trainer; el JS usa rutas absolutas /trainer/api/...
+    # No guardar progreso en DB de alumnos (trainer_routes comprueba trainer_demo_mode).
+    session["trainer_demo_mode"] = True
     html = render_template("trainer.html")
     if "<body" in html:
         # Insertar clase de tema y banner + pequeño script para ajustar el botón de salida
