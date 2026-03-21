@@ -1,0 +1,4 @@
+echo "3.11" > .python-version
+git add .python-version
+git commit -m "Pin Python 3.11 for Railway"
+git push
