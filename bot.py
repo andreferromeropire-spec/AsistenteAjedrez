@@ -13,6 +13,7 @@ from clases import agendar_clase, resumen_clases_alumno_mes, reprogramar_clase
 from dashboard_routes import dashboard_bp
 from portal_routes import portal_bp
 from trainer_routes import trainer_bp
+from demo_routes import demo_bp
 from apscheduler.schedulers.background import BackgroundScheduler
 from notificaciones_portal import enviar_recordatorios_pendientes
 
@@ -25,6 +26,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "clave-secreta-2026")
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(portal_bp)
 app.register_blueprint(trainer_bp)
+app.register_blueprint(demo_bp)
 
 # Scheduler para recordatorios del portal
 try:
