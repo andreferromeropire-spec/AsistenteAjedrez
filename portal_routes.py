@@ -9,7 +9,6 @@ from flask import Blueprint, Response, request, session, redirect
 
 from database import get_connection
 from calendar_google import crear_flow_google
-from dashboard_routes import SHARED_CSS
 
 
 portal_bp = Blueprint("portal", __name__)
@@ -607,14 +606,16 @@ def portal_entrenamiento():
             + "<td>" + (r["ultima_fecha"] or "-") + "</td>"
             + "</tr>"
         )
-    cuerpo = "".join(filas) if filas else '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--text-muted)">Sin ejercicios registrados todavía.</td></tr>'
+    cuerpo = "".join(filas) if filas else '<tr><td colspan="6" class="empty">Sin ejercicios registrados todavía.</td></tr>'
 
     resumen_record = ""
     if mejor_record:
         resumen_record = (
-            "<p style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem\">"
-            "Mejor registro: <strong>{nombre}</strong> — {correctos}/{ejercicios} aciertos ({porc:.0f}%)."
-            "</p>"
+            '<div class="next-class">'
+            '<div class="next-class__icon">♛</div>'
+            '<div><div class="next-class__eyebrow">Mejor registro</div>'
+            '<div class="next-class__value">{nombre} — {correctos}/{ejercicios} aciertos ({porc:.0f}%)</div></div>'
+            '</div>'
         ).format(
             nombre=mejor_record["nombre"],
             correctos=mejor_record["correctos"],
@@ -623,12 +624,15 @@ def portal_entrenamiento():
         )
     contenido = """
 <div class="card">
-  <h2 style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--gold-light);margin-bottom:0.75rem">Progreso de entrenamiento</h2>
-  <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.75rem">
-    Resumen de los ejercicios de patrones resueltos por cada alumno asociado a esta cuenta.
+  <span class="eyebrow">Entrenamiento</span>
+  <div class="hero-greet">
+    <h2>Progreso de patrones</h2>
+  </div>
+  <p style="font-size:0.9rem;color:var(--text-dim);margin:0.6rem 0 1.1rem">
+    Resumen de los ejercicios resueltos por cada alumno asociado a esta cuenta.
   </p>
   """ + resumen_record + """
-  <div class="table-wrap">
+  <div class="table-wrap" style="margin-top:1rem">
     <table>
       <thead>
         <tr><th>Alumno</th><th>Ejercicios</th><th>% acierto</th><th>Tiempo medio</th><th>Rating medio</th><th>Última actividad</th></tr>
@@ -636,8 +640,8 @@ def portal_entrenamiento():
       <tbody>""" + cuerpo + """</tbody>
     </table>
   </div>
-  <div style="margin-top:0.75rem">
-    <a href="/portal/home" class="btn">Volver al portal</a>
+  <div class="btn-row">
+    <a href="/portal/home" class="btn btn-sm">← Volver al portal</a>
   </div>
 </div>
 """
@@ -652,50 +656,201 @@ def portal_logout():
     return redirect("/login")
 
 
+PORTAL_CSS = """
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --paper:#EDE6D3;--ink:#211D16;--ink-soft:#4A4437;--ink-faint:#8A8069;
+  --accent:#6B4226;--accent-deep:#4A2E18;--accent-pale:#E7CB9C;
+  --rust:#B0552B;--rust-deep:#8C4220;--rust-bg:rgba(176,85,43,0.12);
+  --green:#3F6B45;--green-bg:rgba(63,107,69,0.13);
+  --gold:#A6863F;--gold-bg:rgba(166,134,63,0.14);
+  --bg:#F3EEE1;--bg2:#E9E0CB;--surface:#FDFBF5;--surface2:#F1E9D6;
+  --line:rgba(33,29,22,0.14);--shadow:rgba(33,29,22,0.10);
+  --text:var(--ink);--text-dim:var(--ink-soft);--text-muted:var(--ink-faint);
+  --radius-sm:6px;--radius-md:10px;--radius-lg:16px;--radius-pill:999px;
+}
+[data-theme="dark"]{
+  --bg:#1D140C;--bg2:#241A10;--surface:#2A1E14;--surface2:#33251A;
+  --line:rgba(237,230,211,0.14);--shadow:rgba(0,0,0,0.35);
+  --text:#EDE6D3;--text-dim:#C9BFA9;--text-muted:#93876F;
+  --accent:#D8A46C;--accent-deep:#A6863F;--accent-pale:rgba(216,164,108,0.18);
+  --rust:#D98A5E;--rust-deep:#B0552B;--rust-bg:rgba(217,138,94,0.16);
+  --green:#7FB48A;--green-bg:rgba(127,180,138,0.16);
+  --gold:#D3B15C;--gold-bg:rgba(211,177,92,0.16);
+}
+[data-theme="navy"]{
+  --bg:#121620;--bg2:#171C28;--surface:#1B2130;--surface2:#222A3A;
+  --line:rgba(214,224,240,0.12);--shadow:rgba(0,0,0,0.45);
+  --text:#E7EAF2;--text-dim:#AEB6C8;--text-muted:#6C7488;
+  --accent:#C9A54B;--accent-deep:#A6863F;--accent-pale:rgba(201,165,75,0.16);
+  --rust:#D98A5E;--rust-deep:#B0552B;--rust-bg:rgba(217,138,94,0.15);
+  --green:#7FB48A;--green-bg:rgba(127,180,138,0.15);
+  --gold:#C9A54B;--gold-bg:rgba(201,165,75,0.15);
+}
+html{font-size:16px}
+body{font-family:'IBM Plex Sans',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.55;transition:background .3s ease,color .3s ease;-webkit-font-smoothing:antialiased}
+.portal-shell{min-height:100vh;display:flex;flex-direction:column}
+h1,h2,h3{font-family:'Fraunces',Georgia,serif;font-weight:600;letter-spacing:-0.01em;line-height:1.12;color:var(--text)}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--rust);color:var(--paper)}
+:focus-visible{outline:2px solid var(--rust);outline-offset:2px;border-radius:3px}
+
+header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.75rem;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;box-shadow:0 2px 14px var(--shadow);flex-wrap:wrap}
+.header-left{display:flex;align-items:center;gap:0.85rem}
+.brand-mark{font-size:1.7rem;color:var(--accent);line-height:1}
+.header-left h1{font-size:1.15rem}
+.portal-header-sub{font-size:0.78rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;letter-spacing:0.02em}
+.header-right{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
+.theme-group,.lang-toggle{display:flex;border:1px solid var(--line);border-radius:var(--radius-pill);overflow:hidden;background:var(--surface2)}
+.theme-btn,.lang-btn{background:transparent;border:none;color:var(--text-dim);padding:0.4rem 0.7rem;cursor:pointer;font-size:0.85rem;font-family:'IBM Plex Mono',monospace;transition:background .15s,color .15s}
+.lang-btn{font-size:0.72rem;letter-spacing:0.05em;padding:0.4rem 0.65rem}
+.theme-btn.active,.lang-btn.active{background:var(--accent);color:var(--surface)}
+.theme-btn:hover:not(.active),.lang-btn:hover:not(.active){background:var(--bg2)}
+
+main{padding:2rem 1.75rem 3rem;max-width:1320px;margin:0 auto;width:100%;flex:1}
+.portal-footer{text-align:center;padding:1.5rem;font-size:0.75rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace}
+.portal-footer .dot{margin:0 0.5em;opacity:0.5}
+
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--accent);display:inline-flex;align-items:center;gap:0.5em}
+[data-theme="navy"] .eyebrow,[data-theme="dark"] .eyebrow{color:var(--gold)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:1.5rem 1.6rem;box-shadow:0 1px 3px var(--shadow);margin-bottom:1.25rem}
+.card:last-child{margin-bottom:0}
+
+.hero-greet{margin-bottom:0.4rem}
+.hero-greet h2{font-size:clamp(1.6rem,1.3rem + 1.4vw,2.15rem);font-style:italic;font-weight:500;margin-top:0.35rem}
+.hero-date{font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem}
+
+.portal-layout{display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;align-items:flex-start;margin-top:1.5rem}
+@media(max-width:860px){.portal-layout{grid-template-columns:1fr}.portal-side{order:-1}main{padding:1.25rem 1rem 2.5rem}}
+
+.alumno-block{padding-top:1.4rem;border-top:1px solid var(--line)}
+.alumno-block:first-of-type{padding-top:0;border-top:none}
+.alumno-cabecera{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.alumno-nombre{display:flex;align-items:center;gap:0.7rem}
+.avatar{width:2.35rem;height:2.35rem;border-radius:50%;background:var(--accent-pale);color:var(--accent-deep);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;font-size:1rem;flex-shrink:0}
+.alumno-nombre h3{font-size:1.15rem}
+
+.badge{display:inline-flex;align-items:center;gap:0.4em;padding:0.32rem 0.75rem;border-radius:var(--radius-pill);font-size:0.72rem;font-weight:500;font-family:'IBM Plex Mono',monospace;letter-spacing:0.03em}
+.badge::before{content:'';width:0.4em;height:0.4em;border-radius:50%;background:currentColor;flex-shrink:0}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--rust-bg);color:var(--rust-deep)}
+.badge-gold{background:var(--gold-bg);color:var(--gold)}
+.badge-gray{background:var(--bg2);color:var(--text-dim)}
+.badge-estado-clase{padding:0.22rem 0.6rem;font-size:0.68rem;text-transform:uppercase}
+
+.next-class{display:flex;align-items:center;gap:1rem;background:var(--accent-pale);border-radius:var(--radius-md);padding:1rem 1.25rem;margin-bottom:1.1rem}
+[data-theme="dark"] .next-class,[data-theme="navy"] .next-class{background:var(--surface2);border:1px solid var(--line)}
+.next-class__icon{font-size:1.5rem;flex-shrink:0}
+.next-class__eyebrow{font-family:'IBM Plex Mono',monospace;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent-deep);opacity:0.85}
+[data-theme="dark"] .next-class__eyebrow,[data-theme="navy"] .next-class__eyebrow{color:var(--text-muted)}
+.next-class__value{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:600;margin-top:0.15rem}
+.next-class__chip{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;padding:0.3rem 0.7rem;border-radius:var(--radius-pill);background:var(--surface);color:var(--text-dim);white-space:nowrap}
+
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.7rem;margin-bottom:1.1rem}
+.metric{background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-md);padding:0.85rem 1rem}
+.metric-label{font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.09em;font-family:'IBM Plex Mono',monospace;margin-bottom:0.35rem}
+.metric-value{font-size:1.4rem;font-weight:500;font-family:'Fraunces',serif;color:var(--text);line-height:1}
+.metric-value.green{color:var(--green)}
+.metric-value.red{color:var(--rust-deep)}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-md)}
+table{width:100%;border-collapse:collapse;font-size:0.85rem}
+thead{background:var(--surface2)}
+th{padding:0.6rem 0.9rem;text-align:left;font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;font-family:'IBM Plex Mono',monospace;border-bottom:1px solid var(--line)}
+td{padding:0.6rem 0.9rem;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface2)}
+
+.historial-toggle{display:inline-flex;align-items:center;gap:0.3em;font-size:0.8rem;color:var(--accent-deep);cursor:pointer;margin-top:0.85rem}
+[data-theme="dark"] .historial-toggle,[data-theme="navy"] .historial-toggle{color:var(--accent)}
+.historial-toggle .chevron{display:inline-block;transition:transform .18s ease;font-size:0.75em}
+.historial-toggle.open .chevron{transform:rotate(90deg)}
+.historial-panel{display:none;margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--line);font-size:0.82rem;color:var(--text-dim)}
+.historial-panel p{padding:0.15rem 0}
+.historial-panel.open{display:block}
+
+.empty{padding:2rem 1rem;text-align:center;color:var(--text-muted);font-size:0.88rem}
+
+#puzzle-content{font-size:0.85rem;color:var(--text-muted)}
+.puzzle-img{width:100%;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--surface2);box-shadow:0 1px 3px var(--shadow)}
+.chip{display:inline-block;padding:0.22rem 0.65rem;border-radius:var(--radius-pill);background:var(--surface2);border:1px solid var(--line);font-size:0.68rem;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);margin:0 0.3rem 0.3rem 0}
+
+.side-card h3{font-size:0.95rem;margin-bottom:0.65rem;display:flex;align-items:center;gap:0.4em}
+.cta-card{background:var(--accent-pale);border:none}
+[data-theme="dark"] .cta-card,[data-theme="navy"] .cta-card{background:var(--surface2);border:1px solid var(--accent-deep)}
+.cta-card h3{color:var(--accent-deep)}
+[data-theme="dark"] .cta-card h3,[data-theme="navy"] .cta-card h3{color:var(--accent)}
+.cta-card p{font-size:0.82rem;color:var(--text-dim);margin-bottom:0.85rem}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:0.4em;background:var(--surface2);border:1px solid var(--line);color:var(--text);padding:0.55rem 1rem;border-radius:var(--radius-sm);font-family:'IBM Plex Sans',sans-serif;font-size:0.85rem;font-weight:500;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;text-align:center}
+.btn:hover{border-color:var(--accent);background:var(--bg2)}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn-primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
+.btn-block{width:100%}
+.btn-row{display:flex;gap:0.6rem;margin-top:0.8rem;flex-wrap:wrap}
+.btn-sm{padding:0.3rem 0.55rem;font-size:0.75rem}
+
+.field-label{font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;font-family:'IBM Plex Mono',monospace;display:block;margin-bottom:0.3rem}
+.field-input{background:var(--surface2);border:1px solid var(--line);color:var(--text);padding:0.5rem 0.75rem;border-radius:var(--radius-sm);font-family:'IBM Plex Sans',sans-serif;font-size:0.83rem;outline:none;transition:border-color .15s}
+.field-input:focus{border-color:var(--accent)}
+
+.rec-item{display:flex;align-items:center;justify-content:space-between;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid var(--line);font-size:0.82rem}
+.rec-item:last-child{border-bottom:none}
+.rec-item__text{color:var(--text-dim)}
+
+.unauth-msg{font-size:0.92rem;line-height:1.6;color:var(--text-dim)}
+
+.logo{text-align:center;padding:0.5rem 0 1rem}
+.logo .piece{font-size:2.2rem;color:var(--accent);margin-bottom:0.5rem}
+.logo h2{font-size:1.3rem}
+.logo p{font-size:0.85rem;color:var(--text-muted);margin-top:0.3rem}
+"""
+
+
 PORTAL_HTML = """<!DOCTYPE html>
 <html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alumno Portal</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<title>Portal de alumnos · Quiet Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,450;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-""" + SHARED_CSS + """
-main{padding:1.5rem 1.75rem;max-width:1440px;margin:0 auto}
-.portal-header-sub{font-size:0.8rem;color:var(--text-muted);}
-.btn-row{display:flex;gap:0.6rem;margin-top:0.8rem;flex-wrap:wrap}
-.unauth-msg{font-size:0.9rem;line-height:1.5}
-.portal-layout{display:grid;grid-template-columns:2fr 1fr;gap:1.25rem;align-items:flex-start}
-@media(max-width:768px){.portal-layout{grid-template-columns:1fr}.portal-side{order:-1}}
-.puzzle-img{width:100%;border-radius:4px;border:1px solid var(--border);background:var(--surface2)}
-.chip{display:inline-block;padding:0.18rem 0.45rem;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:0.7rem;color:var(--text-dim);margin:0 0.25rem 0.25rem 0}
+""" + PORTAL_CSS + """
 </style>
 </head>
 <body>
+<div class="portal-shell">
 <header>
   <div class="header-left">
-    <span style="font-size:1.4rem">&#9823;</span>
+    <span class="brand-mark" aria-hidden="true">&#9823;</span>
     <div>
       <h1 id="portal-title" data-es="Portal de alumnos" data-en="Student Portal">Portal de alumnos</h1>
-      <div class="portal-header-sub" id="portal-subtitle" data-es="Acceso para alumnos" data-en="Student access">Acceso para alumnos</div>
+      <div class="portal-header-sub" id="portal-subtitle" data-es="Quiet Center &mdash; clases de ajedrez" data-en="Quiet Center &mdash; chess lessons">Quiet Center &mdash; clases de ajedrez</div>
     </div>
   </div>
   <div class="header-right">
-    <div class="theme-group">
-      <button class="theme-btn active" onclick="setTheme('light',this)">&#9728;</button>
-      <button class="theme-btn" onclick="setTheme('dark',this)">&#9790;</button>
-      <button class="theme-btn" onclick="setTheme('navy',this)">&#127754;</button>
+    <div class="theme-group" role="group" aria-label="Tema">
+      <button class="theme-btn active" onclick="setTheme('light',this)" title="Claro" aria-label="Tema claro">&#9728;</button>
+      <button class="theme-btn" onclick="setTheme('dark',this)" title="Oscuro" aria-label="Tema oscuro">&#9789;</button>
+      <button class="theme-btn" onclick="setTheme('navy',this)" title="Noche" aria-label="Tema noche">&#10022;</button>
     </div>
-    <div class="lang-toggle">
-      <span id="lang-label">Idioma:</span>
-      <button type="button" class="btn" id="btn-es">ES</button>
-      <button type="button" class="btn" id="btn-en">EN</button>
+    <div class="lang-toggle" role="group" aria-label="Idioma">
+      <button type="button" class="lang-btn active" id="btn-es">ES</button>
+      <button type="button" class="lang-btn" id="btn-en">EN</button>
     </div>
   </div>
 </header>
 <main>
   {PORTAL_CONTENT}
 </main>
+<footer class="portal-footer">
+  <span>Quiet Center</span><span class="dot">&middot;</span><span id="footer-tagline" data-es="clases de ajedrez, en serio y con calma" data-en="chess lessons, taken seriously and calmly">clases de ajedrez, en serio y con calma</span>
+</footer>
+</div>
 <script>
 function setTheme(tema, btn) {
   document.documentElement.setAttribute('data-theme', tema);
@@ -793,31 +948,32 @@ PORTAL_HOME_CONTENT = """
 <div class="portal-layout">
   <div class="portal-main">
     <div class="card">
-      <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}" style="font-family:\\"Playfair Display\\",serif;font-size:1.6rem;color:var(--gold-light);margin-bottom:1rem">Hola, {NOMBRE}</h2>
+      <span class="eyebrow">Tu portal</span>
+      <div class="hero-greet">
+        <h2 id="home-saludo" data-es="Hola, {NOMBRE}" data-en="Hi, {NOMBRE}">Hola, {NOMBRE}</h2>
+      </div>
       <div id="home-alumnos"></div>
-      <div>
-        <a href="/portal/logout" class="btn" id="home-logout" style="display:inline-block;margin-top:1rem">Salir</a>
+      <div class="btn-row">
+        <a href="/portal/logout" class="btn btn-sm" id="home-logout">Salir</a>
       </div>
     </div>
   </div>
   <div class="portal-side">
-    <div class="card" id="puzzle-card">
-      <h3 style="font-size:0.95rem;margin-bottom:0.5rem" id="puzzle-title" data-es="Puzzle del día ♟" data-en="Daily Puzzle ♟">Puzzle del día ♟</h3>
-      <div id="puzzle-content" style="font-size:0.85rem;color:var(--text-muted)">Cargando...</div>
+    <div class="card side-card" id="puzzle-card">
+      <h3 id="puzzle-title" data-es="♟ Puzzle del día" data-en="♟ Daily Puzzle">♟ Puzzle del día</h3>
+      <div id="puzzle-content">Cargando&hellip;</div>
     </div>
-    <div class="card" id="recordatorios-card">
-      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Recordatorios</h3>
+    <div class="card side-card" id="recordatorios-card">
+      <h3>♜ Recordatorios</h3>
       <div id="recordatorios-lista"></div>
-      <div id="recordatorios-form" style="margin-top:0.6rem"></div>
+      <div id="recordatorios-form" style="margin-top:0.75rem"></div>
     </div>
-    <div class="card" id="trainer-card">
-      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Entrenamiento de patrones</h3>
-      <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.6rem">
-        Practicá tácticas y patrones típicos en el tablero interactivo.
-      </p>
-      <div style="display:flex;flex-direction:column;gap:0.4rem">
-        <a href="/trainer" class="btn" style="width:100%;justify-content:center">Entrar al entrenamiento</a>
-        <a href="/portal/entrenamiento" class="btn" style="width:100%;justify-content:center">Ver mi progreso</a>
+    <div class="card side-card cta-card" id="trainer-card">
+      <h3>♝ Entrenamiento de patrones</h3>
+      <p>Practicá tácticas y patrones típicos en el tablero interactivo.</p>
+      <div class="btn-row" style="flex-direction:column">
+        <a href="/trainer" class="btn btn-primary btn-block">Entrar al entrenamiento</a>
+        <a href="/portal/entrenamiento" class="btn btn-block">Ver mi progreso</a>
       </div>
     </div>
   </div>
@@ -835,6 +991,7 @@ PORTAL_HOME_CONTENT = """
   if(!cont){ return; }
   if(!resumen || resumen.length === 0){
     var p = document.createElement('p');
+    p.className = 'empty';
     p.textContent = 'No hay clases registradas este mes.';
     cont.appendChild(p);
     return;
@@ -842,31 +999,51 @@ PORTAL_HOME_CONTENT = """
   for(var i=0;i<resumen.length;i++){
     var r = resumen[i];
     var clasesMes = r.clases_mes || [];
+    var inicial = (r.nombre || '?').trim().charAt(0).toUpperCase();
     if (clasesMes.length === 0) {
       var sinDiv = document.createElement('div');
-      sinDiv.style.marginTop = '0.75rem';
+      sinDiv.className = 'alumno-block';
+      var cab0 = document.createElement('div'); cab0.className = 'alumno-cabecera';
+      var nw0 = document.createElement('div'); nw0.className = 'alumno-nombre';
+      var av0 = document.createElement('div'); av0.className = 'avatar'; av0.textContent = inicial;
+      var t0 = document.createElement('h3'); t0.textContent = r.nombre;
+      nw0.appendChild(av0); nw0.appendChild(t0);
+      cab0.appendChild(nw0);
+      sinDiv.appendChild(cab0);
       var st = document.createElement('p');
-      st.textContent = 'No hay clases registradas este mes para ' + (r.nombre || '');
+      st.className = 'empty';
+      st.textContent = 'No hay clases registradas este mes.';
       sinDiv.appendChild(st);
       cont.appendChild(sinDiv);
       continue;
     }
     var bloque = document.createElement('div');
-    bloque.style.marginTop = '0.75rem';
-    var titulo = document.createElement('h3');
-    titulo.style.fontSize = '0.95rem';
-    titulo.style.marginBottom = '0.4rem';
-    titulo.textContent = r.nombre;
+    bloque.className = 'alumno-block';
 
-    // Métricas tipo dashboard
-    var metrics = document.createElement('div');
-    metrics.className = 'metrics';
-    var m1 = document.createElement('div'); m1.className = 'metric';
-    var l1 = document.createElement('div'); l1.className = 'metric-label'; l1.textContent = 'Próxima clase';
-    var v1 = document.createElement('div'); v1.className = 'metric-value';
+    var cabecera = document.createElement('div'); cabecera.className = 'alumno-cabecera';
+    var nombreWrap = document.createElement('div'); nombreWrap.className = 'alumno-nombre';
+    var avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.textContent = inicial;
+    var titulo = document.createElement('h3');
+    titulo.textContent = r.nombre;
+    nombreWrap.appendChild(avatar);
+    nombreWrap.appendChild(titulo);
+    cabecera.appendChild(nombreWrap);
+
+    // Próxima clase, como banner propio (lo primero que se ve tras el estado)
+    var nextBanner = document.createElement('div');
+    nextBanner.className = 'next-class';
+    var ncIcon = document.createElement('div'); ncIcon.className = 'next-class__icon'; ncIcon.textContent = '♞';
+    var ncBody = document.createElement('div');
+    var ncEye = document.createElement('div'); ncEye.className = 'next-class__eyebrow'; ncEye.textContent = 'Próxima clase';
+    var ncVal = document.createElement('div'); ncVal.className = 'next-class__value';
+    ncBody.appendChild(ncEye);
+    ncBody.appendChild(ncVal);
+    nextBanner.appendChild(ncIcon);
+    nextBanner.appendChild(ncBody);
     if (r.proxima_clase && r.proxima_clase.fecha) {
       var fParts = r.proxima_clase.fecha.split('-');
       var fechaTxt = r.proxima_clase.fecha;
+      var diasTxt = '';
       if (fParts.length === 3) {
         var anio = parseInt(fParts[0],10);
         var mes = parseInt(fParts[1],10)-1;
@@ -875,13 +1052,26 @@ PORTAL_HOME_CONTENT = """
         var dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
         var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
         fechaTxt = dias[d.getDay()] + ' ' + (dia<10?'0'+dia:dia) + ' ' + meses[mes] + ' · ' + (r.proxima_clase.hora || '');
+        var hoyDate = new Date(); hoyDate.setHours(0,0,0,0);
+        var diffDays = Math.round((d - hoyDate) / 86400000);
+        if (diffDays === 0) { diasTxt = 'Hoy'; }
+        else if (diffDays === 1) { diasTxt = 'Mañana'; }
+        else if (diffDays > 1) { diasTxt = 'En ' + diffDays + ' días'; }
       }
-      v1.textContent = fechaTxt;
+      ncVal.textContent = fechaTxt;
+      if (diasTxt) {
+        var ncChip = document.createElement('div');
+        ncChip.className = 'next-class__chip';
+        ncChip.textContent = diasTxt;
+        nextBanner.appendChild(ncChip);
+      }
     } else {
-      v1.textContent = 'Sin clases agendadas';
+      ncVal.textContent = 'Sin clases agendadas';
     }
-    m1.appendChild(l1); m1.appendChild(v1);
 
+    // Métricas tipo dashboard
+    var metrics = document.createElement('div');
+    metrics.className = 'metrics';
     var m2 = document.createElement('div'); m2.className = 'metric';
     var l2 = document.createElement('div'); l2.className = 'metric-label'; l2.textContent = 'Clases este mes';
     var v2 = document.createElement('div'); v2.className = 'metric-value'; v2.textContent = r.clases_agendadas || 0;
@@ -893,7 +1083,7 @@ PORTAL_HOME_CONTENT = """
     m3.appendChild(l3); m3.appendChild(v3);
 
     var m4 = document.createElement('div'); m4.className = 'metric';
-    var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.setAttribute('data-es','AL D\\u00cdA'); l4.setAttribute('data-en','UP TO DATE'); l4.textContent = 'AL D\\u00cdA';
+    var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.textContent = 'Clases pagadas';
     var v4 = document.createElement('div'); v4.className = 'metric-value'; v4.textContent = r.clases_pagas || 0;
     m4.appendChild(l4); m4.appendChild(v4);
 
@@ -903,7 +1093,6 @@ PORTAL_HOME_CONTENT = """
     if ((r.clases_restantes || 0) > 0) { v5.className += ' green'; }
     m5.appendChild(l5); m5.appendChild(v5);
 
-    metrics.appendChild(m1);
     metrics.appendChild(m2);
     metrics.appendChild(m3);
     metrics.appendChild(m4);
@@ -934,13 +1123,15 @@ PORTAL_HOME_CONTENT = """
       estado.setAttribute('data-en', (sinPagar || 0) + ' unpaid classes');
     }
     if(esOk){ estado.className += ' badge-green'; } else { estado.className += ' badge-red'; }
-    var lista = document.createElement('div');
-    lista.className = 'clases-list';
+    cabecera.appendChild(estado);
+    var lista;
     if(!r.clases_mes || r.clases_mes.length === 0){
-      var vacio = document.createElement('div');
-      vacio.textContent = 'No hay clases registradas este mes.';
-      lista.appendChild(vacio);
+      lista = document.createElement('p');
+      lista.className = 'empty';
+      lista.textContent = 'No hay clases registradas este mes.';
     } else {
+      lista = document.createElement('div');
+      lista.className = 'table-wrap';
       var tabla = document.createElement('table');
       var thead = document.createElement('thead');
       var trh = document.createElement('tr');
@@ -992,15 +1183,16 @@ PORTAL_HOME_CONTENT = """
     if (historial.length > 0) {
       var toggle = document.createElement('a');
       toggle.href = 'javascript:void(0)';
-      toggle.style.fontSize = '0.8rem';
-      toggle.style.display = 'inline-block';
-      toggle.style.marginBottom = '0.3rem';
-      toggle.setAttribute('data-es', 'Ver historial');
-      toggle.setAttribute('data-en', 'View history');
-      toggle.textContent = 'Ver historial';
+      toggle.className = 'historial-toggle';
+      var toggleLabel = document.createElement('span');
+      toggleLabel.textContent = 'Ver historial';
+      var toggleChevron = document.createElement('span');
+      toggleChevron.className = 'chevron';
+      toggleChevron.textContent = '›';
+      toggle.appendChild(toggleLabel);
+      toggle.appendChild(toggleChevron);
       var panel = document.createElement('div');
-      panel.style.display = 'none';
-      panel.style.fontSize = '0.8rem';
+      panel.className = 'historial-panel';
       var mesesNombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
       for (var h = 0; h < historial.length; h++) {
         var item = historial[h];
@@ -1013,16 +1205,19 @@ PORTAL_HOME_CONTENT = """
         p.textContent = texto;
         panel.appendChild(p);
       }
-      toggle.addEventListener('click', function(){
-        panel.style.display = (panel.style.display === 'none' || panel.style.display === '') ? 'block' : 'none';
-      });
+      (function(t, p){
+        t.addEventListener('click', function(){
+          t.classList.toggle('open');
+          p.classList.toggle('open');
+        });
+      })(toggle, panel);
       histContainer.appendChild(toggle);
       histContainer.appendChild(panel);
     }
 
-    bloque.appendChild(titulo);
+    bloque.appendChild(cabecera);
+    bloque.appendChild(nextBanner);
     bloque.appendChild(metrics);
-    bloque.appendChild(estado);
     bloque.appendChild(lista);
     bloque.appendChild(histContainer);
     cont.appendChild(bloque);
@@ -1036,6 +1231,7 @@ PORTAL_HOME_CONTENT = """
     xhr.onreadystatechange = function() {
       if (xhr.readyState !== 4) return;
       if (xhr.status !== 200) {
+        puzzleCont.className = 'empty';
         puzzleCont.textContent = 'Puzzle no disponible hoy';
         return;
       }
@@ -1043,10 +1239,12 @@ PORTAL_HOME_CONTENT = """
       try {
         data = JSON.parse(xhr.responseText || '{}');
       } catch (e) {
+        puzzleCont.className = 'empty';
         puzzleCont.textContent = 'Puzzle no disponible hoy';
         return;
       }
       if (!data || data.error) {
+        puzzleCont.className = 'empty';
         puzzleCont.textContent = 'Puzzle no disponible hoy';
         return;
       }
@@ -1055,7 +1253,7 @@ PORTAL_HOME_CONTENT = """
       var container = document.createElement('div');
       container.style.display = 'flex';
       container.style.flexDirection = 'column';
-      container.style.gap = '0.5rem';
+      container.style.gap = '0.7rem';
 
       if (game.id) {
         var img = document.createElement('img');
@@ -1066,32 +1264,34 @@ PORTAL_HOME_CONTENT = """
       }
 
       var meta = document.createElement('div');
-      meta.style.fontSize = '0.8rem';
 
       if (puzzle.rating) {
-        var diff = document.createElement('div');
+        var diff = document.createElement('span');
+        diff.className = 'chip';
         diff.textContent = 'Elo ' + puzzle.rating;
         meta.appendChild(diff);
       }
 
       if (puzzle.themes && puzzle.themes.length) {
-        var themes = document.createElement('div');
-        themes.textContent = 'Temas: ' + puzzle.themes.join(', ');
-        meta.appendChild(themes);
+        for (var ti = 0; ti < puzzle.themes.length; ti++) {
+          var themeChip = document.createElement('span');
+          themeChip.className = 'chip';
+          themeChip.textContent = puzzle.themes[ti];
+          meta.appendChild(themeChip);
+        }
       }
 
       container.appendChild(meta);
 
-      console.log('puzzle data:', JSON.stringify(data));
       if (puzzle.id) {
         var link = document.createElement('a');
         link.href = 'https://lichess.org/training/daily';
-        link.setAttribute('data-es', 'Ver puzzle del día en Lichess');
-        link.setAttribute('data-en', 'View daily puzzle on Lichess');
+        link.setAttribute('data-es', 'Ver puzzle en Lichess ↗');
+        link.setAttribute('data-en', 'View on Lichess ↗');
         link.target = '_blank';
-        link.className = 'btn';
-        link.style.marginTop = '0.5rem';
-        link.textContent = 'Ver puzzle del día en Lichess';
+        link.rel = 'noopener';
+        link.className = 'btn btn-primary btn-block';
+        link.textContent = 'Ver puzzle en Lichess ↗';
         container.appendChild(link);
       }
 
@@ -1107,37 +1307,37 @@ PORTAL_HOME_CONTENT = """
   if (contRecLista && contRecForm) {
     fetch('/portal/api/recordatorios').then(function(r){ return r.json(); }).then(function(datos){
       if (!datos || !datos.length) {
-        contRecLista.innerHTML = '<p style="font-size:0.82rem;color:var(--text-muted)">Sin recordatorios configurados.</p>';
+        contRecLista.innerHTML = '<p class="empty">Sin recordatorios configurados.</p>';
       } else {
-        var html = '<ul style="list-style:none;padding-left:0;font-size:0.82rem">';
+        var html = '';
         for (var i=0;i<datos.length;i++) {
           var d = datos[i];
           var textoTiempo = minutosATexto(d.minutos_antes || 0);
           var desc = textoTiempo + ' antes — ' + d.alcance + ' — ' + d.canal + (d.mail_destino ? ' ('+d.mail_destino+')' : '');
-          html += '<li style="margin-bottom:0.25rem">'+desc+' <button class="btn" style="padding:0.1rem 0.4rem;font-size:0.75rem" onclick="borrarRecordatorio('+d.id+')">X</button></li>';
+          html += '<div class="rec-item"><span class="rec-item__text">'+desc+'</span><button class="btn btn-sm" onclick="borrarRecordatorio('+d.id+')">&times;</button></div>';
         }
-        html += '</ul>';
         contRecLista.innerHTML = html;
       }
       var activos = (datos || []).length;
       if (activos >= 3) {
-        contRecForm.innerHTML = '<p style="font-size:0.82rem;color:var(--text-muted)">Límite alcanzado (3).</p>';
+        contRecForm.innerHTML = '<p class="empty">Límite alcanzado (3).</p>';
         return;
       }
       var mailDefault = '';
       if (resumen && resumen.length > 0 && resumen[0].mail_responsable) {
         mailDefault = resumen[0].mail_responsable;
       }
+      var mailDefaultAttr = String(mailDefault).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
       var fhtml = '';
-      fhtml += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">';
-      fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Tiempo antes</label>';
-      fhtml += '<select id="rec-tiempo" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem">';
+      fhtml += '<div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:flex-end">';
+      fhtml += '<div><label class="field-label">Tiempo antes</label>';
+      fhtml += '<select id="rec-tiempo" class="field-input">';
       fhtml += '<option value="30">30 min</option><option value="60">1 hora</option><option value="120">2 horas</option><option value="1440">24 horas</option></select></div>';
-      fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Alcance</label>';
-      fhtml += '<select id="rec-alcance" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem"><option value="todas">Todas mis clases futuras</option><option value="proxima">Solo la próxima clase</option></select></div>';
-      fhtml += '<div><label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Mail</label>';
-      fhtml += '<input id="rec-mail" type="email" value="'+mailDefault+'" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:220px"></div>';
-      fhtml += '<button class="btn" type="button" onclick="crearRecordatorio()">Guardar recordatorio</button>';
+      fhtml += '<div><label class="field-label">Alcance</label>';
+      fhtml += '<select id="rec-alcance" class="field-input"><option value="todas">Todas mis clases futuras</option><option value="proxima">Solo la próxima clase</option></select></div>';
+      fhtml += '<div><label class="field-label">Mail</label>';
+      fhtml += '<input id="rec-mail" type="email" value="'+mailDefaultAttr+'" class="field-input" style="min-width:200px"></div>';
+      fhtml += '<button class="btn btn-primary" type="button" onclick="crearRecordatorio()">Guardar recordatorio</button>';
       fhtml += '</div>';
       contRecForm.innerHTML = fhtml;
     }).catch(function(){});
