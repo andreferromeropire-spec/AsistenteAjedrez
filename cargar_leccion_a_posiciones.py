@@ -31,23 +31,22 @@ def calcular_fens(jugadas):
     return fens
 
 
-def cargar(ruta_json):
-    with open(ruta_json, "r", encoding="utf-8") as f:
-        leccion = json.load(f)
-
+def cargar_desde_dict(leccion, conn=None, verbose=False):
+    """Núcleo reutilizable: recibe el dict ya parseado de una lección (mismo
+    formato que devuelve extraer_leccion.py) y carga sus posiciones clave a
+    la tabla `posiciones` de la conexión dada (o de get_connection() por
+    default — o sea, la DB de este proceso: local en desarrollo, la del
+    volumen de Railway si corre en el servidor). Devuelve cuántas cargó."""
     partida = leccion.get("partida_analizada") or {}
     jugadas = partida.get("jugadas_confirmadas_por_transcript") or []
     posiciones_clave = partida.get("posiciones_clave") or []
 
     if not jugadas or not posiciones_clave:
-        print("No hay jugadas o posiciones clave para cargar en este JSON.")
+        if verbose:
+            print("No hay jugadas o posiciones clave para cargar en este JSON.")
         return 0
 
-    try:
-        fens = calcular_fens(jugadas)
-    except Exception as e:
-        print(f"No se pudieron reproducir las jugadas ({e}) — no se carga nada.")
-        return 0
+    fens = calcular_fens(jugadas)
 
     nivel_a_dificultad = {"principiante": 1, "intermedio": 2, "avanzado": 3}
     dificultad = nivel_a_dificultad.get(leccion.get("nivel_alumno_estimado"))
@@ -55,12 +54,16 @@ def cargar(ruta_json):
     identificada = partida.get("identificada")
     origen = "transcript: " + (identificada or leccion.get("tema_principal") or "clase")
 
-    conn = get_connection()
+    conn_propia = conn is None
+    if conn_propia:
+        conn = get_connection()
+
     insertadas = 0
     for pos in posiciones_clave:
         idx = pos.get("jugada_hasta_indice")
         if idx is None or idx < 0 or idx >= len(fens):
-            print(f"  omitido (índice inválido {idx}): {pos.get('momento')}")
+            if verbose:
+                print(f"  omitido (índice inválido {idx}): {pos.get('momento')}")
             continue
         fen = fens[idx]
         tema = pos.get("concepto_asociado") or ""
@@ -70,11 +73,23 @@ def cargar(ruta_json):
             (fen, origen, dificultad, tema, datetime.utcnow().isoformat()),
         )
         insertadas += 1
-        print(f"  cargada ({tema}): {pos.get('momento')}\n    FEN: {fen}")
+        if verbose:
+            print(f"  cargada ({tema}): {pos.get('momento')}\n    FEN: {fen}")
 
     conn.commit()
-    conn.close()
+    if conn_propia:
+        conn.close()
     return insertadas
+
+
+def cargar(ruta_json):
+    with open(ruta_json, "r", encoding="utf-8") as f:
+        leccion = json.load(f)
+    try:
+        return cargar_desde_dict(leccion, verbose=True)
+    except Exception as e:
+        print(f"No se pudieron reproducir las jugadas ({e}) — no se carga nada.")
+        return 0
 
 
 if __name__ == "__main__":

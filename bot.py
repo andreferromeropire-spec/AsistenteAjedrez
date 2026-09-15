@@ -1611,6 +1611,22 @@ def setup():
     crear_tablas()
     return "Tablas creadas"
 
+@app.route("/cargar_leccion", methods=["POST"])
+def cargar_leccion_endpoint():
+    """Recibe el JSON que devuelve extraer_leccion.py (el mismo formato que
+    guarda en <transcript>_leccion.json) y carga sus posiciones clave a la
+    DB de este servidor. Usa la DB del servidor (Railway)."""
+    from cargar_leccion_a_posiciones import cargar_desde_dict
+
+    leccion = request.get_json(silent=True)
+    if not leccion:
+        return "Falta el JSON de la lección en el body del POST.", 400
+    try:
+        n = cargar_desde_dict(leccion)
+    except Exception as e:
+        return f"No se pudo cargar: {e}", 400
+    return f"{n} posiciones cargadas."
+
 @app.route("/sincronizar_alumnos", methods=["GET"])
 def sincronizar_alumnos_endpoint():
     from sincronizar_sheets import sincronizar_alumnos_desde_sheets
