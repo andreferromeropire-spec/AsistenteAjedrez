@@ -14,6 +14,7 @@ from dashboard_routes import dashboard_bp
 from portal_routes import portal_bp
 from trainer_routes import trainer_bp
 from demo_routes import demo_bp
+from position_check_routes import position_check_bp
 from apscheduler.schedulers.background import BackgroundScheduler
 from notificaciones_portal import enviar_recordatorios_pendientes
 
@@ -27,6 +28,7 @@ app.register_blueprint(dashboard_bp)
 app.register_blueprint(portal_bp)
 app.register_blueprint(trainer_bp)
 app.register_blueprint(demo_bp)
+app.register_blueprint(position_check_bp)
 
 # Scheduler para recordatorios del portal
 try:
@@ -966,7 +968,8 @@ def ejecutar_accion(accion, datos, numero):
 
         campos_permitidos = ["nombre", "representante", "pais", "idioma", "contacto_preferido",
                              "mail", "whatsapp", "horas_semanales", "dia_habitual", "precio",
-                             "moneda", "metodo_pago", "modalidad", "notas_recordatorio", "alias"]
+                             "moneda", "metodo_pago", "modalidad", "notas_recordatorio", "alias",
+                             "lichess_study_url"]
         if campo not in campos_permitidos:
             return f"No puedo editar el campo '{campo}'."
 

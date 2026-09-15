@@ -61,6 +61,7 @@ DEMO_PORTAL_RESUMEN = [
         "clases_impagas": 2,
         "proxima_clase": {"fecha": "2026-03-16", "hora": "18:00"},
         "mail_responsable": "lucas-demo@example.com",
+        "lichess_study_url": "https://lichess.org/study",
     }
 ]
 

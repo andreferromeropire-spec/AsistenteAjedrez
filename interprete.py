@@ -105,8 +105,9 @@ Las acciones posibles son:
 15. "actualizar_dato_alumno" - quiere cambiar un dato de un alumno
     datos necesarios: nombre_alumno, campo, nuevo_valor
     Campos posibles: nombre, representante, pais, idioma, contacto_preferido, mail, whatsapp,
-    horas_semanales, dia_habitual, precio, moneda, metodo_pago, modalidad, notas_recordatorio, alias
-    Ejemplos: "cambiá el nombre de Grace a Grace Smith", "actualizá el representante de Charlie a Charlie Hettinger", "ponele alias noam a Nouham"
+    horas_semanales, dia_habitual, precio, moneda, metodo_pago, modalidad, notas_recordatorio, alias,
+    lichess_study_url
+    Ejemplos: "cambiá el nombre de Grace a Grace Smith", "actualizá el representante de Charlie a Charlie Hettinger", "ponele alias noam a Nouham", "el estudio de lichess de Ana es https://lichess.org/study/abc123"
 
 16. "borrar_alumno" - quiere eliminar o dar de baja a un alumno o a un representante con sus alumnos
     datos necesarios: nombre_alumno

@@ -330,7 +330,7 @@ def portal_home():
         clases_sin_pagar = 0 if al_dia else (clases_dadas - clases_pagas)
 
         info_alumno = conn.execute(
-            "SELECT nombre FROM alumnos WHERE id = ?", (aid,)
+            "SELECT nombre, lichess_study_url FROM alumnos WHERE id = ?", (aid,)
         ).fetchone()
 
         # Progreso de entrenamiento de patrones
@@ -411,6 +411,7 @@ def portal_home():
                 "historial": historial,
                 "mail_responsable": mail_responsable,
                 "entrenamiento": entrenamiento,
+                "lichess_study_url": info_alumno["lichess_study_url"] if info_alumno else None,
             }
         )
 
@@ -728,6 +729,8 @@ main{padding:2rem 1.75rem 3rem;max-width:1320px;margin:0 auto;width:100%;flex:1}
 .alumno-block:first-of-type{padding-top:0;border-top:none}
 .alumno-cabecera{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
 .alumno-nombre{display:flex;align-items:center;gap:0.7rem}
+.study-link{display:inline-block;margin-top:0.15rem;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:var(--text-muted)}
+.study-link:hover{color:var(--accent)}
 .avatar{width:2.35rem;height:2.35rem;border-radius:50%;background:var(--accent-pale);color:var(--accent-deep);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;font-size:1rem;flex-shrink:0}
 .alumno-nombre h3{font-size:1.15rem}
 
@@ -782,6 +785,16 @@ tbody tr:hover td{background:var(--surface2)}
 .chip{display:inline-block;padding:0.22rem 0.65rem;border-radius:var(--radius-pill);background:var(--surface2);border:1px solid var(--line);font-size:0.68rem;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);margin:0 0.3rem 0.3rem 0}
 
 .side-card h3{font-size:0.95rem;margin-bottom:0.65rem;display:flex;align-items:center;gap:0.4em}
+.practicar-intro{font-size:0.82rem;color:var(--text-dim);margin-bottom:1rem}
+.practicar-divider{height:1px;background:var(--line);margin:1.1rem 0}
+.practicar-links{display:flex;flex-direction:column;gap:0.5rem}
+.practicar-row{display:flex;align-items:flex-start;gap:0.7rem;padding:0.6rem;border-radius:var(--radius-md);transition:background .15s}
+.practicar-row:hover{background:var(--surface2)}
+.practicar-row__icon{font-size:1.1rem;color:var(--accent);flex-shrink:0;line-height:1.3}
+[data-theme="dark"] .practicar-row__icon,[data-theme="navy"] .practicar-row__icon{color:var(--gold)}
+.practicar-row__body{display:flex;flex-direction:column;gap:0.15rem}
+.practicar-row__title{font-size:0.87rem;font-weight:500;color:var(--text)}
+.practicar-row__desc{font-size:0.76rem;color:var(--text-muted)}
 .cta-card{background:var(--accent-pale);border:none}
 [data-theme="dark"] .cta-card,[data-theme="navy"] .cta-card{background:var(--surface2);border:1px solid var(--accent-deep)}
 .cta-card h3{color:var(--accent-deep)}
@@ -968,22 +981,40 @@ PORTAL_HOME_CONTENT = """
     </div>
   </div>
   <div class="portal-side">
-    <div class="card side-card" id="puzzle-card">
-      <h3 id="puzzle-title" data-es="♟ Puzzle del día" data-en="♟ Daily Puzzle">♟ Puzzle del día</h3>
+    <div class="card side-card" id="practicar-card">
+      <h3>♟ Practicá</h3>
+      <p class="practicar-intro">Reforzá lo que vemos en clase.</p>
+      <div class="eyebrow" id="puzzle-title" data-es="Puzzle del día" data-en="Daily puzzle">Puzzle del día</div>
       <div id="puzzle-content">Cargando&hellip;</div>
+      <div class="practicar-divider"></div>
+      <div class="practicar-links">
+        <a class="practicar-row" href="/trainer">
+          <span class="practicar-row__icon">♞</span>
+          <span class="practicar-row__body">
+            <span class="practicar-row__title">Ver piezas colgadas</span>
+            <span class="practicar-row__desc">Detectá amenazas después de la jugada del rival.</span>
+          </span>
+        </a>
+        <a class="practicar-row" href="/portal/position-check">
+          <span class="practicar-row__icon">♛</span>
+          <span class="practicar-row__body">
+            <span class="practicar-row__title">Analizar una posición</span>
+            <span class="practicar-row__desc">Escribí tu análisis y recibí una devolución guiada.</span>
+          </span>
+        </a>
+        <a class="practicar-row" href="/portal/entrenamiento">
+          <span class="practicar-row__icon">✦</span>
+          <span class="practicar-row__body">
+            <span class="practicar-row__title">Mi progreso</span>
+            <span class="practicar-row__desc">Ejercicios resueltos y rendimiento.</span>
+          </span>
+        </a>
+      </div>
     </div>
     <div class="card side-card" id="recordatorios-card">
       <h3>♜ Recordatorios</h3>
       <div id="recordatorios-lista"></div>
       <div id="recordatorios-form" style="margin-top:0.75rem"></div>
-    </div>
-    <div class="card side-card cta-card" id="trainer-card">
-      <h3>♝ Entrenamiento de patrones</h3>
-      <p>Practicá tácticas y patrones típicos en el tablero interactivo.</p>
-      <div class="btn-row" style="flex-direction:column">
-        <a href="/trainer" class="btn btn-primary btn-block">Entrar al entrenamiento</a>
-        <a href="/portal/entrenamiento" class="btn btn-block">Ver mi progreso</a>
-      </div>
     </div>
   </div>
 </div>
@@ -1032,10 +1063,21 @@ PORTAL_HOME_CONTENT = """
     var cabecera = document.createElement('div'); cabecera.className = 'alumno-cabecera';
     var nombreWrap = document.createElement('div'); nombreWrap.className = 'alumno-nombre';
     var avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.textContent = inicial;
+    var nameCol = document.createElement('div');
     var titulo = document.createElement('h3');
     titulo.textContent = r.nombre;
+    nameCol.appendChild(titulo);
+    if (r.lichess_study_url) {
+      var studyLink = document.createElement('a');
+      studyLink.className = 'study-link';
+      studyLink.href = r.lichess_study_url;
+      studyLink.target = '_blank';
+      studyLink.rel = 'noopener';
+      studyLink.textContent = '♜ Ver estudio en Lichess ↗';
+      nameCol.appendChild(studyLink);
+    }
     nombreWrap.appendChild(avatar);
-    nombreWrap.appendChild(titulo);
+    nombreWrap.appendChild(nameCol);
     cabecera.appendChild(nombreWrap);
 
     // Próxima clase, como banner propio (lo primero que se ve tras el estado)

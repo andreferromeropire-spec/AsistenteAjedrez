@@ -3,6 +3,7 @@ import sqlite3
 # CONEXIÓN: Esta función abre (o crea) el archivo de base de datos.
 # Si chess_assistant.db no existe, SQLite lo crea automáticamente.
 import os
+from datetime import datetime
 
 DB_PATH = os.environ.get("DB_PATH", "chess_assistant.db")
 
@@ -106,6 +107,11 @@ def crear_tablas():
         pass
 
     try:
+        cursor.execute("ALTER TABLE alumnos ADD COLUMN lichess_study_url TEXT")
+    except:
+        pass  # Ya existe, ignorar
+
+    try:
         cursor.execute("ALTER TABLE clases ADD COLUMN ausente INTEGER DEFAULT 0")
     except:
         pass
@@ -195,6 +201,49 @@ def crear_tablas():
             FOREIGN KEY (alumno_id) REFERENCES alumnos(id)
         )
     """)
+
+    # Banco de posiciones para Position Check (FEN + metadata)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS posiciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fen TEXT NOT NULL,
+            origen TEXT DEFAULT 'manual',
+            dificultad INTEGER,
+            temas TEXT,
+            creado TEXT
+        )
+    """)
+
+    # Intentos de Position Check: análisis escrito del alumno + feedback
+    # estructurado de la IA. feedback_ia_json guarda { factores_identificados,
+    # factores_omitidos, preguntas_seguimiento, ... } para poder minar
+    # patrones más adelante sin tener que rediseñar el schema.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS position_check_intentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            posicion_id INTEGER NOT NULL,
+            analisis_escrito TEXT,
+            feedback_ia_json TEXT,
+            tiempo_segundos INTEGER,
+            creado TEXT NOT NULL,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
+            FOREIGN KEY (posicion_id) REFERENCES posiciones(id)
+        )
+    """)
+
+    # Posición semilla para poder probar Position Check de punta a punta antes
+    # de tener una interfaz de carga de posiciones. Centro cerrado tipo Ruy
+    # López cerrada — mismo tipo de posición que el ejemplo original del método
+    # ("el centro está cerrado, ¿ataco en el flanco de rey?"). Se inserta una
+    # sola vez (si la tabla ya tiene alguna fila, no hace nada).
+    cursor.execute("""
+        INSERT INTO posiciones (fen, origen, dificultad, temas, creado)
+        SELECT
+            'r1bq1rk1/2p1bppp/p1n2n2/1p1pp3/4P3/1BP2N1P/PP1P1PP1/RNBQR1K1 b - - 0 11',
+            'seed', 2, 'centro cerrado,plan,flanco de rey', ?
+        WHERE NOT EXISTS (SELECT 1 FROM posiciones)
+    """, (datetime.utcnow().isoformat(),))
 
     conn.commit()
     conn.close()

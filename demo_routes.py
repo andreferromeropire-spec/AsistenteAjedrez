@@ -45,6 +45,11 @@ def aplicar_rutas_navegacion_demo(html):
     html = html.replace("href='/trainer'", "href='/demo/trainer'")
     html = html.replace('href="/portal/entrenamiento"', 'href="/demo/portal"')
     html = html.replace("href='/portal/entrenamiento'", "href='/demo/portal'")
+    # Position Check llama a la API real de Claude — no lo dejamos disparable
+    # desde la demo pública sin login, así que el link rebota a /demo/portal
+    # igual que "Ver mi progreso" hasta que haya una versión demo propia.
+    html = html.replace('href="/portal/position-check"', 'href="/demo/portal"')
+    html = html.replace("href='/portal/position-check'", "href='/demo/portal'")
     html = html.replace('href="/portal/home"', 'href="/demo/portal"')
     html = html.replace("href='/portal/home'", "href='/demo/portal'")
     html = html.replace("window.location.href='/trainer'", "window.location.href='/demo/trainer'")
@@ -1104,16 +1109,6 @@ def demo_portal():
         "ncVal.setAttribute('data-es','Sin clases agendadas'); ncVal.setAttribute('data-en','No lessons scheduled'); ncVal.textContent = 'Sin clases agendadas';",
     )
 
-    # Botones laterales (entrenamiento)
-    contenido = contenido.replace(
-        '<a href="/trainer" class="btn btn-primary btn-block">Entrar al entrenamiento</a>',
-        '<a href="/trainer" class="btn btn-primary btn-block" data-es="Entrar al entrenamiento" data-en="Enter training">Entrar al entrenamiento</a>',
-    )
-    contenido = contenido.replace(
-        '<a href="/portal/entrenamiento" class="btn btn-block">Ver mi progreso</a>',
-        '<a href="/portal/entrenamiento" class="btn btn-block" data-es="Ver mi progreso" data-en="View progress">Ver mi progreso</a>',
-    )
-
     contenido = contenido.replace("{RESUMEN_JSON}", json.dumps(resumen))
     contenido = contenido.replace("PORTAL_NOMBRE_JSON", json.dumps(nombre))
     html = PORTAL_HTML.replace("{PORTAL_CONTENT}", contenido)
@@ -1128,8 +1123,36 @@ def demo_portal():
         '<h3 data-es="♜ Recordatorios" data-en="♜ Reminders">♜ Recordatorios</h3>',
     )
     html = html.replace(
-        '<h3>♝ Entrenamiento de patrones</h3>',
-        '<h3 data-es="♝ Entrenamiento de patrones" data-en="♝ Pattern training">♝ Entrenamiento de patrones</h3>',
+        '<h3>♟ Practicá</h3>',
+        '<h3 data-es="♟ Practicá" data-en="♟ Practice">♟ Practicá</h3>',
+    )
+    html = html.replace(
+        '<p class="practicar-intro">Reforzá lo que vemos en clase.</p>',
+        '<p class="practicar-intro" data-es="Reforzá lo que vemos en clase." data-en="Reinforce what we cover in class.">Reforzá lo que vemos en clase.</p>',
+    )
+    html = html.replace(
+        '<span class="practicar-row__title">Ver piezas colgadas</span>',
+        '<span class="practicar-row__title" data-es="Ver piezas colgadas" data-en="Spot hanging pieces">Ver piezas colgadas</span>',
+    )
+    html = html.replace(
+        '<span class="practicar-row__desc">Detectá amenazas después de la jugada del rival.</span>',
+        '<span class="practicar-row__desc" data-es="Detectá amenazas después de la jugada del rival." data-en="Spot threats after your opponent\'s move.">Detectá amenazas después de la jugada del rival.</span>',
+    )
+    html = html.replace(
+        '<span class="practicar-row__title">Analizar una posición</span>',
+        '<span class="practicar-row__title" data-es="Analizar una posición" data-en="Analyze a position">Analizar una posición</span>',
+    )
+    html = html.replace(
+        '<span class="practicar-row__desc">Escribí tu análisis y recibí una devolución guiada.</span>',
+        '<span class="practicar-row__desc" data-es="Escribí tu análisis y recibí una devolución guiada." data-en="Write your analysis and get guided feedback.">Escribí tu análisis y recibí una devolución guiada.</span>',
+    )
+    html = html.replace(
+        '<span class="practicar-row__title">Mi progreso</span>',
+        '<span class="practicar-row__title" data-es="Mi progreso" data-en="My progress">Mi progreso</span>',
+    )
+    html = html.replace(
+        '<span class="practicar-row__desc">Ejercicios resueltos y rendimiento.</span>',
+        '<span class="practicar-row__desc" data-es="Ejercicios resueltos y rendimiento." data-en="Exercises solved and performance.">Ejercicios resueltos y rendimiento.</span>',
     )
     html = html.replace(
         'class="btn btn-sm" id="home-logout">Salir</a>',
