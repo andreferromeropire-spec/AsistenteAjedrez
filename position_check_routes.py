@@ -37,8 +37,36 @@ def _nombre_alumno(conn, alumno_id):
     return row["nombre"] if row else ""
 
 
-def _posicion_actual(conn):
-    return conn.execute("SELECT id, fen FROM posiciones ORDER BY id LIMIT 1").fetchone()
+def _posicion_aleatoria(conn):
+    return conn.execute("SELECT id, fen FROM posiciones ORDER BY RANDOM() LIMIT 1").fetchone()
+
+
+def _posicion_por_id(conn, posicion_id):
+    return conn.execute("SELECT id, fen FROM posiciones WHERE id = ?", (posicion_id,)).fetchone()
+
+
+def _posicion_para_sesion(conn, intento):
+    """Posición que le corresponde a este alumno ahora mismo: la del intento
+    en curso si hay uno; si no, la que ya se sorteó y quedó en sesión (para
+    que la página y el envío del primer mensaje usen siempre la misma); si
+    no hay ninguna todavía, sortea una nueva y la deja guardada en sesión."""
+    if intento:
+        posicion = _posicion_por_id(conn, intento["posicion_id"])
+        if posicion:
+            return posicion
+        session.pop("pc_intento_id", None)
+
+    posicion_id = session.get("pc_posicion_id")
+    posicion = _posicion_por_id(conn, posicion_id) if posicion_id else None
+    if posicion:
+        return posicion
+
+    posicion = _posicion_aleatoria(conn)
+    if posicion:
+        session["pc_posicion_id"] = posicion["id"]
+    else:
+        session.pop("pc_posicion_id", None)
+    return posicion
 
 
 def _cargar_intento(conn, intento_id, alumno_id):
@@ -358,7 +386,13 @@ def _pagina_html(nombre, fen, turnos, terminado, sin_posicion=False):
 def position_check_home():
     alumno_id = _alumno_actual()
     conn = get_connection()
-    posicion = _posicion_actual(conn)
+
+    intento_id = session.get("pc_intento_id")
+    intento = _cargar_intento(conn, intento_id, alumno_id) if intento_id else None
+    posicion = _posicion_para_sesion(conn, intento)
+    if intento and (not posicion or posicion["id"] != intento["posicion_id"]):
+        intento = None
+
     if not posicion:
         conn.close()
         return Response(_pagina_html("", "", [], False, sin_posicion=True), mimetype="text/html")
@@ -366,15 +400,10 @@ def position_check_home():
     nombre = _nombre_alumno(conn, alumno_id)
     turnos = []
     terminado = False
-    intento_id = session.get("pc_intento_id")
-    if intento_id:
-        intento = _cargar_intento(conn, intento_id, alumno_id)
-        if intento and intento["posicion_id"] == posicion["id"]:
-            data = json.loads(intento["feedback_ia_json"] or "{}")
-            turnos = data.get("turnos", [])
-            terminado = bool(turnos) and turnos[-1].get("tipo") == "ia" and bool(turnos[-1].get("cierre"))
-        else:
-            session.pop("pc_intento_id", None)
+    if intento:
+        data = json.loads(intento["feedback_ia_json"] or "{}")
+        turnos = data.get("turnos", [])
+        terminado = bool(turnos) and turnos[-1].get("tipo") == "ia" and bool(turnos[-1].get("cierre"))
     conn.close()
 
     html = _pagina_html(nombre, posicion["fen"], turnos, terminado)
@@ -394,15 +423,18 @@ def position_check_enviar():
         return jsonify({"error": "Falta el texto"}), 400
 
     conn = get_connection()
-    posicion = _posicion_actual(conn)
+
+    # Misma regla que en position_check_home: si ya hay un intento en curso,
+    # la posición es la del intento; si no, la que ya quedó guardada en
+    # sesión para que la página y este envío coincidan siempre.
+    intento_id = session.get("pc_intento_id")
+    intento = _cargar_intento(conn, intento_id, alumno_id) if intento_id else None
+    posicion = _posicion_para_sesion(conn, intento)
+    if intento and (not posicion or posicion["id"] != intento["posicion_id"]):
+        intento = None
     if not posicion:
         conn.close()
         return jsonify({"error": "No hay posición cargada"}), 400
-
-    intento_id = session.get("pc_intento_id")
-    intento = _cargar_intento(conn, intento_id, alumno_id) if intento_id else None
-    if intento and intento["posicion_id"] != posicion["id"]:
-        intento = None
 
     if intento:
         data = json.loads(intento["feedback_ia_json"] or "{}")
@@ -457,4 +489,5 @@ def position_check_enviar():
 @portal_login_required
 def position_check_nuevo():
     session.pop("pc_intento_id", None)
+    session.pop("pc_posicion_id", None)
     return redirect("/portal/position-check")
