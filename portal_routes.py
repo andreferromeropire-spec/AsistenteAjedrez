@@ -778,6 +778,7 @@ tbody tr:hover td{background:var(--surface2)}
 #puzzle-content{font-size:0.85rem;color:var(--text-muted)}
 .puzzle-img{width:100%;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--surface2);box-shadow:0 1px 3px var(--shadow)}
 .puzzle-board-wrap{background:var(--accent-deep);padding:8px;border-radius:var(--radius-md);box-shadow:0 1px 3px var(--shadow);display:flex;justify-content:center;margin-bottom:0.75rem}
+#lichess-puzzle-board{width:100% !important;aspect-ratio:1;display:block;margin:0 auto}
 .puzzle-status{font-size:0.82rem;color:var(--text-dim);min-height:1.3em;margin-bottom:0.6rem;font-weight:500}
 .puzzle-status--ok{color:var(--green)}
 .puzzle-status--error{color:var(--rust-deep)}
