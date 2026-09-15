@@ -1440,18 +1440,25 @@ PORTAL_HOME_CONTENT = """
       }
 
       var boardSize = Math.min(320, window.innerWidth - 64);
-      chessBoard = Chessboard('lichess-puzzle-board', {
-        position: puzzle.fen,
-        orientation: (studentColor === 'w') ? 'white' : 'black',
-        draggable: true,
-        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-        width: boardSize,
-        onDragStart: onDragStart,
-        onDrop: onDrop,
-        onSnapEnd: onSnapEnd
-      });
-      updateTurnLabel();
-      setStatus('Tu turno.', '');
+      boardWrap.style.width = boardSize + 'px';
+      // chessboard.js necesita que el contenedor ya esté en el DOM con su
+      // tamaño final antes de inicializarse (mismo patrón que trainer.js
+      // initBoard) — si se llama en el mismo tick que el appendChild, mide
+      // mal el ancho y las piezas quedan amontonadas sin cuadrícula.
+      setTimeout(function() {
+        chessBoard = Chessboard('lichess-puzzle-board', {
+          position: puzzle.fen,
+          orientation: (studentColor === 'w') ? 'white' : 'black',
+          draggable: true,
+          pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+          width: boardSize,
+          onDragStart: onDragStart,
+          onDrop: onDrop,
+          onSnapEnd: onSnapEnd
+        });
+        updateTurnLabel();
+        setStatus('Tu turno.', '');
+      }, 50);
 
       btnRetry.addEventListener('click', function() {
         chessGame = new Chess(puzzle.fen);
