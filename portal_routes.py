@@ -564,7 +564,6 @@ def portal_entrenamiento():
         f"""
         SELECT a.id, a.nombre,
                COUNT(p.id) AS ejercicios,
-               COALESCE(AVG(p.rating_cambio), 0.0) AS rating_prom,
                MAX(p.fecha) AS ultima_fecha,
                SUM(CASE WHEN p.resultado = 'correcto' THEN 1 ELSE 0 END) AS correctos,
                SUM(CASE WHEN p.resultado = 'incorrecto' THEN 1 ELSE 0 END) AS incorrectos,
@@ -603,11 +602,10 @@ def portal_entrenamiento():
             + "<td>" + str(ejercicios) + "</td>"
             + "<td>" + "{:.0f}%".format(porc) + "</td>"
             + "<td>" + "{:.1f}s".format(tiempo_prom) + "</td>"
-            + "<td>" + ("{:.1f}".format(r["rating_prom"]) if r["rating_prom"] is not None else "0.0") + "</td>"
             + "<td>" + (r["ultima_fecha"] or "-") + "</td>"
             + "</tr>"
         )
-    cuerpo = "".join(filas) if filas else '<tr><td colspan="6" class="empty">Sin ejercicios registrados todavía.</td></tr>'
+    cuerpo = "".join(filas) if filas else '<tr><td colspan="5" class="empty">Sin ejercicios registrados todavía.</td></tr>'
 
     resumen_record = ""
     if mejor_record:
@@ -636,7 +634,7 @@ def portal_entrenamiento():
   <div class="table-wrap" style="margin-top:1rem">
     <table>
       <thead>
-        <tr><th>Alumno</th><th>Ejercicios</th><th>% acierto</th><th>Tiempo medio</th><th>Rating medio</th><th>Última actividad</th></tr>
+        <tr><th>Alumno</th><th>Ejercicios</th><th>% acierto</th><th>Tiempo medio</th><th>Última actividad</th></tr>
       </thead>
       <tbody>""" + cuerpo + """</tbody>
     </table>
@@ -742,6 +740,9 @@ main{padding:2rem 1.75rem 3rem;max-width:1320px;margin:0 auto;width:100%;flex:1}
 .badge-gray{background:var(--bg2);color:var(--text-dim)}
 .badge-estado-clase{padding:0.22rem 0.6rem;font-size:0.68rem;text-transform:uppercase}
 
+.payment-cta{display:inline-flex;align-items:center;gap:0.3em;margin:0.5rem 0 1rem;font-size:0.82rem;font-weight:500;color:var(--rust-deep)}
+.payment-cta:hover{text-decoration:underline}
+[data-theme="dark"] .payment-cta,[data-theme="navy"] .payment-cta{color:var(--rust)}
 .next-class{display:flex;align-items:center;gap:1rem;background:var(--accent-pale);border-radius:var(--radius-md);padding:1rem 1.25rem;margin-bottom:1.1rem}
 [data-theme="dark"] .next-class,[data-theme="navy"] .next-class{background:var(--surface2);border:1px solid var(--line)}
 .next-class__icon{font-size:1.5rem;flex-shrink:0}
@@ -1153,7 +1154,7 @@ PORTAL_HOME_CONTENT = """
     // Resumen simple de entrenamiento (si hay datos)
     if (r.entrenamiento && r.entrenamiento.ejercicios) {
       var m6 = document.createElement('div'); m6.className = 'metric';
-      var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.textContent = 'Ejercicios trainer';
+      var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.textContent = 'Ejercicios resueltos';
       var v6 = document.createElement('div'); v6.className = 'metric-value'; v6.textContent = r.entrenamiento.ejercicios || 0;
       m6.appendChild(l6); m6.appendChild(v6);
       metrics.appendChild(m6);
@@ -1176,6 +1177,18 @@ PORTAL_HOME_CONTENT = """
     }
     if(esOk){ estado.className += ' badge-green'; } else { estado.className += ' badge-red'; }
     cabecera.appendChild(estado);
+
+    var pagoAccion = null;
+    if (!esOk) {
+      pagoAccion = document.createElement('a');
+      pagoAccion.className = 'payment-cta';
+      var mensajeWa = 'Hola! Quería coordinar el pago de ' + (sinPagar || 0) + ' clase' + (sinPagar === 1 ? '' : 's') + ' de ' + r.nombre + '.';
+      pagoAccion.href = 'https://wa.me/5491127246160?text=' + encodeURIComponent(mensajeWa);
+      pagoAccion.target = '_blank';
+      pagoAccion.rel = 'noopener';
+      pagoAccion.textContent = 'Coordiná el pago por WhatsApp →';
+    }
+
     var lista;
     if(!r.clases_mes || r.clases_mes.length === 0){
       lista = document.createElement('p');
@@ -1268,6 +1281,7 @@ PORTAL_HOME_CONTENT = """
     }
 
     bloque.appendChild(cabecera);
+    if (pagoAccion) { bloque.appendChild(pagoAccion); }
     bloque.appendChild(nextBanner);
     bloque.appendChild(metrics);
     bloque.appendChild(lista);

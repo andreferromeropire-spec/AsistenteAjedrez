@@ -1101,8 +1101,8 @@ def demo_portal():
         "var l5 = document.createElement('div'); l5.className = 'metric-label'; l5.setAttribute('data-es','Clases restantes'); l5.setAttribute('data-en','Remaining classes'); l5.textContent = 'Clases restantes';",
     )
     contenido = contenido.replace(
-        "var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.textContent = 'Ejercicios trainer';",
-        "var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.setAttribute('data-es','Ejercicios trainer'); l6.setAttribute('data-en','Trainer exercises'); l6.textContent = 'Ejercicios trainer';",
+        "var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.textContent = 'Ejercicios resueltos';",
+        "var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.setAttribute('data-es','Ejercicios resueltos'); l6.setAttribute('data-en','Exercises solved'); l6.textContent = 'Ejercicios resueltos';",
     )
     contenido = contenido.replace(
         "ncVal.textContent = 'Sin clases agendadas';",
