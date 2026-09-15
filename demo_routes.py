@@ -1076,8 +1076,8 @@ def demo_portal():
 
     # Añadir traducciones a labels que el portal construye desde JS (sin tocar portal_routes.py)
     contenido = contenido.replace(
-        "var l1 = document.createElement('div'); l1.className = 'metric-label'; l1.textContent = 'Próxima clase';",
-        "var l1 = document.createElement('div'); l1.className = 'metric-label'; l1.setAttribute('data-es','Próxima clase'); l1.setAttribute('data-en','Next lesson'); l1.textContent = 'Próxima clase';",
+        "var ncEye = document.createElement('div'); ncEye.className = 'next-class__eyebrow'; ncEye.textContent = 'Próxima clase';",
+        "var ncEye = document.createElement('div'); ncEye.className = 'next-class__eyebrow'; ncEye.setAttribute('data-es','Próxima clase'); ncEye.setAttribute('data-en','Next lesson'); ncEye.textContent = 'Próxima clase';",
     )
     contenido = contenido.replace(
         "var l2 = document.createElement('div'); l2.className = 'metric-label'; l2.textContent = 'Clases este mes';",
@@ -1088,6 +1088,10 @@ def demo_portal():
         "var l3 = document.createElement('div'); l3.className = 'metric-label'; l3.setAttribute('data-es','Dadas'); l3.setAttribute('data-en','Given'); l3.textContent = 'Dadas';",
     )
     contenido = contenido.replace(
+        "var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.textContent = 'Clases pagadas';",
+        "var l4 = document.createElement('div'); l4.className = 'metric-label'; l4.setAttribute('data-es','Clases pagadas'); l4.setAttribute('data-en','Classes paid'); l4.textContent = 'Clases pagadas';",
+    )
+    contenido = contenido.replace(
         "var l5 = document.createElement('div'); l5.className = 'metric-label'; l5.textContent = 'Clases restantes';",
         "var l5 = document.createElement('div'); l5.className = 'metric-label'; l5.setAttribute('data-es','Clases restantes'); l5.setAttribute('data-en','Remaining classes'); l5.textContent = 'Clases restantes';",
     )
@@ -1096,18 +1100,18 @@ def demo_portal():
         "var l6 = document.createElement('div'); l6.className = 'metric-label'; l6.setAttribute('data-es','Ejercicios trainer'); l6.setAttribute('data-en','Trainer exercises'); l6.textContent = 'Ejercicios trainer';",
     )
     contenido = contenido.replace(
-        "v1.textContent = 'Sin clases agendadas';",
-        "v1.setAttribute('data-es','Sin clases agendadas'); v1.setAttribute('data-en','No lessons scheduled'); v1.textContent = 'Sin clases agendadas';",
+        "ncVal.textContent = 'Sin clases agendadas';",
+        "ncVal.setAttribute('data-es','Sin clases agendadas'); ncVal.setAttribute('data-en','No lessons scheduled'); ncVal.textContent = 'Sin clases agendadas';",
     )
 
     # Botones laterales (entrenamiento)
     contenido = contenido.replace(
-        "<a href=\"/trainer\" class=\"btn\" style=\"width:100%;justify-content:center\">Entrar al entrenamiento</a>",
-        "<a href=\"/trainer\" class=\"btn\" style=\"width:100%;justify-content:center\" data-es=\"Entrar al entrenamiento\" data-en=\"Enter training\">Entrar al entrenamiento</a>",
+        '<a href="/trainer" class="btn btn-primary btn-block">Entrar al entrenamiento</a>',
+        '<a href="/trainer" class="btn btn-primary btn-block" data-es="Entrar al entrenamiento" data-en="Enter training">Entrar al entrenamiento</a>',
     )
     contenido = contenido.replace(
-        "<a href=\"/portal/entrenamiento\" class=\"btn\" style=\"width:100%;justify-content:center\">Ver mi progreso</a>",
-        "<a href=\"/portal/entrenamiento\" class=\"btn\" style=\"width:100%;justify-content:center\" data-es=\"Ver mi progreso\" data-en=\"View progress\">Ver mi progreso</a>",
+        '<a href="/portal/entrenamiento" class="btn btn-block">Ver mi progreso</a>',
+        '<a href="/portal/entrenamiento" class="btn btn-block" data-es="Ver mi progreso" data-en="View progress">Ver mi progreso</a>',
     )
 
     contenido = contenido.replace("{RESUMEN_JSON}", json.dumps(resumen))
@@ -1120,16 +1124,16 @@ def demo_portal():
         html = html.replace("<body ", "<body " + DEMO_BANNER_SNIPPET, 1)
     # Añadir data-es/data-en a textos clave que no lo tienen en el HTML original
     html = html.replace(
-        '<h3 style="font-size:0.95rem;margin-bottom:0.5rem">Recordatorios</h3>',
-        '<h3 style="font-size:0.95rem;margin-bottom:0.5rem" data-es="Recordatorios" data-en="Reminders">Recordatorios</h3>',
+        '<h3>♜ Recordatorios</h3>',
+        '<h3 data-es="♜ Recordatorios" data-en="♜ Reminders">♜ Recordatorios</h3>',
     )
     html = html.replace(
-        '<h3 style="font-size:0.95rem;margin-bottom:0.5rem">Entrenamiento de patrones</h3>',
-        '<h3 style="font-size:0.95rem;margin-bottom:0.5rem" data-es="Entrenamiento de patrones" data-en="Pattern training">Entrenamiento de patrones</h3>',
+        '<h3>♝ Entrenamiento de patrones</h3>',
+        '<h3 data-es="♝ Entrenamiento de patrones" data-en="♝ Pattern training">♝ Entrenamiento de patrones</h3>',
     )
     html = html.replace(
-        'class="btn" id="home-logout" style="display:inline-block;margin-top:1rem">Salir</a>',
-        'class="btn" id="home-logout" style="display:inline-block;margin-top:1rem" data-es="Salir" data-en="Logout">Salir</a>',
+        'class="btn btn-sm" id="home-logout">Salir</a>',
+        'class="btn btn-sm" id="home-logout" data-es="Salir" data-en="Logout">Salir</a>',
     )
     html = aplicar_todas_las_rutas_demo(html)
     return Response(html, mimetype="text/html; charset=utf-8")

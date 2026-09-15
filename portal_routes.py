@@ -774,6 +774,11 @@ tbody tr:hover td{background:var(--surface2)}
 
 #puzzle-content{font-size:0.85rem;color:var(--text-muted)}
 .puzzle-img{width:100%;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--surface2);box-shadow:0 1px 3px var(--shadow)}
+.puzzle-board-wrap{background:var(--accent-deep);padding:8px;border-radius:var(--radius-md);box-shadow:0 1px 3px var(--shadow);display:flex;justify-content:center;margin-bottom:0.75rem}
+.puzzle-status{font-size:0.82rem;color:var(--text-dim);min-height:1.3em;margin-bottom:0.6rem;font-weight:500}
+.puzzle-status--ok{color:var(--green)}
+.puzzle-status--error{color:var(--rust-deep)}
+.puzzle-turn{font-family:'IBM Plex Mono',monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.6rem}
 .chip{display:inline-block;padding:0.22rem 0.65rem;border-radius:var(--radius-pill);background:var(--surface2);border:1px solid var(--line);font-size:0.68rem;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);margin:0 0.3rem 0.3rem 0}
 
 .side-card h3{font-size:0.95rem;margin-bottom:0.65rem;display:flex;align-items:center;gap:0.4em}
@@ -818,6 +823,10 @@ PORTAL_HTML = """<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,450;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <style>
 """ + PORTAL_CSS + """
 </style>
@@ -1249,54 +1258,168 @@ PORTAL_HOME_CONTENT = """
         return;
       }
       var puzzle = data.puzzle || {};
-      var game = data.game || {};
-      var container = document.createElement('div');
-      container.style.display = 'flex';
-      container.style.flexDirection = 'column';
-      container.style.gap = '0.7rem';
-
-      if (game.id) {
-        var img = document.createElement('img');
-        img.src = 'https://lichess1.org/game/export/gif/thumbnail/' + game.id + '.gif';
-        img.className = 'puzzle-img';
-        img.alt = 'Puzzle del dia';
-        container.appendChild(img);
+      if (!puzzle.fen || !puzzle.solution || !puzzle.solution.length) {
+        puzzleCont.className = 'empty';
+        puzzleCont.textContent = 'Puzzle no disponible hoy';
+        return;
+      }
+      if (typeof Chess === 'undefined' || typeof Chessboard === 'undefined') {
+        puzzleCont.className = 'empty';
+        puzzleCont.textContent = 'Puzzle no disponible hoy';
+        return;
       }
 
-      var meta = document.createElement('div');
+      var container = document.createElement('div');
 
+      var meta = document.createElement('div');
+      meta.style.marginBottom = '0.6rem';
       if (puzzle.rating) {
         var diff = document.createElement('span');
         diff.className = 'chip';
         diff.textContent = 'Elo ' + puzzle.rating;
         meta.appendChild(diff);
       }
-
       if (puzzle.themes && puzzle.themes.length) {
-        for (var ti = 0; ti < puzzle.themes.length; ti++) {
+        for (var ti = 0; ti < Math.min(3, puzzle.themes.length); ti++) {
           var themeChip = document.createElement('span');
           themeChip.className = 'chip';
           themeChip.textContent = puzzle.themes[ti];
           meta.appendChild(themeChip);
         }
       }
-
       container.appendChild(meta);
 
-      if (puzzle.id) {
-        var link = document.createElement('a');
-        link.href = 'https://lichess.org/training/daily';
-        link.setAttribute('data-es', 'Ver puzzle en Lichess ↗');
-        link.setAttribute('data-en', 'View on Lichess ↗');
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.className = 'btn btn-primary btn-block';
-        link.textContent = 'Ver puzzle en Lichess ↗';
-        container.appendChild(link);
-      }
+      var turnLabel = document.createElement('div');
+      turnLabel.className = 'puzzle-turn';
+      container.appendChild(turnLabel);
+
+      var boardWrap = document.createElement('div');
+      boardWrap.className = 'puzzle-board-wrap';
+      var boardEl = document.createElement('div');
+      boardEl.id = 'lichess-puzzle-board';
+      boardWrap.appendChild(boardEl);
+      container.appendChild(boardWrap);
+
+      var status = document.createElement('div');
+      status.className = 'puzzle-status';
+      container.appendChild(status);
+
+      var actions = document.createElement('div');
+      actions.className = 'btn-row';
+      var btnRetry = document.createElement('button');
+      btnRetry.type = 'button';
+      btnRetry.className = 'btn btn-sm';
+      btnRetry.textContent = 'Reiniciar';
+      var linkLichess = document.createElement('a');
+      linkLichess.href = 'https://lichess.org/training/' + (puzzle.id || '');
+      linkLichess.target = '_blank';
+      linkLichess.rel = 'noopener';
+      linkLichess.className = 'btn btn-sm';
+      linkLichess.textContent = 'Ver en Lichess ↗';
+      actions.appendChild(btnRetry);
+      actions.appendChild(linkLichess);
+      container.appendChild(actions);
 
       puzzleCont.innerHTML = '';
       puzzleCont.appendChild(container);
+
+      // Motor del puzzle: puzzle.fen es la posición ya lista para que juegue
+      // el alumno; puzzle.solution alterna jugada-del-alumno (índices pares)
+      // y respuesta automática del rival (índices impares).
+      var chessGame = new Chess(puzzle.fen);
+      var solution = puzzle.solution;
+      var solveIndex = 0;
+      var puzzleSolved = false;
+      var awaitingReply = false;
+      var studentColor = chessGame.turn();
+      var chessBoard = null;
+
+      function setStatus(texto, tipo) {
+        status.className = 'puzzle-status' + (tipo ? ' puzzle-status--' + tipo : '');
+        status.textContent = texto;
+      }
+
+      function updateTurnLabel() {
+        if (puzzleSolved) { turnLabel.textContent = ''; return; }
+        turnLabel.textContent = (studentColor === 'w') ? 'Jugás con blancas' : 'Jugás con negras';
+      }
+
+      function jugarRespuestaRival() {
+        var replyUci = solution[solveIndex];
+        var replyMove = { from: replyUci.slice(0, 2), to: replyUci.slice(2, 4) };
+        if (replyUci.length > 4) { replyMove.promotion = replyUci.slice(4); }
+        chessGame.move(replyMove);
+        chessBoard.position(chessGame.fen());
+        solveIndex++;
+        awaitingReply = false;
+        if (solveIndex >= solution.length) {
+          puzzleSolved = true;
+          setStatus('¡Resuelto! 🎉', 'ok');
+        } else {
+          setStatus('Tu turno.', '');
+        }
+        updateTurnLabel();
+      }
+
+      function onDragStart(source, piece) {
+        if (puzzleSolved || awaitingReply) { return false; }
+        if (chessGame.game_over()) { return false; }
+        if ((studentColor === 'w' && piece.search(/^b/) !== -1) ||
+            (studentColor === 'b' && piece.search(/^w/) !== -1)) {
+          return false;
+        }
+        if (chessGame.turn() !== studentColor) { return false; }
+      }
+
+      function onDrop(source, target) {
+        var moveObj = chessGame.move({ from: source, to: target, promotion: 'q' });
+        if (moveObj === null) { return 'snapback'; }
+        var uciMove = source + target + (moveObj.promotion ? moveObj.promotion : '');
+        var esperado = solution[solveIndex];
+        if (uciMove !== esperado) {
+          chessGame.undo();
+          setStatus('Esa no es la jugada. Probá de nuevo.', 'error');
+          return 'snapback';
+        }
+        solveIndex++;
+        if (solveIndex >= solution.length) {
+          puzzleSolved = true;
+          setStatus('¡Resuelto! 🎉', 'ok');
+          updateTurnLabel();
+        } else {
+          setStatus('¡Bien! El rival responde…', 'ok');
+          awaitingReply = true;
+          setTimeout(jugarRespuestaRival, 550);
+        }
+      }
+
+      function onSnapEnd() {
+        chessBoard.position(chessGame.fen());
+      }
+
+      var boardSize = Math.min(320, window.innerWidth - 64);
+      chessBoard = Chessboard('lichess-puzzle-board', {
+        position: puzzle.fen,
+        orientation: (studentColor === 'w') ? 'white' : 'black',
+        draggable: true,
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+        width: boardSize,
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd
+      });
+      updateTurnLabel();
+      setStatus('Tu turno.', '');
+
+      btnRetry.addEventListener('click', function() {
+        chessGame = new Chess(puzzle.fen);
+        solveIndex = 0;
+        puzzleSolved = false;
+        awaitingReply = false;
+        chessBoard.position(puzzle.fen);
+        updateTurnLabel();
+        setStatus('Tu turno.', '');
+      });
     };
     xhr.send();
   }
