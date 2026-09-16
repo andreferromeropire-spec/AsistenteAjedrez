@@ -231,6 +231,8 @@ Prioridad: exacto → alias → parcial (difflib). Si hay varios candidatos, pre
 
 Reemplaza el flujo manual de "correr un script sobre un archivo de transcript" por uno donde Andrea pega texto y revisa antes de publicar. Todo entra como **borrador** primero — ningún camino de entrada auto-publica.
 
+**Diario de aprendizaje** (conceptos y patrones de pensamiento globales, progreso por alumno, portal rediseñado) se construyó *sobre* esta biblioteca — ver `docs/learning-journal-plan.md` (diseño) y `docs/learning-journal-implementation.md` (qué quedó hecho). Tests automatizados en `tests/` (`pytest`, ver esa carpeta) cubren toda esta capa.
+
 ### Generar una lección
 - `extraer_leccion.py` expone `extraer_desde_texto(texto_crudo, es_resumen=False)`, además del uso por CLI (`extraer(ruta_transcript)`, que sigue andando sobre un archivo para uso manual/backfill).
   - `es_resumen=False`: intenta parsear el formato de closed captions de Zoom (`[Hablante] HH:MM:SS`); si el texto no matchea ese formato, lo trata como diálogo plano igual.
