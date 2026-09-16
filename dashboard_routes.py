@@ -483,6 +483,53 @@ def api_lecciones_aprobar(leccion_id):
     return jsonify({'ok': True})
 
 
+def _parsear_lineas_dobles_puntos(texto, n_partes):
+    """'a :: b :: c' por línea -> [(a,b,c), ...]. Líneas vacías o mal
+    formadas (no tienen exactamente n_partes) se descartan en silencio."""
+    resultado = []
+    for linea in (texto or '').splitlines():
+        partes = [p.strip() for p in linea.split('::')]
+        if len(partes) == n_partes and any(partes):
+            resultado.append(partes)
+    return resultado
+
+
+@dashboard_bp.route('/dashboard/api/lecciones/<int:leccion_id>', methods=['PATCH'])
+@login_required
+def api_lecciones_editar(leccion_id):
+    data = request.get_json() or {}
+    conn = get_connection()
+    fila = conn.execute("SELECT id FROM lecciones WHERE id = ?", (leccion_id,)).fetchone()
+    if not fila:
+        conn.close()
+        return jsonify({'ok': False, 'error': 'No existe.'}), 404
+
+    conceptos = [
+        {'nombre': n, 'explicacion_dada': e}
+        for n, e in _parsear_lineas_dobles_puntos(data.get('conceptos_texto'), 2)
+    ]
+    errores = [
+        {'error': err, 'correccion': corr, 'principio_general': prin}
+        for err, corr, prin in _parsear_lineas_dobles_puntos(data.get('errores_texto'), 3)
+    ]
+
+    conn.execute(
+        """UPDATE lecciones SET tema_principal = ?, resumen_clase = ?, temas_tag = ?,
+           conceptos = ?, errores_y_correcciones = ? WHERE id = ?""",
+        (
+            (data.get('tema_principal') or '').strip(),
+            (data.get('resumen_clase') or '').strip(),
+            (data.get('temas_tag') or '').strip(),
+            json.dumps(conceptos, ensure_ascii=False),
+            json.dumps(errores, ensure_ascii=False),
+            leccion_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @dashboard_bp.route('/dashboard/api/lecciones/<int:leccion_id>', methods=['DELETE'])
 @login_required
 def api_lecciones_borrar(leccion_id):
@@ -1607,14 +1654,7 @@ tr:hover td{background:var(--gold-dim)}
         </div>
         <div class="section">
           <div class="section-title">Biblioteca de lecciones</div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Tema</th><th>Tags</th><th>Creada</th></tr>
-              </thead>
-              <tbody id="t-lecciones-biblioteca"><tr><td colspan="3" class="empty">Cargando...</td></tr></tbody>
-            </table>
-          </div>
+          <div id="lecciones-biblioteca"><p class="empty">Cargando...</p></div>
         </div>
         <div class="section">
           <div class="section-title">Últimas asignaciones</div>
@@ -2062,18 +2102,27 @@ function cargarAlumnos() {
   });
 }
 
+var _leccionesCache = {};
+
+function _escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function cargarLeccionesBiblioteca() {
   fetch('/dashboard/api/lecciones?estado=aprobada').then(function(r){ return r.json(); }).then(function(datos){
-    var tb = document.getElementById('t-lecciones-biblioteca');
-    if (tb) {
-      tb.innerHTML = (datos && datos.length) ? datos.map(function(l){
-        return '<tr><td>'+l.tema_principal+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(l.temas_tag||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(l.creado||'')+'</td></tr>';
-      }).join('') : '<tr><td colspan="3" class="empty">Sin lecciones aprobadas todavía.</td></tr>';
+    (datos || []).forEach(function(l){ _leccionesCache[l.id] = l; });
+    var cont = document.getElementById('lecciones-biblioteca');
+    if (cont) {
+      cont.innerHTML = (datos && datos.length)
+        ? datos.map(function(l){ return '<div id="leccion-card-'+l.id+'">'+_leccionCardHtml(l)+'</div>'; }).join('')
+        : '<p class="empty">Sin lecciones aprobadas todavía.</p>';
     }
     var sel = document.getElementById('leccion-select');
     if (sel) {
       sel.innerHTML = ['<option value="">Seleccionar...</option>'].concat(
-        (datos || []).map(function(l){ return '<option value="'+l.id+'">'+l.tema_principal+'</option>'; })
+        (datos || []).map(function(l){ return '<option value="'+l.id+'">'+_escHtml(l.tema_principal)+'</option>'; })
       ).join('');
     }
   }).catch(function(){});
@@ -2081,33 +2130,97 @@ function cargarLeccionesBiblioteca() {
 
 function _leccionCardHtml(l) {
   var conceptos = (l.conceptos || []).map(function(c){
-    return '<li><strong>'+c.nombre+'</strong>: '+c.explicacion_dada+'</li>';
+    return '<li><strong>'+_escHtml(c.nombre)+'</strong>: '+_escHtml(c.explicacion_dada)+'</li>';
   }).join('') || '<li class="empty" style="padding:0.4rem 0">Sin conceptos.</li>';
   var errores = (l.errores_y_correcciones || []).map(function(e){
-    return '<li><strong>'+e.principio_general+'</strong> — '+e.error+' → '+e.correccion+'</li>';
+    return '<li><strong>'+_escHtml(e.principio_general)+'</strong> — '+_escHtml(e.error)+' → '+_escHtml(e.correccion)+'</li>';
   }).join('');
   var puzzles = (l.puzzles_sugeridos || []).map(function(p){
-    return '<a href="'+p.lichess_url+'" target="_blank" rel="noopener" class="badge badge-gold" style="margin:0.15rem">#'+p.puzzle_id+' ('+p.rating+')</a>';
+    return '<a href="'+_escHtml(p.lichess_url)+'" target="_blank" rel="noopener" class="badge badge-gold" style="margin:0.15rem">#'+_escHtml(p.puzzle_id)+' ('+_escHtml(p.rating)+')</a>';
   }).join('') || '<span style="font-size:0.8rem;color:var(--text-muted)">Sin puzzles sugeridos.</span>';
 
+  var botonesEstado = l.estado === 'borrador'
+    ? '<button class="btn" type="button" onclick="aprobarLeccion('+l.id+')">Aprobar</button>'
+      + '<button class="btn" type="button" onclick="descartarLeccion('+l.id+')" style="color:var(--red)">Descartar</button>'
+    : '';
+
   return '<div class="card">'
-    + '<strong>'+l.tema_principal+'</strong>'
-    + '<p style="font-size:0.85rem;margin:0.4rem 0">'+l.resumen_clase+'</p>'
+    + '<strong>'+_escHtml(l.tema_principal)+'</strong>'
+    + '<p style="font-size:0.85rem;margin:0.4rem 0">'+_escHtml(l.resumen_clase)+'</p>'
     + '<div style="font-size:0.82rem"><strong>Conceptos</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+conceptos+'</ul></div>'
     + (errores ? '<div style="font-size:0.82rem"><strong>Errores y correcciones</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+errores+'</ul></div>' : '')
     + '<div style="margin:0.5rem 0"><strong style="font-size:0.82rem">Puzzles sugeridos:</strong><br>'+puzzles+'</div>'
-    + '<div class="btn-row" style="margin-top:0.6rem;display:flex;gap:0.5rem">'
-    + '<button class="btn" type="button" onclick="aprobarLeccion('+l.id+')">Aprobar</button>'
-    + '<button class="btn" type="button" onclick="descartarLeccion('+l.id+')" style="color:var(--red)">Descartar</button>'
+    + '<div class="btn-row" style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">'
+    + botonesEstado
+    + '<button class="btn" type="button" onclick="editarLeccion('+l.id+')">Editar</button>'
     + '</div></div>';
+}
+
+function _leccionEditFormHtml(l) {
+  var conceptosTexto = (l.conceptos || []).map(function(c){ return c.nombre + ' :: ' + c.explicacion_dada; }).join('\n');
+  var erroresTexto = (l.errores_y_correcciones || []).map(function(e){ return e.error + ' :: ' + e.correccion + ' :: ' + e.principio_general; }).join('\n');
+  var campo = 'width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:inherit';
+
+  return '<div class="card">'
+    + '<label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Tema</label>'
+    + '<input id="edit-tema-'+l.id+'" type="text" style="'+campo+';margin-bottom:0.6rem" value="'+_escHtml(l.tema_principal)+'">'
+    + '<label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Resumen</label>'
+    + '<textarea id="edit-resumen-'+l.id+'" rows="3" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(l.resumen_clase)+'</textarea>'
+    + '<label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Tags (separados por coma)</label>'
+    + '<input id="edit-tags-'+l.id+'" type="text" style="'+campo+';margin-bottom:0.6rem" value="'+_escHtml(l.temas_tag)+'">'
+    + '<label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Conceptos (uno por línea: Nombre :: Explicación)</label>'
+    + '<textarea id="edit-conceptos-'+l.id+'" rows="4" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(conceptosTexto)+'</textarea>'
+    + '<label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Errores y correcciones (uno por línea: Error :: Corrección :: Principio general)</label>'
+    + '<textarea id="edit-errores-'+l.id+'" rows="3" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(erroresTexto)+'</textarea>'
+    + '<div class="btn-row" style="display:flex;gap:0.5rem">'
+    + '<button class="btn" type="button" onclick="guardarLeccionEditada('+l.id+')">Guardar</button>'
+    + '<button class="btn" type="button" onclick="cancelarEdicionLeccion('+l.id+')">Cancelar</button>'
+    + '</div></div>';
+}
+
+function editarLeccion(id) {
+  var cont = document.getElementById('leccion-card-' + id);
+  var l = _leccionesCache[id];
+  if (!cont || !l) return;
+  cont.innerHTML = _leccionEditFormHtml(l);
+}
+
+function cancelarEdicionLeccion(id) {
+  var cont = document.getElementById('leccion-card-' + id);
+  var l = _leccionesCache[id];
+  if (!cont || !l) return;
+  cont.innerHTML = _leccionCardHtml(l);
+}
+
+function guardarLeccionEditada(id) {
+  var body = {
+    tema_principal: document.getElementById('edit-tema-' + id).value,
+    resumen_clase: document.getElementById('edit-resumen-' + id).value,
+    temas_tag: document.getElementById('edit-tags-' + id).value,
+    conceptos_texto: document.getElementById('edit-conceptos-' + id).value,
+    errores_texto: document.getElementById('edit-errores-' + id).value,
+  };
+  fetch('/dashboard/api/lecciones/' + id, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function(r){ return r.json(); }).then(function(res){
+    if (res.ok) {
+      cargarBorradores();
+      cargarLeccionesBiblioteca();
+    } else {
+      alert(res.error || 'No se pudo guardar.');
+    }
+  }).catch(function(){ alert('Error de conexión.'); });
 }
 
 function cargarBorradores() {
   fetch('/dashboard/api/lecciones?estado=borrador').then(function(r){ return r.json(); }).then(function(datos){
+    (datos || []).forEach(function(l){ _leccionesCache[l.id] = l; });
     var cont = document.getElementById('lecciones-borradores');
     if (!cont) return;
     cont.innerHTML = (datos && datos.length)
-      ? datos.map(_leccionCardHtml).join('')
+      ? datos.map(function(l){ return '<div id="leccion-card-'+l.id+'">'+_leccionCardHtml(l)+'</div>'; }).join('')
       : '<p class="empty">Sin borradores pendientes.</p>';
   }).catch(function(){});
 }
@@ -2166,7 +2279,7 @@ function cargarAlumnoLecciones() {
     if (!tb) return;
     tb.innerHTML = (datos && datos.length) ? datos.map(function(al){
       var estado = al.revisada ? '<span class="badge badge-green">Leída</span>' : '<span class="badge badge-gold">Nueva</span>';
-      return '<tr><td>'+al.alumno_nombre+'</td><td>'+al.tema_principal+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(al.motivo||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(al.asignado_en||'')+'</td><td>'+estado+'</td></tr>';
+      return '<tr><td>'+_escHtml(al.alumno_nombre)+'</td><td>'+_escHtml(al.tema_principal)+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+_escHtml(al.motivo||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+_escHtml(al.asignado_en||'')+'</td><td>'+estado+'</td></tr>';
     }).join('') : '<tr><td colspan="5" class="empty">Sin lecciones asignadas todavía.</td></tr>';
   }).catch(function(){});
 }
