@@ -2157,8 +2157,8 @@ function _leccionCardHtml(l) {
 }
 
 function _leccionEditFormHtml(l) {
-  var conceptosTexto = (l.conceptos || []).map(function(c){ return c.nombre + ' :: ' + c.explicacion_dada; }).join('\n');
-  var erroresTexto = (l.errores_y_correcciones || []).map(function(e){ return e.error + ' :: ' + e.correccion + ' :: ' + e.principio_general; }).join('\n');
+  var conceptosTexto = (l.conceptos || []).map(function(c){ return c.nombre + ' :: ' + c.explicacion_dada; }).join('\\n');
+  var erroresTexto = (l.errores_y_correcciones || []).map(function(e){ return e.error + ' :: ' + e.correccion + ' :: ' + e.principio_general; }).join('\\n');
   var campo = 'width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:inherit';
 
   return '<div class="card">'
