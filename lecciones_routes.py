@@ -158,6 +158,20 @@ def lecciones_detalle(leccion_id):
         for t in temas
     )
 
+    puzzles = json.loads(leccion["puzzles_sugeridos"] or "[]")
+    bloques_puzzles = "".join(
+        f"""
+        <a class="practicar-row" href="{_escape(p.get('lichess_url'))}" target="_blank" rel="noopener">
+          <span class="practicar-row__icon">♟</span>
+          <span class="practicar-row__body">
+            <span class="practicar-row__title">Puzzle #{_escape(p.get('puzzle_id'))} (rating {_escape(p.get('rating'))})</span>
+            <span class="practicar-row__desc">{_escape(p.get('themes'))}</span>
+          </span>
+        </a>
+        """
+        for p in puzzles
+    )
+
     motivo_html = (
         f'<p style="font-size:0.9rem;color:var(--text-dim)"><em>{_escape(asignacion["motivo"])}</em></p>'
         if asignacion["motivo"]
@@ -179,6 +193,8 @@ def lecciones_detalle(leccion_id):
   {"<h3 style='margin-top:1.4rem'>Errores y correcciones</h3>" + bloques_errores if errores else ""}
 
   <div style="margin-top:1.2rem">{chips}</div>
+
+  {"<h3 style='margin-top:1.4rem'>Practicá</h3><div class='practicar-links'>" + bloques_puzzles + "</div>" if puzzles else ""}
 
   <div class="btn-row" style="margin-top:1.2rem">
     <a href="/portal/lecciones" class="btn btn-sm">← Volver a mis lecciones</a>

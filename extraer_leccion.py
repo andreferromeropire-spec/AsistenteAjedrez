@@ -32,10 +32,7 @@ MODEL = "claude-sonnet-5"
 PATRON_BLOQUE = re.compile(r"^\[(?P<hablante>[^\]]+)\]\s+\d{1,2}:\d{2}:\d{2}$")
 
 
-def cargar_transcript(ruta):
-    with open(ruta, "r", encoding="utf-8") as f:
-        lineas = [l.rstrip("\n") for l in f]
-
+def _parsear_lineas(lineas):
     turnos = []
     hablante_actual = None
     texto_actual = []
@@ -65,6 +62,12 @@ def cargar_transcript(ruta):
         else:
             colapsado.append([hablante, texto])
     return colapsado
+
+
+def cargar_transcript(ruta):
+    with open(ruta, "r", encoding="utf-8") as f:
+        lineas = [l.rstrip("\n") for l in f]
+    return _parsear_lineas(lineas)
 
 
 def formatear_dialogo(turnos, nombre_profesora="Andrea Romero"):
@@ -153,15 +156,25 @@ después, sin bloques de código:
 }"""
 
 
-def extraer(ruta_transcript):
-    turnos = cargar_transcript(ruta_transcript)
-    dialogo = formatear_dialogo(turnos)
+NOTA_RESUMEN = (
+    "NOTA: lo que sigue es un RESUMEN escrito por la profesora, no un "
+    "transcript turno a turno de la clase — no hay diálogo real para leer. "
+    "No inventes momentos_socraticos ni errores_y_correcciones palabra por "
+    "palabra si el resumen no los da explícitamente; dejalos en listas "
+    "vacías antes que inventar. Extraé conceptos, resumen_clase y "
+    "temas_tag lo mejor que puedas a partir de lo que ella cuenta que pasó "
+    "en la clase.\n\n"
+)
+
+
+def _extraer_de_dialogo(dialogo, es_resumen=False):
+    contenido = (NOTA_RESUMEN + dialogo) if es_resumen else dialogo
 
     respuesta = cliente.messages.create(
         model=MODEL,
         max_tokens=12000,
         system=SISTEMA,
-        messages=[{"role": "user", "content": dialogo}],
+        messages=[{"role": "user", "content": contenido}],
         thinking={"type": "disabled"},
     )
 
@@ -194,6 +207,28 @@ def extraer(ruta_transcript):
         raise RuntimeError(
             f"No se pudo parsear el JSON ({e}). Respuesta cruda guardada en {ruta_cruda}"
         )
+
+
+def extraer(ruta_transcript):
+    turnos = cargar_transcript(ruta_transcript)
+    dialogo = formatear_dialogo(turnos)
+    return _extraer_de_dialogo(dialogo, es_resumen=False)
+
+
+def extraer_desde_texto(texto_crudo, es_resumen=False):
+    """Como extraer(), pero a partir de texto pegado (no un archivo en disco).
+
+    Si es_resumen es False, intenta parsear el formato de closed captions de
+    Zoom ("[Hablante] HH:MM:SS"); si el texto no matchea ese formato, lo
+    trata como diálogo plano igual. Si es_resumen es True, asume que es un
+    resumen escrito por la profesora (no un transcript turno a turno) y se
+    lo aclara al modelo."""
+    if es_resumen:
+        return _extraer_de_dialogo(texto_crudo.strip(), es_resumen=True)
+
+    turnos = _parsear_lineas(texto_crudo.splitlines())
+    dialogo = formatear_dialogo(turnos) if turnos else texto_crudo.strip()
+    return _extraer_de_dialogo(dialogo, es_resumen=False)
 
 
 if __name__ == "__main__":

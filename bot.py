@@ -1135,7 +1135,7 @@ def ejecutar_accion(accion, datos, numero):
         else:
             patron = f"%{busqueda}%"
             lecciones = conn.execute(
-                "SELECT id, tema_principal FROM lecciones WHERE tema_principal LIKE ? OR temas_tag LIKE ?",
+                "SELECT id, tema_principal FROM lecciones WHERE estado = 'aprobada' AND (tema_principal LIKE ? OR temas_tag LIKE ?)",
                 (patron, patron),
             ).fetchall()
 

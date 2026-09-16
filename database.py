@@ -246,6 +246,19 @@ def crear_tablas():
         )
     """)
 
+    try:
+        cursor.execute("ALTER TABLE lecciones ADD COLUMN estado TEXT DEFAULT 'borrador'")
+        # Lo que ya estaba cargado antes de este campo se considera aprobado
+        # (Andrea ya lo revisó/asignó a mano en su momento).
+        cursor.execute("UPDATE lecciones SET estado = 'aprobada' WHERE estado IS NULL OR estado = 'borrador'")
+    except Exception:
+        pass  # Ya existe, ignorar
+
+    try:
+        cursor.execute("ALTER TABLE lecciones ADD COLUMN puzzles_sugeridos TEXT")
+    except Exception:
+        pass  # Ya existe, ignorar
+
     # Intentos de Position Check: análisis escrito del alumno + feedback
     # estructurado de la IA. feedback_ia_json guarda { factores_identificados,
     # factores_omitidos, preguntas_seguimiento, ... } para poder minar

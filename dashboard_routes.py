@@ -402,20 +402,102 @@ def api_recordatorios_alumnos():
 @dashboard_bp.route('/dashboard/api/lecciones')
 @login_required
 def api_lecciones():
+    estado = request.args.get('estado')
     conn = get_connection()
-    filas = conn.execute(
-        "SELECT id, tema_principal, temas_tag, creado FROM lecciones ORDER BY creado DESC"
-    ).fetchall()
+    if estado:
+        filas = conn.execute(
+            "SELECT id, tema_principal, resumen_clase, conceptos, errores_y_correcciones, "
+            "temas_tag, estado, puzzles_sugeridos, creado FROM lecciones WHERE estado = ? ORDER BY creado DESC",
+            (estado,),
+        ).fetchall()
+    else:
+        filas = conn.execute(
+            "SELECT id, tema_principal, resumen_clase, conceptos, errores_y_correcciones, "
+            "temas_tag, estado, puzzles_sugeridos, creado FROM lecciones ORDER BY creado DESC"
+        ).fetchall()
     conn.close()
     return jsonify([
         {
             'id': f['id'],
             'tema_principal': f['tema_principal'] or f'Lección {f["id"]}',
+            'resumen_clase': f['resumen_clase'] or '',
+            'conceptos': json.loads(f['conceptos'] or '[]'),
+            'errores_y_correcciones': json.loads(f['errores_y_correcciones'] or '[]'),
             'temas_tag': f['temas_tag'] or '',
+            'estado': f['estado'] or 'aprobada',
+            'puzzles_sugeridos': json.loads(f['puzzles_sugeridos'] or '[]'),
             'creado': f['creado'],
         }
         for f in filas
     ])
+
+
+@dashboard_bp.route('/dashboard/api/lecciones/generar', methods=['POST'])
+@login_required
+def api_lecciones_generar():
+    data = request.get_json() or {}
+    texto = (data.get('texto') or '').strip()
+    es_resumen = bool(data.get('es_resumen'))
+    if not texto:
+        return jsonify({'ok': False, 'error': 'Pegá el transcript o el resumen de la clase.'}), 400
+
+    from extraer_leccion import extraer_desde_texto
+    from cargar_leccion_a_posiciones import cargar_desde_dict
+
+    try:
+        leccion = extraer_desde_texto(texto, es_resumen=es_resumen)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'No se pudo generar la lección: {e}'}), 502
+
+    if not leccion.get('resumen_clase') and not leccion.get('conceptos'):
+        return jsonify({'ok': False, 'error': 'La IA no devolvió contenido útil, probá de nuevo.'}), 502
+
+    resultado = cargar_desde_dict(leccion)
+    leccion_id = resultado['leccion_id']
+
+    conn = get_connection()
+    fila = conn.execute("SELECT * FROM lecciones WHERE id = ?", (leccion_id,)).fetchone()
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'leccion': {
+            'id': fila['id'],
+            'tema_principal': fila['tema_principal'] or '',
+            'resumen_clase': fila['resumen_clase'] or '',
+            'conceptos': json.loads(fila['conceptos'] or '[]'),
+            'errores_y_correcciones': json.loads(fila['errores_y_correcciones'] or '[]'),
+            'temas_tag': fila['temas_tag'] or '',
+            'estado': fila['estado'],
+            'puzzles_sugeridos': json.loads(fila['puzzles_sugeridos'] or '[]'),
+        },
+    })
+
+
+@dashboard_bp.route('/dashboard/api/lecciones/<int:leccion_id>/aprobar', methods=['POST'])
+@login_required
+def api_lecciones_aprobar(leccion_id):
+    conn = get_connection()
+    conn.execute("UPDATE lecciones SET estado = 'aprobada' WHERE id = ?", (leccion_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/dashboard/api/lecciones/<int:leccion_id>', methods=['DELETE'])
+@login_required
+def api_lecciones_borrar(leccion_id):
+    conn = get_connection()
+    fila = conn.execute("SELECT estado FROM lecciones WHERE id = ?", (leccion_id,)).fetchone()
+    if not fila:
+        conn.close()
+        return jsonify({'ok': False, 'error': 'No existe.'}), 404
+    if fila['estado'] != 'borrador':
+        conn.close()
+        return jsonify({'ok': False, 'error': 'Solo se pueden descartar borradores.'}), 400
+    conn.execute("DELETE FROM lecciones WHERE id = ?", (leccion_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 
 @dashboard_bp.route('/dashboard/api/alumno_lecciones')
@@ -456,6 +538,11 @@ def api_alumno_lecciones_crear():
         return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
 
     conn = get_connection()
+    leccion = conn.execute("SELECT estado FROM lecciones WHERE id = ?", (int(leccion_id),)).fetchone()
+    if not leccion or leccion['estado'] != 'aprobada':
+        conn.close()
+        return jsonify({'ok': False, 'error': 'Esa lección todavía no está aprobada.'}), 400
+
     ya_pendiente = conn.execute(
         "SELECT 1 FROM alumno_lecciones WHERE alumno_id = ? AND leccion_id = ? AND revisada_en IS NULL",
         (int(alumno_id), int(leccion_id)),
@@ -1480,6 +1567,22 @@ tr:hover td{background:var(--gold-dim)}
 
       <div class="tab-panel" id="tab-lecciones">
         <div class="section">
+          <div class="section-title">Generar lección con IA</div>
+          <div style="display:flex;gap:1rem;margin-bottom:0.5rem;font-size:0.82rem">
+            <label style="cursor:pointer"><input type="radio" name="leccion-modo" value="transcript" checked> Transcript completo (Zoom)</label>
+            <label style="cursor:pointer"><input type="radio" name="leccion-modo" value="resumen"> Resumen mío</label>
+          </div>
+          <textarea id="leccion-texto-input" rows="6" placeholder="Pegá acá el transcript de Zoom o un resumen de lo que se vio en la clase..." style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.6rem;border-radius:4px;font-size:0.82rem;font-family:inherit;resize:vertical"></textarea>
+          <div style="margin-top:0.5rem;display:flex;align-items:center;gap:0.75rem">
+            <button class="btn" type="button" id="btn-generar-leccion" onclick="generarLeccion()">Generar con IA</button>
+            <span id="leccion-generar-msg" style="font-size:0.8rem"></span>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">Borradores pendientes de revisión</div>
+          <div id="lecciones-borradores"><p class="empty">Cargando...</p></div>
+        </div>
+        <div class="section">
           <div class="section-title">Asignar lección</div>
           <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">
             <div>
@@ -1746,6 +1849,7 @@ function cargarTodo() {
   cargarEntrenamiento();
   cargarLeccionesBiblioteca();
   cargarAlumnoLecciones();
+  cargarBorradores();
   cargarUltimaSync();
   // Recargar cobros si esa pestaña está activa
   if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
@@ -1959,12 +2063,12 @@ function cargarAlumnos() {
 }
 
 function cargarLeccionesBiblioteca() {
-  fetch('/dashboard/api/lecciones').then(function(r){ return r.json(); }).then(function(datos){
+  fetch('/dashboard/api/lecciones?estado=aprobada').then(function(r){ return r.json(); }).then(function(datos){
     var tb = document.getElementById('t-lecciones-biblioteca');
     if (tb) {
       tb.innerHTML = (datos && datos.length) ? datos.map(function(l){
         return '<tr><td>'+l.tema_principal+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(l.temas_tag||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(l.creado||'')+'</td></tr>';
-      }).join('') : '<tr><td colspan="3" class="empty">Sin lecciones en la biblioteca todavía.</td></tr>';
+      }).join('') : '<tr><td colspan="3" class="empty">Sin lecciones aprobadas todavía.</td></tr>';
     }
     var sel = document.getElementById('leccion-select');
     if (sel) {
@@ -1973,6 +2077,87 @@ function cargarLeccionesBiblioteca() {
       ).join('');
     }
   }).catch(function(){});
+}
+
+function _leccionCardHtml(l) {
+  var conceptos = (l.conceptos || []).map(function(c){
+    return '<li><strong>'+c.nombre+'</strong>: '+c.explicacion_dada+'</li>';
+  }).join('') || '<li class="empty" style="padding:0.4rem 0">Sin conceptos.</li>';
+  var errores = (l.errores_y_correcciones || []).map(function(e){
+    return '<li><strong>'+e.principio_general+'</strong> — '+e.error+' → '+e.correccion+'</li>';
+  }).join('');
+  var puzzles = (l.puzzles_sugeridos || []).map(function(p){
+    return '<a href="'+p.lichess_url+'" target="_blank" rel="noopener" class="badge badge-gold" style="margin:0.15rem">#'+p.puzzle_id+' ('+p.rating+')</a>';
+  }).join('') || '<span style="font-size:0.8rem;color:var(--text-muted)">Sin puzzles sugeridos.</span>';
+
+  return '<div class="card">'
+    + '<strong>'+l.tema_principal+'</strong>'
+    + '<p style="font-size:0.85rem;margin:0.4rem 0">'+l.resumen_clase+'</p>'
+    + '<div style="font-size:0.82rem"><strong>Conceptos</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+conceptos+'</ul></div>'
+    + (errores ? '<div style="font-size:0.82rem"><strong>Errores y correcciones</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+errores+'</ul></div>' : '')
+    + '<div style="margin:0.5rem 0"><strong style="font-size:0.82rem">Puzzles sugeridos:</strong><br>'+puzzles+'</div>'
+    + '<div class="btn-row" style="margin-top:0.6rem;display:flex;gap:0.5rem">'
+    + '<button class="btn" type="button" onclick="aprobarLeccion('+l.id+')">Aprobar</button>'
+    + '<button class="btn" type="button" onclick="descartarLeccion('+l.id+')" style="color:var(--red)">Descartar</button>'
+    + '</div></div>';
+}
+
+function cargarBorradores() {
+  fetch('/dashboard/api/lecciones?estado=borrador').then(function(r){ return r.json(); }).then(function(datos){
+    var cont = document.getElementById('lecciones-borradores');
+    if (!cont) return;
+    cont.innerHTML = (datos && datos.length)
+      ? datos.map(_leccionCardHtml).join('')
+      : '<p class="empty">Sin borradores pendientes.</p>';
+  }).catch(function(){});
+}
+
+function generarLeccion() {
+  var texto = document.getElementById('leccion-texto-input').value.trim();
+  var esResumen = document.querySelector('input[name="leccion-modo"]:checked').value === 'resumen';
+  var msg = document.getElementById('leccion-generar-msg');
+  var btn = document.getElementById('btn-generar-leccion');
+  if (!texto) {
+    msg.textContent = 'Pegá el transcript o el resumen primero.';
+    msg.style.color = 'var(--red)';
+    return;
+  }
+  btn.disabled = true;
+  msg.style.color = 'var(--text-muted)';
+  msg.textContent = 'Generando con IA, puede tardar un minuto...';
+  fetch('/dashboard/api/lecciones/generar', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({texto: texto, es_resumen: esResumen})
+  }).then(function(r){ return r.json(); }).then(function(res){
+    btn.disabled = false;
+    if (res.ok) {
+      msg.style.color = 'var(--green)';
+      msg.textContent = 'Borrador generado: "' + res.leccion.tema_principal + '". Revisalo abajo.';
+      document.getElementById('leccion-texto-input').value = '';
+      cargarBorradores();
+    } else {
+      msg.style.color = 'var(--red)';
+      msg.textContent = res.error || 'No se pudo generar.';
+    }
+  }).catch(function(){
+    btn.disabled = false;
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Error de conexión.';
+  });
+}
+
+function aprobarLeccion(id) {
+  fetch('/dashboard/api/lecciones/' + id + '/aprobar', {method: 'POST'}).then(function(){
+    cargarBorradores();
+    cargarLeccionesBiblioteca();
+  });
+}
+
+function descartarLeccion(id) {
+  fetch('/dashboard/api/lecciones/' + id, {method: 'DELETE'}).then(function(){
+    cargarBorradores();
+  });
 }
 
 function cargarAlumnoLecciones() {

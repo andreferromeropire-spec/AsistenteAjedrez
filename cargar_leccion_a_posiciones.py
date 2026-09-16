@@ -107,12 +107,25 @@ def _cargar_leccion_biblioteca(leccion, conn, origen, verbose=False):
             print(f"  lección ya estaba en la biblioteca (id {ya_existe[0]})")
         return ya_existe[0]
 
-    temas_tag = ",".join(leccion.get("temas_tag") or [])
+    temas_tag_lista = leccion.get("temas_tag") or []
+    temas_tag = ",".join(temas_tag_lista)
+
+    try:
+        from lichess_puzzles import sugerir_puzzles
+        puzzles = sugerir_puzzles(temas_tag_lista, leccion.get("nivel_alumno_estimado"))
+    except Exception as e:
+        if verbose:
+            print(f"  no se pudieron sugerir puzzles de Lichess ({e})")
+        puzzles = []
+
+    # No se especifica `estado` a propósito: queda en el default de la
+    # columna ('borrador') para que toda lección nueva, sin importar por
+    # qué camino entró, necesite aprobación antes de ser asignable.
     cursor = conn.execute(
         """INSERT INTO lecciones
            (tema_principal, resumen_clase, nivel_alumno_estimado, conceptos,
-            errores_y_correcciones, temas_tag, origen, creado)
-           VALUES (?,?,?,?,?,?,?,?)""",
+            errores_y_correcciones, temas_tag, origen, creado, puzzles_sugeridos)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (
             leccion.get("tema_principal"),
             resumen,
@@ -122,6 +135,7 @@ def _cargar_leccion_biblioteca(leccion, conn, origen, verbose=False):
             temas_tag,
             origen,
             datetime.utcnow().isoformat(),
+            json.dumps(puzzles, ensure_ascii=False),
         ),
     )
     if verbose:
