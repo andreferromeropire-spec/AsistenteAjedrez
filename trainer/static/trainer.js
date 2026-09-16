@@ -574,7 +574,11 @@ function startSession() {
     })
   } catch (e) {}
   $('#instruction').text(t('loading'))
-  $.get('/trainer/api/session/start?level=' + encodeURIComponent(sessionState.selectedLevel), function(data) {
+  var params = new URLSearchParams(window.location.search)
+  var themes = params.get('themes')
+  var url = '/trainer/api/session/start?level=' + encodeURIComponent(sessionState.selectedLevel)
+  if (themes) { url += '&themes=' + encodeURIComponent(themes) }
+  $.get(url, function(data) {
     sessionState.sessionId = data.session_id
     sessionState.totalPuzzles = data.total
     sessionState.level = data.level || sessionState.selectedLevel

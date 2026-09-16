@@ -120,9 +120,15 @@ def trainer_session_start():
     if level not in LEVEL_FILTERS:
         level = 'beginner'
 
+    # `themes` es opcional (coma-separado, vocabulario de Lichess) — permite
+    # llegar acá desde "Practicar" de un concepto puntual del diario de
+    # aprendizaje sin tocar el resto del flujo del scanner de piezas colgadas.
+    themes_param = request.args.get('themes', '').strip()
+    themes = [t.strip() for t in themes_param.split(',') if t.strip()] or None
+
     # Usamos la ruta por defecto definida en trainer/puzzle_loader.py
     df = puzzle_loader.load_puzzles(str(puzzle_loader.DEFAULT_PUZZLE_CSV))
-    puzzles = puzzle_loader.filter_puzzles(df, None, 800, 1400, 10)
+    puzzles = puzzle_loader.filter_puzzles(df, themes, 800, 1400, 10)
 
     filter_fn = LEVEL_FILTERS.get(level, LEVEL_FILTERS['beginner'])
     filtered = [p for p in puzzles if filter_fn(count_vulnerable(p))]
