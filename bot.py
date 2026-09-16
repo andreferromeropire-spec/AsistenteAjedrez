@@ -15,6 +15,7 @@ from portal_routes import portal_bp
 from trainer_routes import trainer_bp
 from demo_routes import demo_bp
 from position_check_routes import position_check_bp
+from lecciones_routes import lecciones_bp
 from apscheduler.schedulers.background import BackgroundScheduler
 from notificaciones_portal import enviar_recordatorios_pendientes
 
@@ -29,6 +30,7 @@ app.register_blueprint(portal_bp)
 app.register_blueprint(trainer_bp)
 app.register_blueprint(demo_bp)
 app.register_blueprint(position_check_bp)
+app.register_blueprint(lecciones_bp)
 
 # Scheduler para recordatorios del portal
 try:
@@ -1114,6 +1116,57 @@ def ejecutar_accion(accion, datos, numero):
         conn.close()
         return f"Listo, Lichess '{nuevo_usuario}' asociado a {alumno['nombre']}."
 
+    elif accion == "asignar_leccion":
+        nombre_buscado = datos.get("nombre_alumno", "")
+        busqueda = datos.get("busqueda", "")
+        motivo = datos.get("motivo") or ""
+        if not nombre_buscado or not busqueda:
+            return "Necesito el nombre del alumno y el tema o palabras clave de la lección."
+
+        alumno, aviso = buscar_o_sugerir_con_pendiente(nombre_buscado, numero, accion, datos)
+        if not alumno:
+            return aviso
+
+        conn = __import__("database").get_connection()
+
+        if datos.get("candidato_elegido"):
+            leccion_id = datos["candidato_elegido"]["id"]
+            tema = datos["candidato_elegido"]["nombre"]
+        else:
+            patron = f"%{busqueda}%"
+            lecciones = conn.execute(
+                "SELECT id, tema_principal FROM lecciones WHERE tema_principal LIKE ? OR temas_tag LIKE ?",
+                (patron, patron),
+            ).fetchall()
+
+            if not lecciones:
+                conn.close()
+                return f"No encontré ninguna lección de la biblioteca sobre '{busqueda}'."
+
+            if len(lecciones) > 1:
+                acciones_pendientes[numero] = {
+                    "accion": accion,
+                    "datos": datos,
+                    "candidatos_custom": [
+                        {"nombre": l["tema_principal"] or f"lección {l['id']}", "detalle": f"id {l['id']}", "id": l["id"]}
+                        for l in lecciones
+                    ],
+                }
+                conn.close()
+                lista = "\n".join(f"{i+1}. {l['tema_principal']}" for i, l in enumerate(lecciones))
+                return f"Encontré más de una lección sobre '{busqueda}':\n{lista}\n\n¿Cuál le asigno? Respondé con el número."
+
+            leccion_id = lecciones[0]["id"]
+            tema = lecciones[0]["tema_principal"]
+
+        conn.execute(
+            "INSERT INTO alumno_lecciones (alumno_id, leccion_id, motivo, asignado_en) VALUES (?,?,?,datetime('now'))",
+            (alumno["id"], leccion_id, motivo),
+        )
+        conn.commit()
+        conn.close()
+        return f"Listo, le asigné a {alumno['nombre']} la lección '{tema}'."
+
     elif accion == "actualizar_promo":
         alumno, aviso = buscar_o_sugerir_con_pendiente(datos.get("nombre_alumno", ""), numero, accion, datos)
         if not alumno:
@@ -1614,18 +1667,23 @@ def setup():
 @app.route("/cargar_leccion", methods=["POST"])
 def cargar_leccion_endpoint():
     """Recibe el JSON que devuelve extraer_leccion.py (el mismo formato que
-    guarda en <transcript>_leccion.json) y carga sus posiciones clave a la
-    DB de este servidor. Usa la DB del servidor (Railway)."""
+    guarda en <transcript>_leccion.json), guarda su contenido en la
+    biblioteca `lecciones` y, si hay partida continua, carga sus posiciones
+    clave a `posiciones`. Usa la DB del servidor (Railway). Idempotente:
+    re-enviar el mismo JSON no duplica filas."""
     from cargar_leccion_a_posiciones import cargar_desde_dict
 
     leccion = request.get_json(silent=True)
     if not leccion:
         return "Falta el JSON de la lección en el body del POST.", 400
     try:
-        n = cargar_desde_dict(leccion)
+        resultado = cargar_desde_dict(leccion)
     except Exception as e:
         return f"No se pudo cargar: {e}", 400
-    return f"{n} posiciones cargadas."
+    return (
+        f"{resultado['posiciones_cargadas']} posiciones cargadas. "
+        f"Lección en biblioteca: id {resultado['leccion_id']}."
+    )
 
 @app.route("/sincronizar_alumnos", methods=["GET"])
 def sincronizar_alumnos_endpoint():

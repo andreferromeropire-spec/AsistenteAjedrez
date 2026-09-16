@@ -143,7 +143,14 @@ Las acciones posibles son:
     Ejemplos: "el lichess de Lucas es lucas123", "actualizar lichess de Grace a grace_chess",
               "lichess de Henry: henry_chess", "cambiá el lichess de Fiona a fiona_lichess"
 
-21. "no_entiendo" - si el mensaje no corresponde a ninguna acción
+21. "asignar_leccion" - quiere que un alumno revise una lección de la biblioteca
+    datos necesarios: nombre_alumno, busqueda (tema o palabras clave para encontrar la lección en la biblioteca)
+    datos opcionales: motivo (ej. "vista en clase de hoy", "para repasar antes de la próxima")
+    Ejemplos: "asignale a Kerem la lección de ataques a la descubierta que vimos hoy",
+              "que Jeff revise la de cálculo de mate antes de la próxima clase",
+              "mandale a Fiona la lección de desarrollo de piezas para repasar"
+
+22. "no_entiendo" - si el mensaje no corresponde a ninguna acción
     datos necesarios: ninguno
 
 IMPORTANTE: Usá el historial de conversación para entender el contexto.

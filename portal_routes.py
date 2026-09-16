@@ -1011,6 +1011,13 @@ PORTAL_HOME_CONTENT = """
             <span class="practicar-row__desc">Ejercicios resueltos y rendimiento.</span>
           </span>
         </a>
+        <a class="practicar-row" href="/portal/lecciones">
+          <span class="practicar-row__icon">📖</span>
+          <span class="practicar-row__body">
+            <span class="practicar-row__title">Mis lecciones</span>
+            <span class="practicar-row__desc">Lo que vimos en clase, para repasar.</span>
+          </span>
+        </a>
       </div>
     </div>
     <div class="card side-card" id="recordatorios-card">

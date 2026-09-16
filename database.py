@@ -214,6 +214,38 @@ def crear_tablas():
         )
     """)
 
+    # Biblioteca de lecciones: contenido pedagógico extraído de transcripts
+    # (extraer_leccion.py), independiente de si la clase tenía una partida
+    # continua para cargar a `posiciones` o no.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lecciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tema_principal TEXT,
+            resumen_clase TEXT,
+            nivel_alumno_estimado TEXT,
+            conceptos TEXT,
+            errores_y_correcciones TEXT,
+            temas_tag TEXT,
+            origen TEXT,
+            creado TEXT
+        )
+    """)
+
+    # Asignación de lecciones de la biblioteca a un alumno puntual (Andrea
+    # decide por WhatsApp qué lección revisa cada alumno y por qué).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alumno_lecciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            leccion_id INTEGER NOT NULL,
+            motivo TEXT,
+            asignado_en TEXT,
+            revisada_en TEXT,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
+            FOREIGN KEY (leccion_id) REFERENCES lecciones(id)
+        )
+    """)
+
     # Intentos de Position Check: análisis escrito del alumno + feedback
     # estructurado de la IA. feedback_ia_json guarda { factores_identificados,
     # factores_omitidos, preguntas_seguimiento, ... } para poder minar
