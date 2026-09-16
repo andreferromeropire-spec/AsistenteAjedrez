@@ -399,6 +399,80 @@ def api_recordatorios_alumnos():
     ])
 
 
+@dashboard_bp.route('/dashboard/api/lecciones')
+@login_required
+def api_lecciones():
+    conn = get_connection()
+    filas = conn.execute(
+        "SELECT id, tema_principal, temas_tag, creado FROM lecciones ORDER BY creado DESC"
+    ).fetchall()
+    conn.close()
+    return jsonify([
+        {
+            'id': f['id'],
+            'tema_principal': f['tema_principal'] or f'Lección {f["id"]}',
+            'temas_tag': f['temas_tag'] or '',
+            'creado': f['creado'],
+        }
+        for f in filas
+    ])
+
+
+@dashboard_bp.route('/dashboard/api/alumno_lecciones')
+@login_required
+def api_alumno_lecciones():
+    conn = get_connection()
+    filas = conn.execute("""
+        SELECT al.id, al.motivo, al.asignado_en, al.revisada_en,
+               a.nombre AS alumno_nombre, l.tema_principal
+        FROM alumno_lecciones al
+        JOIN alumnos a ON a.id = al.alumno_id
+        JOIN lecciones l ON l.id = al.leccion_id
+        ORDER BY al.asignado_en DESC
+        LIMIT 100
+    """).fetchall()
+    conn.close()
+    return jsonify([
+        {
+            'id': f['id'],
+            'alumno_nombre': f['alumno_nombre'],
+            'tema_principal': f['tema_principal'] or '',
+            'motivo': f['motivo'] or '',
+            'asignado_en': f['asignado_en'],
+            'revisada': bool(f['revisada_en']),
+        }
+        for f in filas
+    ])
+
+
+@dashboard_bp.route('/dashboard/api/alumno_lecciones', methods=['POST'])
+@login_required
+def api_alumno_lecciones_crear():
+    data = request.get_json() or {}
+    alumno_id = data.get('alumno_id')
+    leccion_id = data.get('leccion_id')
+    motivo = (data.get('motivo') or '').strip()
+    if not alumno_id or not leccion_id:
+        return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+
+    conn = get_connection()
+    ya_pendiente = conn.execute(
+        "SELECT 1 FROM alumno_lecciones WHERE alumno_id = ? AND leccion_id = ? AND revisada_en IS NULL",
+        (int(alumno_id), int(leccion_id)),
+    ).fetchone()
+    if ya_pendiente:
+        conn.close()
+        return jsonify({'ok': False, 'error': 'Ese alumno ya tiene esa lección asignada y sin revisar.'}), 400
+
+    conn.execute(
+        "INSERT INTO alumno_lecciones (alumno_id, leccion_id, motivo, asignado_en) VALUES (?,?,?,datetime('now'))",
+        (int(alumno_id), int(leccion_id), motivo),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @dashboard_bp.route('/dashboard/api/clases')
 @login_required
 def api_clases():
@@ -1234,6 +1308,7 @@ tr:hover td{background:var(--gold-dim)}
         <button class="tab-btn" onclick="showTab('alumnos',this)">Alumnos</button>
         <button class="tab-btn" onclick="showTab('portal',this)">Portal</button>
         <button class="tab-btn" onclick="showTab('entrenamiento',this)">Entrenamiento</button>
+        <button class="tab-btn" onclick="showTab('lecciones',this)">Lecciones</button>
         <button class="tab-btn" onclick="showTab('graficos',this)">Graficos</button>
       </div>
 
@@ -1398,6 +1473,54 @@ tr:hover td{background:var(--gold-dim)}
                 <tr><th>Alumno</th><th>Representante</th><th>Ejercicios</th><th>Rating medio</th><th>Última actividad</th></tr>
               </thead>
               <tbody id="t-entrenamiento"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-lecciones">
+        <div class="section">
+          <div class="section-title">Asignar lección</div>
+          <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">
+            <div>
+              <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Alumno</label>
+              <select id="leccion-alumno-select" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:180px">
+                <option value="">Seleccionar...</option>
+              </select>
+            </div>
+            <div style="flex:1 1 260px">
+              <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Lección</label>
+              <select id="leccion-select" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem">
+                <option value="">Seleccionar...</option>
+              </select>
+            </div>
+            <div style="flex:1 1 200px">
+              <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Motivo (opcional)</label>
+              <input id="leccion-motivo-input" type="text" placeholder="Vista en clase de hoy / para repasar" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem">
+            </div>
+            <button class="btn" type="button" onclick="asignarLeccion()">Asignar</button>
+          </div>
+          <div id="leccion-asignar-msg" style="font-size:0.8rem;margin-top:0.5rem"></div>
+        </div>
+        <div class="section">
+          <div class="section-title">Biblioteca de lecciones</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Tema</th><th>Tags</th><th>Creada</th></tr>
+              </thead>
+              <tbody id="t-lecciones-biblioteca"><tr><td colspan="3" class="empty">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">Últimas asignaciones</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Alumno</th><th>Lección</th><th>Motivo</th><th>Asignada</th><th>Estado</th></tr>
+              </thead>
+              <tbody id="t-alumno-lecciones"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1621,6 +1744,8 @@ function cargarTodo() {
   cargarAlumnos();
   cargarPortalRecordatorios();
   cargarEntrenamiento();
+  cargarLeccionesBiblioteca();
+  cargarAlumnoLecciones();
   cargarUltimaSync();
   // Recargar cobros si esa pestaña está activa
   if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
@@ -1820,16 +1945,74 @@ function cargarAlumnos() {
     }).join('') || '<tr><td colspan="11" class="empty">Sin alumnos</td></tr>';
     document.getElementById('t-alumnos').innerHTML = html;
 
-    // Popular select de alumnos para portal
-    var sel = document.getElementById('portal-alumno-select');
-    if (sel) {
-      var opts = ['<option value="">Seleccionar...</option>'].concat(datos.map(function(a) {
-        var label = a.nombre;
-        if (a.representante) label += ' (' + a.representante + ')';
-        return '<option value="'+a.id+'">'+label+'</option>';
-      }));
-      sel.innerHTML = opts.join('');
+    // Popular selects de alumnos para portal y lecciones
+    var opts = ['<option value="">Seleccionar...</option>'].concat(datos.map(function(a) {
+      var label = a.nombre;
+      if (a.representante) label += ' (' + a.representante + ')';
+      return '<option value="'+a.id+'">'+label+'</option>';
+    }));
+    ['portal-alumno-select', 'leccion-alumno-select'].forEach(function(id) {
+      var sel = document.getElementById(id);
+      if (sel) sel.innerHTML = opts.join('');
+    });
+  });
+}
+
+function cargarLeccionesBiblioteca() {
+  fetch('/dashboard/api/lecciones').then(function(r){ return r.json(); }).then(function(datos){
+    var tb = document.getElementById('t-lecciones-biblioteca');
+    if (tb) {
+      tb.innerHTML = (datos && datos.length) ? datos.map(function(l){
+        return '<tr><td>'+l.tema_principal+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(l.temas_tag||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(l.creado||'')+'</td></tr>';
+      }).join('') : '<tr><td colspan="3" class="empty">Sin lecciones en la biblioteca todavía.</td></tr>';
     }
+    var sel = document.getElementById('leccion-select');
+    if (sel) {
+      sel.innerHTML = ['<option value="">Seleccionar...</option>'].concat(
+        (datos || []).map(function(l){ return '<option value="'+l.id+'">'+l.tema_principal+'</option>'; })
+      ).join('');
+    }
+  }).catch(function(){});
+}
+
+function cargarAlumnoLecciones() {
+  fetch('/dashboard/api/alumno_lecciones').then(function(r){ return r.json(); }).then(function(datos){
+    var tb = document.getElementById('t-alumno-lecciones');
+    if (!tb) return;
+    tb.innerHTML = (datos && datos.length) ? datos.map(function(al){
+      var estado = al.revisada ? '<span class="badge badge-green">Leída</span>' : '<span class="badge badge-gold">Nueva</span>';
+      return '<tr><td>'+al.alumno_nombre+'</td><td>'+al.tema_principal+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(al.motivo||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+(al.asignado_en||'')+'</td><td>'+estado+'</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">Sin lecciones asignadas todavía.</td></tr>';
+  }).catch(function(){});
+}
+
+function asignarLeccion() {
+  var alumnoId = document.getElementById('leccion-alumno-select').value;
+  var leccionId = document.getElementById('leccion-select').value;
+  var motivo = document.getElementById('leccion-motivo-input').value;
+  var msg = document.getElementById('leccion-asignar-msg');
+  if (!alumnoId || !leccionId) {
+    msg.textContent = 'Elegí un alumno y una lección.';
+    msg.style.color = 'var(--red)';
+    return;
+  }
+  fetch('/dashboard/api/alumno_lecciones', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({alumno_id: alumnoId, leccion_id: leccionId, motivo: motivo})
+  }).then(function(r){ return r.json(); }).then(function(res){
+    if (res.ok) {
+      msg.textContent = 'Lección asignada.';
+      msg.style.color = 'var(--green)';
+      document.getElementById('leccion-motivo-input').value = '';
+      cargarAlumnoLecciones();
+    } else {
+      msg.textContent = res.error || 'No se pudo asignar.';
+      msg.style.color = 'var(--red)';
+    }
+  }).catch(function(){
+    msg.textContent = 'Error de conexión.';
+    msg.style.color = 'var(--red)';
   });
 }
 
