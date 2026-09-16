@@ -255,6 +255,13 @@ Reemplaza el flujo manual de "correr un script sobre un archivo de transcript" p
 | `POST /dashboard/api/lecciones/<id>/aprobar` | Pasa a `estado='aprobada'`. |
 | `DELETE /dashboard/api/lecciones/<id>` | Solo si sigue en `borrador` (no se puede descartar algo ya aprobado/asignado desde acá). |
 | `GET/POST /dashboard/api/alumno_lecciones` | Asignar una lección aprobada a un alumno (rechaza si `estado != 'aprobada'` o si ya tiene esa misma lección asignada sin revisar). |
+| `PATCH /dashboard/api/lecciones/<id>` | Editar tema, resumen, tags, conceptos y errores/correcciones — de un borrador o de algo ya aprobado/asignado, sin restricción de estado. |
+
+### Ver y editar (dashboard)
+La "Biblioteca de lecciones" y los "Borradores pendientes" se muestran como tarjetas con el contenido completo (no solo tema/tags como al principio). Cada tarjeta tiene botón **Editar**, que la reemplaza por un formulario:
+- Tema, resumen y tags: campos de texto normales.
+- Conceptos y errores/correcciones: textareas de una línea por ítem, formato `Nombre :: Explicación` y `Error :: Corrección :: Principio general` respectivamente (parseado server-side en `_parsear_lineas_dobles_puntos`, `dashboard_routes.py`) — se eligió texto plano línea-por-línea en vez de una UI de filas dinámicas para no complicar el JS embebido en el string de Python.
+- Todo el contenido que viene de la IA/DB se escapa antes de insertarse en el HTML (`_escHtml` en el JS del dashboard) — antes se insertaba crudo.
 
 ### Portal del alumno (`lecciones_routes.py`)
 - `/portal/lecciones` (lista de lo asignado) y `/portal/lecciones/<id>` (detalle: resumen, conceptos, errores/correcciones, puzzles sugeridos como links directos a `lichess.org/training/<id>`). Valida que la lección esté asignada a ese alumno antes de mostrarla. Marca `revisada_en` la primera vez que la abre — eso es lo que queda como su "historial".
@@ -308,7 +315,8 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - **Nunca strings con salto de línea literal** dentro de strings JS
 - **Siempre usar rutas absolutas** en fetch: `/dashboard/api/...` (no `api/...`)
 - **Event listeners por delegación**: los botones generados dinámicamente necesitan estar en el `document.addEventListener('click', ...)` central
-- **Validar JS antes de deploy**: `node -e 'new vm.Script(fs.readFileSync(...))'`
+- **Nunca escribir `\n`, `\t`, etc. sueltos dentro de este string** — `DASHBOARD_HTML`/`PORTAL_HTML` no son raw strings, así que Python los convierte a su carácter real antes de que el navegador vea el JS. Siempre `\\n`, `\\t` (doble barra) para que el navegador reciba la secuencia de escape.
+- **Validar JS antes de deploy**: `node -e 'new vm.Script(fs.readFileSync(...))'` — ojo, esto valida el texto fuente de Python, **no** agarra el bug de arriba (el `\n` ya es un salto de línea real para cuando Python arma el string). Para eso hay que probar sirviendo la página de verdad.
 
 ---
 
@@ -355,6 +363,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - **F1**: Instrucción "T para todos" y "varios por coma" en mensaje de borrar pagos
 - **B1**: Cobros 2–3 clases usan primer rango; aviso promo solo si monto no está en la lista
 - **Duplicados en `cargar_desde_dict`**: re-cargar el mismo JSON de lección duplicaba posiciones exactas — ahora chequea `(fen, origen)` y `(origen, resumen_clase)` antes de insertar.
+- **Dashboard colgado en "Cargando..."/"—" en todas las pestañas**: `.join('\n')` en `_leccionEditFormHtml` (JS del dashboard) — como `DASHBOARD_HTML` es un string triple-quoted normal de Python (no raw), esa `\n` se convertía en salto de línea real *antes* de llegar al navegador, dejando un newline sin escapar dentro de un string JS de comillas simples → `SyntaxError` al parsear, que aborta *todo* el script y por eso ningún `fetch` de `/dashboard/api/*` llegaba a dispararse. Arreglado a `\\n` (doble barra, como ya hace el resto del archivo — ver `texto.split('\\n')` en el chat del dashboard). **Al escribir JS dentro de estos strings de Python, cualquier secuencia de escape pensada para el navegador (`\n`, `\t`, etc.) necesita la barra doblada.** La validación estática con `node -e "new vm.Script(...)"` (mencionada más arriba en este doc) NO detecta este bug porque se corre sobre el texto fuente de Python, antes de que Python interprete el `\n` — hay que probarlo sirviendo la página de verdad (levantar el server y mirar la consola del navegador, o extraer el HTML ya renderizado y validar eso).
 
 ### 🐛 Bugs pendientes
 
