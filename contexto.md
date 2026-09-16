@@ -310,13 +310,23 @@ Flask Blueprint en `dashboard_routes.py`. Todo el HTML/CSS/JS está embebido en 
 
 El JS está dentro de un string triple-quoted Python. Esto implica:
 
-- **Nunca usar `\'` dentro del string** — usar `\u0027` o reestructurar con función separada
+- **Para pasar un string entre comillas simples dentro de un `onclick="fn(...)"`, escribí `\\'` en el Python (doble barra)** — un solo `\'` es una barra de escape que Python interpreta como comilla simple literal (la elimina), dejando `''` en el JS servido → "Unexpected string" al parsear (mismo tipo de bug que `\n` vs `\\n`, ver más abajo). Ojo: `\u0027` tiene el mismo problema (Python también interpreta `\u`), así que tampoco sirve escrito tal cual. Verificado funcionando con `\\'` en `_itemCardHtml`/`_itemEditFormHtml` de la pestaña Lecciones.
 - **Nunca function declarations anidadas** — usar `var fn = function() {}` en su lugar
 - **Nunca strings con salto de línea literal** dentro de strings JS
 - **Siempre usar rutas absolutas** en fetch: `/dashboard/api/...` (no `api/...`)
 - **Event listeners por delegación**: los botones generados dinámicamente necesitan estar en el `document.addEventListener('click', ...)` central
 - **Nunca escribir `\n`, `\t`, etc. sueltos dentro de este string** — `DASHBOARD_HTML`/`PORTAL_HTML` no son raw strings, así que Python los convierte a su carácter real antes de que el navegador vea el JS. Siempre `\\n`, `\\t` (doble barra) para que el navegador reciba la secuencia de escape.
-- **Validar JS antes de deploy**: `node -e 'new vm.Script(fs.readFileSync(...))'` — ojo, esto valida el texto fuente de Python, **no** agarra el bug de arriba (el `\n` ya es un salto de línea real para cuando Python arma el string). Para eso hay que probar sirviendo la página de verdad.
+- **Validar JS antes de deploy — usar el JS ya renderizado, no el archivo fuente**: `node -e 'new vm.Script(fs.readFileSync("dashboard_routes.py"))'` sobre el `.py` da falsos negativos (no agarra bugs de `\n`/`\'` sin escapar, porque corre sobre texto *antes* de que Python lo interprete) **y falsos positivos** (código ya arreglado con `\\n`/`\\'` se ve "roto" en el fuente crudo, porque ahí todavía son dos barras). El chequeo confiable es extraer el HTML ya servido y validar *eso*:
+  ```python
+  import bot
+  c = bot.app.test_client()
+  with c.session_transaction() as sess: sess['dashboard_logged_in'] = True
+  html = c.get('/dashboard').data.decode()
+  # extraer el <script> grande (no el que carga Chart.js por src) y correr
+  # new vm.Script(js) con node sobre ESE texto, o mejor: levantar el server
+  # de verdad (PORT=5050 python bot.py) y mirar la consola del navegador —
+  # eso además agarra errores de runtime que un parser no ve.
+  ```
 
 ---
 
@@ -364,6 +374,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - **B1**: Cobros 2–3 clases usan primer rango; aviso promo solo si monto no está en la lista
 - **Duplicados en `cargar_desde_dict`**: re-cargar el mismo JSON de lección duplicaba posiciones exactas — ahora chequea `(fen, origen)` y `(origen, resumen_clase)` antes de insertar.
 - **Dashboard colgado en "Cargando..."/"—" en todas las pestañas**: `.join('\n')` en `_leccionEditFormHtml` (JS del dashboard) — como `DASHBOARD_HTML` es un string triple-quoted normal de Python (no raw), esa `\n` se convertía en salto de línea real *antes* de llegar al navegador, dejando un newline sin escapar dentro de un string JS de comillas simples → `SyntaxError` al parsear, que aborta *todo* el script y por eso ningún `fetch` de `/dashboard/api/*` llegaba a dispararse. Arreglado a `\\n` (doble barra, como ya hace el resto del archivo — ver `texto.split('\\n')` en el chat del dashboard). **Al escribir JS dentro de estos strings de Python, cualquier secuencia de escape pensada para el navegador (`\n`, `\t`, etc.) necesita la barra doblada.** La validación estática con `node -e "new vm.Script(...)"` (mencionada más arriba en este doc) NO detecta este bug porque se corre sobre el texto fuente de Python, antes de que Python interprete el `\n` — hay que probarlo sirviendo la página de verdad (levantar el server y mirar la consola del navegador, o extraer el HTML ya renderizado y validar eso).
+- **Mismo bug, segunda variante**: `\'` (una sola barra) en un `onclick="fn('...')"` — Python interpreta `\'` como comilla simple literal y la elimina, dejando `''` (dos comillas seguidas sin operador) en el JS → "Unexpected string" al parsear. Encontrado al agregar los botones de conceptos/patrones (`_itemCardHtml`), que pasan `tipo` (un string) como argumento — los botones de lecciones nunca habían tenido este problema porque solo pasaban `l.id` (un número, sin comillas). Arreglado a `\\'` (doble barra). Regla ya sumada más arriba en "JavaScript en el dashboard".
 
 ### 🐛 Bugs pendientes
 

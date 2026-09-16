@@ -407,17 +407,32 @@ def api_lecciones():
     if estado:
         filas = conn.execute(
             "SELECT id, tema_principal, resumen_clase, conceptos, errores_y_correcciones, "
-            "temas_tag, estado, puzzles_sugeridos, creado FROM lecciones WHERE estado = ? ORDER BY creado DESC",
+            "temas_tag, estado, puzzles_sugeridos, creado, reto_practico, patrones_pensamiento "
+            "FROM lecciones WHERE estado = ? ORDER BY creado DESC",
             (estado,),
         ).fetchall()
     else:
         filas = conn.execute(
             "SELECT id, tema_principal, resumen_clase, conceptos, errores_y_correcciones, "
-            "temas_tag, estado, puzzles_sugeridos, creado FROM lecciones ORDER BY creado DESC"
+            "temas_tag, estado, puzzles_sugeridos, creado, reto_practico, patrones_pensamiento "
+            "FROM lecciones ORDER BY creado DESC"
         ).fetchall()
-    conn.close()
-    return jsonify([
-        {
+
+    def _vinculados(leccion_id):
+        conceptos = conn.execute(
+            "SELECT c.nombre FROM leccion_conceptos lc JOIN conceptos c ON c.id = lc.concepto_id WHERE lc.leccion_id = ?",
+            (leccion_id,),
+        ).fetchall()
+        patrones = conn.execute(
+            "SELECT p.nombre FROM leccion_patrones lp JOIN patrones_pensamiento p ON p.id = lp.patron_id WHERE lp.leccion_id = ?",
+            (leccion_id,),
+        ).fetchall()
+        return [c['nombre'] for c in conceptos], [p['nombre'] for p in patrones]
+
+    resultado = []
+    for f in filas:
+        conceptos_vinculados, patrones_vinculados = _vinculados(f['id'])
+        resultado.append({
             'id': f['id'],
             'tema_principal': f['tema_principal'] or f'Lección {f["id"]}',
             'resumen_clase': f['resumen_clase'] or '',
@@ -426,10 +441,15 @@ def api_lecciones():
             'temas_tag': f['temas_tag'] or '',
             'estado': f['estado'] or 'aprobada',
             'puzzles_sugeridos': json.loads(f['puzzles_sugeridos'] or '[]'),
+            'reto_practico': f['reto_practico'] or '',
+            'patrones_pensamiento': json.loads(f['patrones_pensamiento'] or '[]'),
+            'conceptos_vinculados': conceptos_vinculados,
+            'patrones_vinculados': patrones_vinculados,
             'creado': f['creado'],
-        }
-        for f in filas
-    ])
+        })
+
+    conn.close()
+    return jsonify(resultado)
 
 
 @dashboard_bp.route('/dashboard/api/lecciones/generar', methods=['POST'])
@@ -545,6 +565,227 @@ def api_lecciones_borrar(leccion_id):
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
+
+
+def _aprobar_generico(tabla, id_):
+    conn = get_connection()
+    conn.execute(f"UPDATE {tabla} SET estado = 'aprobado' WHERE id = ?", (id_,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+def _borrar_generico(tabla, id_):
+    conn = get_connection()
+    fila = conn.execute(f"SELECT estado FROM {tabla} WHERE id = ?", (id_,)).fetchone()
+    if not fila:
+        conn.close()
+        return jsonify({'ok': False, 'error': 'No existe.'}), 404
+    if fila['estado'] != 'borrador':
+        conn.close()
+        return jsonify({'ok': False, 'error': 'Solo se pueden descartar borradores.'}), 400
+    conn.execute(f"DELETE FROM {tabla} WHERE id = ?", (id_,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/dashboard/api/conceptos')
+@login_required
+def api_conceptos():
+    estado = request.args.get('estado')
+    conn = get_connection()
+    if estado:
+        filas = conn.execute("SELECT * FROM conceptos WHERE estado = ? ORDER BY creado DESC", (estado,)).fetchall()
+    else:
+        filas = conn.execute("SELECT * FROM conceptos ORDER BY creado DESC").fetchall()
+    conn.close()
+    return jsonify([
+        {
+            'id': f['id'],
+            'nombre': f['nombre'],
+            'slug': f['slug'],
+            'descripcion_corta': f['descripcion_corta'] or '',
+            'explicacion_pedagogica': f['explicacion_pedagogica'] or '',
+            'ejemplo': f['ejemplo'] or '',
+            'errores_frecuentes': json.loads(f['errores_frecuentes'] or '[]'),
+            'lichess_themes': f['lichess_themes'] or '',
+            'nivel': f['nivel'] or '',
+            'estado': f['estado'],
+            'creado': f['creado'],
+        }
+        for f in filas
+    ])
+
+
+@dashboard_bp.route('/dashboard/api/conceptos/<int:concepto_id>', methods=['PATCH'])
+@login_required
+def api_conceptos_editar(concepto_id):
+    data = request.get_json() or {}
+    conn = get_connection()
+    if not conn.execute("SELECT 1 FROM conceptos WHERE id = ?", (concepto_id,)).fetchone():
+        conn.close()
+        return jsonify({'ok': False, 'error': 'No existe.'}), 404
+    errores = [e.strip() for e in (data.get('errores_frecuentes_texto') or '').splitlines() if e.strip()]
+    conn.execute(
+        """UPDATE conceptos SET nombre = ?, descripcion_corta = ?, explicacion_pedagogica = ?,
+           ejemplo = ?, errores_frecuentes = ?, lichess_themes = ?, nivel = ? WHERE id = ?""",
+        (
+            (data.get('nombre') or '').strip(),
+            (data.get('descripcion_corta') or '').strip(),
+            (data.get('explicacion_pedagogica') or '').strip(),
+            (data.get('ejemplo') or '').strip(),
+            json.dumps(errores, ensure_ascii=False),
+            (data.get('lichess_themes') or '').strip(),
+            (data.get('nivel') or '').strip() or None,
+            concepto_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/dashboard/api/conceptos/<int:concepto_id>/aprobar', methods=['POST'])
+@login_required
+def api_conceptos_aprobar(concepto_id):
+    return _aprobar_generico('conceptos', concepto_id)
+
+
+@dashboard_bp.route('/dashboard/api/conceptos/<int:concepto_id>', methods=['DELETE'])
+@login_required
+def api_conceptos_borrar(concepto_id):
+    return _borrar_generico('conceptos', concepto_id)
+
+
+@dashboard_bp.route('/dashboard/api/patrones')
+@login_required
+def api_patrones():
+    estado = request.args.get('estado')
+    conn = get_connection()
+    if estado:
+        filas = conn.execute("SELECT * FROM patrones_pensamiento WHERE estado = ? ORDER BY creado DESC", (estado,)).fetchall()
+    else:
+        filas = conn.execute("SELECT * FROM patrones_pensamiento ORDER BY creado DESC").fetchall()
+    conn.close()
+    return jsonify([
+        {
+            'id': f['id'],
+            'nombre': f['nombre'],
+            'slug': f['slug'],
+            'descripcion': f['descripcion'] or '',
+            'ejemplo': f['ejemplo'] or '',
+            'estado': f['estado'],
+            'creado': f['creado'],
+        }
+        for f in filas
+    ])
+
+
+@dashboard_bp.route('/dashboard/api/patrones/<int:patron_id>', methods=['PATCH'])
+@login_required
+def api_patrones_editar(patron_id):
+    data = request.get_json() or {}
+    conn = get_connection()
+    if not conn.execute("SELECT 1 FROM patrones_pensamiento WHERE id = ?", (patron_id,)).fetchone():
+        conn.close()
+        return jsonify({'ok': False, 'error': 'No existe.'}), 404
+    conn.execute(
+        "UPDATE patrones_pensamiento SET nombre = ?, descripcion = ?, ejemplo = ? WHERE id = ?",
+        (
+            (data.get('nombre') or '').strip(),
+            (data.get('descripcion') or '').strip(),
+            (data.get('ejemplo') or '').strip(),
+            patron_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/dashboard/api/patrones/<int:patron_id>/aprobar', methods=['POST'])
+@login_required
+def api_patrones_aprobar(patron_id):
+    return _aprobar_generico('patrones_pensamiento', patron_id)
+
+
+@dashboard_bp.route('/dashboard/api/patrones/<int:patron_id>', methods=['DELETE'])
+@login_required
+def api_patrones_borrar(patron_id):
+    return _borrar_generico('patrones_pensamiento', patron_id)
+
+
+@dashboard_bp.route('/dashboard/api/lecciones/<int:leccion_id>/generar_retroactivo', methods=['POST'])
+@login_required
+def api_lecciones_generar_retroactivo(leccion_id):
+    """Corre el matching de conceptos/patrones sobre una lección ya guardada
+    (sin volver a llamar a la IA) — para sumar a la biblioteca lecciones
+    viejas que se cargaron antes de que existiera esta capa."""
+    conn = get_connection()
+    fila = conn.execute("SELECT * FROM lecciones WHERE id = ?", (leccion_id,)).fetchone()
+    if not fila:
+        conn.close()
+        return jsonify({'ok': False, 'error': 'No existe.'}), 404
+
+    leccion_dict = {
+        'conceptos': json.loads(fila['conceptos'] or '[]'),
+        'patrones_pensamiento_detectados': json.loads(fila['patrones_pensamiento'] or '[]'),
+    }
+    from conceptos_biblioteca import vincular_conceptos_y_patrones
+    vincular_conceptos_y_patrones(conn, leccion_id, leccion_dict)
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/dashboard/api/alumnos/<int:alumno_id>/historial_pedagogico')
+@login_required
+def api_historial_pedagogico(alumno_id):
+    conn = get_connection()
+
+    lecciones = conn.execute("""
+        SELECT l.id, l.tema_principal, al.motivo, al.asignado_en, al.revisada_en
+        FROM alumno_lecciones al
+        JOIN lecciones l ON l.id = al.leccion_id
+        WHERE al.alumno_id = ?
+        ORDER BY al.asignado_en DESC
+    """, (alumno_id,)).fetchall()
+
+    conceptos = conn.execute("""
+        SELECT c.nombre, ac.veces_trabajado, ac.estado_dominio, ac.primera_vez_en, ac.ultima_vez_en
+        FROM alumno_conceptos ac
+        JOIN conceptos c ON c.id = ac.concepto_id
+        WHERE ac.alumno_id = ?
+        ORDER BY ac.ultima_vez_en DESC
+    """, (alumno_id,)).fetchall()
+
+    patrones = conn.execute("""
+        SELECT p.nombre, ap.veces_visto, ap.primera_vez_en, ap.ultima_vez_en
+        FROM alumno_patrones ap
+        JOIN patrones_pensamiento p ON p.id = ap.patron_id
+        WHERE ap.alumno_id = ?
+        ORDER BY ap.ultima_vez_en DESC
+    """, (alumno_id,)).fetchall()
+
+    conn.close()
+    return jsonify({
+        'lecciones': [
+            {'id': l['id'], 'tema_principal': l['tema_principal'] or '', 'motivo': l['motivo'] or '',
+             'asignado_en': l['asignado_en'], 'revisada': bool(l['revisada_en'])}
+            for l in lecciones
+        ],
+        'conceptos': [
+            {'nombre': c['nombre'], 'veces_trabajado': c['veces_trabajado'], 'estado_dominio': c['estado_dominio'],
+             'primera_vez_en': c['primera_vez_en'], 'ultima_vez_en': c['ultima_vez_en']}
+            for c in conceptos
+        ],
+        'patrones': [
+            {'nombre': p['nombre'], 'veces_visto': p['veces_visto'],
+             'primera_vez_en': p['primera_vez_en'], 'ultima_vez_en': p['ultima_vez_en']}
+            for p in patrones
+        ],
+    })
 
 
 @dashboard_bp.route('/dashboard/api/alumno_lecciones')
@@ -1669,6 +1910,35 @@ tr:hover td{background:var(--gold-dim)}
             </table>
           </div>
         </div>
+        <div class="section">
+          <div class="section-title">Conceptos — pendientes de aprobar</div>
+          <div id="conceptos-borradores"><p class="empty">Cargando...</p></div>
+        </div>
+        <div class="section">
+          <div class="section-title">Biblioteca de conceptos</div>
+          <div id="conceptos-biblioteca"><p class="empty">Cargando...</p></div>
+        </div>
+        <div class="section">
+          <div class="section-title">Patrones de pensamiento — pendientes de aprobar</div>
+          <div id="patrones-borradores"><p class="empty">Cargando...</p></div>
+        </div>
+        <div class="section">
+          <div class="section-title">Biblioteca de patrones de pensamiento</div>
+          <div id="patrones-biblioteca"><p class="empty">Cargando...</p></div>
+        </div>
+        <div class="section">
+          <div class="section-title">Historial pedagógico de un alumno</div>
+          <div style="display:flex;gap:0.5rem;align-items:flex-end;margin-bottom:0.75rem">
+            <div>
+              <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem">Alumno</label>
+              <select id="historial-alumno-select" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;min-width:180px">
+                <option value="">Seleccionar...</option>
+              </select>
+            </div>
+            <button class="btn" type="button" onclick="cargarHistorialAlumno()">Ver historial</button>
+          </div>
+          <div id="historial-alumno-resultado"></div>
+        </div>
       </div>
 
       <div class="tab-panel" id="tab-graficos">
@@ -1892,6 +2162,10 @@ function cargarTodo() {
   cargarLeccionesBiblioteca();
   cargarAlumnoLecciones();
   cargarBorradores();
+  cargarConceptosBorradores();
+  cargarConceptosBiblioteca();
+  cargarPatronesBorradores();
+  cargarPatronesBiblioteca();
   cargarUltimaSync();
   // Recargar cobros si esa pestaña está activa
   if (document.getElementById('tab-cobros').classList.contains('active')) cargarCobros();
@@ -2097,7 +2371,7 @@ function cargarAlumnos() {
       if (a.representante) label += ' (' + a.representante + ')';
       return '<option value="'+a.id+'">'+label+'</option>';
     }));
-    ['portal-alumno-select', 'leccion-alumno-select'].forEach(function(id) {
+    ['portal-alumno-select', 'leccion-alumno-select', 'historial-alumno-select'].forEach(function(id) {
       var sel = document.getElementById(id);
       if (sel) sel.innerHTML = opts.join('');
     });
@@ -2144,14 +2418,25 @@ function _leccionCardHtml(l) {
   var botonesEstado = l.estado === 'borrador'
     ? '<button class="btn" type="button" onclick="aprobarLeccion('+l.id+')">Aprobar</button>'
       + '<button class="btn" type="button" onclick="descartarLeccion('+l.id+')" style="color:var(--red)">Descartar</button>'
+      + '<button class="btn" type="button" onclick="generarRetroactivoLeccion('+l.id+')">Vincular conceptos</button>'
     : '';
+
+  var chipsVinculados = (l.conceptos_vinculados || []).map(function(n){
+    return '<span class="badge badge-gray" style="margin:0.15rem">'+_escHtml(n)+'</span>';
+  }).join('') + (l.patrones_vinculados || []).map(function(n){
+    return '<span class="badge badge-gold" style="margin:0.15rem">'+_escHtml(n)+'</span>';
+  }).join('');
+
+  var reto = l.reto_practico ? '<p style="font-size:0.85rem;margin:0.4rem 0"><strong>Tu reto:</strong> '+_escHtml(l.reto_practico)+'</p>' : '';
 
   return '<div class="card">'
     + '<strong>'+_escHtml(l.tema_principal)+'</strong>'
     + '<p style="font-size:0.85rem;margin:0.4rem 0">'+_escHtml(l.resumen_clase)+'</p>'
     + '<div style="font-size:0.82rem"><strong>Conceptos</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+conceptos+'</ul></div>'
     + (errores ? '<div style="font-size:0.82rem"><strong>Errores y correcciones</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+errores+'</ul></div>' : '')
+    + reto
     + '<div style="margin:0.5rem 0"><strong style="font-size:0.82rem">Puzzles sugeridos:</strong><br>'+puzzles+'</div>'
+    + (chipsVinculados ? '<div style="margin:0.5rem 0"><strong style="font-size:0.82rem">Biblioteca vinculada:</strong><br>'+chipsVinculados+'</div>' : '')
     + '<div class="btn-row" style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">'
     + botonesEstado
     + '<button class="btn" type="button" onclick="editarLeccion('+l.id+')">Editar</button>'
@@ -2251,6 +2536,8 @@ function generarLeccion() {
       msg.textContent = 'Borrador generado: "' + res.leccion.tema_principal + '". Revisalo abajo.';
       document.getElementById('leccion-texto-input').value = '';
       cargarBorradores();
+      cargarConceptosBorradores();
+      cargarPatronesBorradores();
     } else {
       msg.style.color = 'var(--red)';
       msg.textContent = res.error || 'No se pudo generar.';
@@ -2275,6 +2562,15 @@ function descartarLeccion(id) {
   });
 }
 
+function generarRetroactivoLeccion(id) {
+  fetch('/dashboard/api/lecciones/' + id + '/generar_retroactivo', {method: 'POST'}).then(function(){
+    cargarBorradores();
+    cargarLeccionesBiblioteca();
+    cargarConceptosBorradores();
+    cargarPatronesBorradores();
+  });
+}
+
 function cargarAlumnoLecciones() {
   fetch('/dashboard/api/alumno_lecciones').then(function(r){ return r.json(); }).then(function(datos){
     var tb = document.getElementById('t-alumno-lecciones');
@@ -2284,6 +2580,156 @@ function cargarAlumnoLecciones() {
       return '<tr><td>'+_escHtml(al.alumno_nombre)+'</td><td>'+_escHtml(al.tema_principal)+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+_escHtml(al.motivo||'-')+'</td><td style="font-size:0.78rem;color:var(--text-muted)">'+_escHtml(al.asignado_en||'')+'</td><td>'+estado+'</td></tr>';
     }).join('') : '<tr><td colspan="5" class="empty">Sin lecciones asignadas todavía.</td></tr>';
   }).catch(function(){});
+}
+
+var _bibliotecaCache = {conceptos: {}, patrones: {}};
+
+function _endpointBiblioteca(tipo) {
+  return tipo === 'conceptos' ? '/dashboard/api/conceptos' : '/dashboard/api/patrones';
+}
+
+function _itemCardHtml(tipo, item) {
+  var botones = item.estado === 'borrador'
+    ? '<button class="btn" type="button" onclick="aprobarItemBiblioteca(\\''+tipo+'\\','+item.id+')">Aprobar</button>'
+      + '<button class="btn" type="button" onclick="descartarItemBiblioteca(\\''+tipo+'\\','+item.id+')" style="color:var(--red)">Descartar</button>'
+    : '';
+  var cuerpo = '';
+  if (tipo === 'conceptos') {
+    var errores = (item.errores_frecuentes || []).map(function(e){ return '<li>'+_escHtml(e)+'</li>'; }).join('');
+    cuerpo = (item.descripcion_corta ? '<p style="font-size:0.85rem;margin:0.4rem 0">'+_escHtml(item.descripcion_corta)+'</p>' : '')
+      + (item.explicacion_pedagogica ? '<p style="font-size:0.85rem;margin:0.4rem 0">'+_escHtml(item.explicacion_pedagogica)+'</p>' : '')
+      + (item.ejemplo ? '<p style="font-size:0.82rem;color:var(--text-muted)"><em>'+_escHtml(item.ejemplo)+'</em></p>' : '')
+      + (errores ? '<div style="font-size:0.82rem"><strong>Errores frecuentes</strong><ul style="margin:0.3rem 0 0.6rem 1.1rem">'+errores+'</ul></div>' : '')
+      + (item.lichess_themes ? '<div style="font-size:0.78rem;color:var(--text-muted)">Lichess themes: '+_escHtml(item.lichess_themes)+'</div>' : '');
+  } else {
+    cuerpo = (item.descripcion ? '<p style="font-size:0.85rem;margin:0.4rem 0">'+_escHtml(item.descripcion)+'</p>' : '')
+      + (item.ejemplo ? '<p style="font-size:0.82rem;color:var(--text-muted)"><em>'+_escHtml(item.ejemplo)+'</em></p>' : '');
+  }
+  return '<div class="card">'
+    + '<strong>'+_escHtml(item.nombre)+'</strong>'
+    + cuerpo
+    + '<div class="btn-row" style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">'
+    + botones
+    + '<button class="btn" type="button" onclick="editarItemBiblioteca(\\''+tipo+'\\','+item.id+')">Editar</button>'
+    + '</div></div>';
+}
+
+function _itemEditFormHtml(tipo, item) {
+  var campo = 'width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.82rem;font-family:inherit';
+  var etiqueta = 'font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.2rem';
+  var campos = '<label style="'+etiqueta+'">Nombre</label>'
+    + '<input id="edit-bib-nombre-'+tipo+'-'+item.id+'" type="text" style="'+campo+';margin-bottom:0.6rem" value="'+_escHtml(item.nombre)+'">';
+  if (tipo === 'conceptos') {
+    campos += '<label style="'+etiqueta+'">Descripción corta</label>'
+      + '<input id="edit-bib-descc-'+item.id+'" type="text" style="'+campo+';margin-bottom:0.6rem" value="'+_escHtml(item.descripcion_corta)+'">'
+      + '<label style="'+etiqueta+'">Explicación pedagógica</label>'
+      + '<textarea id="edit-bib-explicacion-'+item.id+'" rows="3" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(item.explicacion_pedagogica)+'</textarea>'
+      + '<label style="'+etiqueta+'">Ejemplo</label>'
+      + '<textarea id="edit-bib-ejemplo-'+item.id+'" rows="2" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(item.ejemplo)+'</textarea>'
+      + '<label style="'+etiqueta+'">Errores frecuentes (uno por línea)</label>'
+      + '<textarea id="edit-bib-errores-'+item.id+'" rows="2" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml((item.errores_frecuentes||[]).join('\\n'))+'</textarea>'
+      + '<label style="'+etiqueta+'">Lichess themes (coma-separado)</label>'
+      + '<input id="edit-bib-themes-'+item.id+'" type="text" style="'+campo+';margin-bottom:0.6rem" value="'+_escHtml(item.lichess_themes)+'">';
+  } else {
+    campos += '<label style="'+etiqueta+'">Descripción</label>'
+      + '<textarea id="edit-bib-descripcion-'+item.id+'" rows="3" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(item.descripcion)+'</textarea>'
+      + '<label style="'+etiqueta+'">Ejemplo</label>'
+      + '<textarea id="edit-bib-ejemplo-'+item.id+'" rows="2" style="'+campo+';margin-bottom:0.6rem;resize:vertical">'+_escHtml(item.ejemplo)+'</textarea>';
+  }
+  return '<div class="card">' + campos
+    + '<div class="btn-row" style="display:flex;gap:0.5rem">'
+    + '<button class="btn" type="button" onclick="guardarItemBiblioteca(\\''+tipo+'\\','+item.id+')">Guardar</button>'
+    + '<button class="btn" type="button" onclick="cancelarEdicionItemBiblioteca(\\''+tipo+'\\','+item.id+')">Cancelar</button>'
+    + '</div></div>';
+}
+
+function _cargarBiblioteca(tipo, estado, contenedorId) {
+  fetch(_endpointBiblioteca(tipo) + '?estado=' + estado).then(function(r){ return r.json(); }).then(function(datos){
+    (datos || []).forEach(function(item){ _bibliotecaCache[tipo][item.id] = item; });
+    var cont = document.getElementById(contenedorId);
+    if (!cont) return;
+    cont.innerHTML = (datos && datos.length)
+      ? datos.map(function(item){ return '<div id="bib-card-'+tipo+'-'+item.id+'">'+_itemCardHtml(tipo, item)+'</div>'; }).join('')
+      : '<p class="empty">Sin ' + (estado === 'borrador' ? 'pendientes.' : 'contenido todavía.') + '</p>';
+  }).catch(function(){});
+}
+
+function cargarConceptosBorradores() { _cargarBiblioteca('conceptos', 'borrador', 'conceptos-borradores'); }
+function cargarConceptosBiblioteca() { _cargarBiblioteca('conceptos', 'aprobado', 'conceptos-biblioteca'); }
+function cargarPatronesBorradores() { _cargarBiblioteca('patrones', 'borrador', 'patrones-borradores'); }
+function cargarPatronesBiblioteca() { _cargarBiblioteca('patrones', 'aprobado', 'patrones-biblioteca'); }
+
+function editarItemBiblioteca(tipo, id) {
+  var cont = document.getElementById('bib-card-' + tipo + '-' + id);
+  var item = _bibliotecaCache[tipo][id];
+  if (!cont || !item) return;
+  cont.innerHTML = _itemEditFormHtml(tipo, item);
+}
+
+function cancelarEdicionItemBiblioteca(tipo, id) {
+  var cont = document.getElementById('bib-card-' + tipo + '-' + id);
+  var item = _bibliotecaCache[tipo][id];
+  if (!cont || !item) return;
+  cont.innerHTML = _itemCardHtml(tipo, item);
+}
+
+function _recargarBiblioteca(tipo) {
+  if (tipo === 'conceptos') { cargarConceptosBorradores(); cargarConceptosBiblioteca(); }
+  else { cargarPatronesBorradores(); cargarPatronesBiblioteca(); }
+}
+
+function guardarItemBiblioteca(tipo, id) {
+  var body = {nombre: document.getElementById('edit-bib-nombre-' + tipo + '-' + id).value};
+  if (tipo === 'conceptos') {
+    body.descripcion_corta = document.getElementById('edit-bib-descc-' + id).value;
+    body.explicacion_pedagogica = document.getElementById('edit-bib-explicacion-' + id).value;
+    body.ejemplo = document.getElementById('edit-bib-ejemplo-' + id).value;
+    body.errores_frecuentes_texto = document.getElementById('edit-bib-errores-' + id).value;
+    body.lichess_themes = document.getElementById('edit-bib-themes-' + id).value;
+  } else {
+    body.descripcion = document.getElementById('edit-bib-descripcion-' + id).value;
+    body.ejemplo = document.getElementById('edit-bib-ejemplo-' + id).value;
+  }
+  fetch(_endpointBiblioteca(tipo) + '/' + id, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function(r){ return r.json(); }).then(function(res){
+    if (res.ok) { _recargarBiblioteca(tipo); } else { alert(res.error || 'No se pudo guardar.'); }
+  }).catch(function(){ alert('Error de conexión.'); });
+}
+
+function aprobarItemBiblioteca(tipo, id) {
+  fetch(_endpointBiblioteca(tipo) + '/' + id + '/aprobar', {method: 'POST'}).then(function(){ _recargarBiblioteca(tipo); });
+}
+
+function descartarItemBiblioteca(tipo, id) {
+  fetch(_endpointBiblioteca(tipo) + '/' + id, {method: 'DELETE'}).then(function(){ _recargarBiblioteca(tipo); });
+}
+
+function cargarHistorialAlumno() {
+  var alumnoId = document.getElementById('historial-alumno-select').value;
+  var cont = document.getElementById('historial-alumno-resultado');
+  if (!alumnoId) { cont.innerHTML = '<p class="empty">Elegí un alumno.</p>'; return; }
+  cont.innerHTML = '<p class="empty">Cargando...</p>';
+  fetch('/dashboard/api/alumnos/' + alumnoId + '/historial_pedagogico').then(function(r){ return r.json(); }).then(function(datos){
+    var badgeDominio = {dominado: 'badge-green', en_practica: 'badge-gold', necesita_trabajo: 'badge-red'};
+    var lecciones = (datos.lecciones || []).map(function(l){
+      return '<li>'+_escHtml(l.tema_principal)+' — '+_escHtml(l.asignado_en)+(l.revisada ? ' (leída)' : ' (nueva)')+'</li>';
+    }).join('') || '<li class="empty" style="padding:0.4rem 0">Sin lecciones asignadas.</li>';
+    var conceptos = (datos.conceptos || []).map(function(c){
+      var badge = badgeDominio[c.estado_dominio] || 'badge-gray';
+      return '<li><span class="badge '+badge+'">'+_escHtml(c.estado_dominio)+'</span> '+_escHtml(c.nombre)+' — '+c.veces_trabajado+' vez(es), última: '+_escHtml(c.ultima_vez_en)+'</li>';
+    }).join('') || '<li class="empty" style="padding:0.4rem 0">Sin conceptos registrados.</li>';
+    var patrones = (datos.patrones || []).map(function(p){
+      return '<li>'+_escHtml(p.nombre)+' — visto '+p.veces_visto+' vez(es), última: '+_escHtml(p.ultima_vez_en)+'</li>';
+    }).join('') || '<li class="empty" style="padding:0.4rem 0">Sin patrones registrados.</li>';
+    cont.innerHTML = '<div class="card">'
+      + '<strong>Lecciones asignadas</strong><ul style="margin:0.3rem 0 0.9rem 1.1rem">'+lecciones+'</ul>'
+      + '<strong>Conceptos</strong><ul style="margin:0.3rem 0 0.9rem 1.1rem">'+conceptos+'</ul>'
+      + '<strong>Patrones de pensamiento</strong><ul style="margin:0.3rem 0 0 1.1rem">'+patrones+'</ul>'
+      + '</div>';
+  }).catch(function(){ cont.innerHTML = '<p class="empty">Error al cargar.</p>'; });
 }
 
 function asignarLeccion() {
