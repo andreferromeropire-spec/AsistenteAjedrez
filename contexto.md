@@ -120,6 +120,25 @@ id, recordatorio_id, clase_id, enviado_en
 ```
 - Log de envíos efectivamente disparados (evita reenviar varias veces el mismo recordatorio).
 
+**posiciones**
+```
+id, fen, origen, dificultad, temas, creado
+```
+- Banco de posiciones para Position Check. `origen` guarda de dónde salió (`seed`, o `transcript: <partida/tema>` si vino de una lección).
+
+**lecciones**
+```
+id, tema_principal, resumen_clase, nivel_alumno_estimado, conceptos (JSON),
+errores_y_correcciones (JSON), temas_tag, origen, creado, estado, puzzles_sugeridos (JSON)
+```
+- Biblioteca de contenido pedagógico generado por IA a partir de clases reales. `estado`: `'borrador'` (default, recién generada, no asignable) | `'aprobada'` (Andrea la revisó, ya se puede asignar). `puzzles_sugeridos`: lista de puzzles reales de Lichess `[{puzzle_id, fen, moves, rating, themes, lichess_url}]`. Ver sección **Biblioteca de lecciones** más abajo.
+
+**alumno_lecciones**
+```
+id, alumno_id, leccion_id, motivo, asignado_en, revisada_en
+```
+- Asignación de una lección de la biblioteca a un alumno puntual. `revisada_en` se completa solo cuando el alumno abre la lección en el portal (queda como su "historial").
+
 ---
 
 ## Lógica de negocio
@@ -195,6 +214,7 @@ Diccionario en memoria `{numero_telefono: datos_pendiente}`. Se usa para:
 | `borrar_pago` | Eliminar pago registrado por error |
 | `sincronizar_calendario` | Sync manual con Google Calendar |
 | `ignorar_evento` | Marcar evento de Calendar como no-clase |
+| `asignar_leccion` | Asignarle a un alumno una lección **aprobada** de la biblioteca (busca por tema/tag, desambigua si hay varias) |
 
 ### Búsqueda de alumnos (`buscar_o_sugerir_con_pendiente`)
 Prioridad: exacto → alias → parcial (difflib). Si hay varios candidatos, pregunta cuál. Si hay un solo candidato con baja similitud, también pregunta.
@@ -204,6 +224,46 @@ Prioridad: exacto → alias → parcial (difflib). Si hay varios candidatos, pre
 ### Historial de conversación
 - Guardado en memoria (`historiales[numero]`), límite de 10 mensajes (`MAXIMO_MENSAJES_HISTORIAL`)
 - Se limpia automáticamente si crece demasiado
+
+---
+
+## Biblioteca de lecciones (IA + puzzles de Lichess + aprobación)
+
+Reemplaza el flujo manual de "correr un script sobre un archivo de transcript" por uno donde Andrea pega texto y revisa antes de publicar. Todo entra como **borrador** primero — ningún camino de entrada auto-publica.
+
+### Generar una lección
+- `extraer_leccion.py` expone `extraer_desde_texto(texto_crudo, es_resumen=False)`, además del uso por CLI (`extraer(ruta_transcript)`, que sigue andando sobre un archivo para uso manual/backfill).
+  - `es_resumen=False`: intenta parsear el formato de closed captions de Zoom (`[Hablante] HH:MM:SS`); si el texto no matchea ese formato, lo trata como diálogo plano igual.
+  - `es_resumen=True`: asume que es un resumen escrito por Andrea (no un transcript turno a turno) — el prompt le aclara al modelo que no invente momentos socráticos ni errores palabra por palabra si el resumen no los da.
+- Extrae: `tema_principal`, `resumen_clase`, `nivel_alumno_estimado`, `conceptos`, `errores_y_correcciones`, `temas_tag`, y (si la clase analizó una partida continua) `partida_analizada` con jugadas y posiciones clave.
+
+### Puzzles de Lichess sugeridos
+- `lichess_puzzles.py` — `sugerir_puzzles(temas_tag, nivel_alumno_estimado, n=5)`. Reutiliza `trainer/puzzle_loader.py` (CSV de ~50k puzzles reales de Lichess, ya usado por el entrenador táctico) — no hay una segunda copia de la base ni de la lógica de filtrado.
+- `MAPEO_TEMAS_A_LICHESS`: traduce los `temas_tag` en español (inventados por el prompt de extracción) al vocabulario fijo de "Themes" de Lichess (~60 valores: `pin`, `fork`, `discoveredAttack`, `mateIn2`, etc.). Patrones con nombre coloquial que Lichess no tiene taggeado (ej. "kiss of death") **no tienen match exacto posible** — el mapeo cae en el tema más parecido disponible, es una aproximación, no una búsqueda por patrón geométrico sobre el FEN.
+- Rango de elo según `nivel_alumno_estimado` (mismos rangos que usa el entrenador: principiante 0-800, intermedio 800-1400, avanzado 1400+).
+
+### Guardado, idempotencia y estado
+- `cargar_leccion_a_posiciones.py` → `cargar_desde_dict(leccion)` es el punto único de guardado, usado tanto por el endpoint de producción `/cargar_leccion` (recibe el JSON de `extraer_leccion.py`, sin auth, pensado para llamarse desde el propio Railway) como por el nuevo endpoint del dashboard. **Idempotente**: no duplica posiciones (`fen` + `origen`) ni lecciones (`origen` + `resumen_clase`) si se re-envía el mismo contenido.
+- Si las jugadas de la partida no se pueden reproducir (SAN inválido, típico cuando la clase parte de una posición de puzzle y no del inicio), la carga de posiciones falla en silencio pero la lección **igual** se guarda en la biblioteca — son pasos independientes a propósito.
+- Toda lección nueva entra con `estado='borrador'` (default de la columna) sin importar el camino de entrada. Se vuelve asignable recién con `estado='aprobada'`.
+
+### Endpoints del dashboard (`dashboard_routes.py`, todos `@login_required`)
+| Endpoint | Qué hace |
+|---|---|
+| `POST /dashboard/api/lecciones/generar` | `{texto, es_resumen}` → extrae + sugiere puzzles + guarda como borrador. 502 si el modelo no devuelve contenido útil (no se guarda basura). |
+| `GET /dashboard/api/lecciones?estado=borrador\|aprobada` | Lista filtrable por estado. |
+| `POST /dashboard/api/lecciones/<id>/aprobar` | Pasa a `estado='aprobada'`. |
+| `DELETE /dashboard/api/lecciones/<id>` | Solo si sigue en `borrador` (no se puede descartar algo ya aprobado/asignado desde acá). |
+| `GET/POST /dashboard/api/alumno_lecciones` | Asignar una lección aprobada a un alumno (rechaza si `estado != 'aprobada'` o si ya tiene esa misma lección asignada sin revisar). |
+
+### Portal del alumno (`lecciones_routes.py`)
+- `/portal/lecciones` (lista de lo asignado) y `/portal/lecciones/<id>` (detalle: resumen, conceptos, errores/correcciones, puzzles sugeridos como links directos a `lichess.org/training/<id>`). Valida que la lección esté asignada a ese alumno antes de mostrarla. Marca `revisada_en` la primera vez que la abre — eso es lo que queda como su "historial".
+
+### Pendiente: mail de resumen de clase
+Andrea quiere que además le llegue un mail al alumno con el resumen de la clase. La app ya manda mail con **Resend** (`notificaciones_portal.py`, hoy solo para recordatorios de clase — env vars `RESEND_API_KEY` y `RESEND_FROM`). Para la parte nueva:
+- Dominio a usar: **`quietcenterchess.com`**, ya comprado por Andrea, pero **el DNS está en IONOS** (nameservers `ui-dns.*`), no en Cloudflare — no se puede configurar por API desde acá (no hay credenciales de IONOS en esta máquina, solo de Cloudflare).
+- El dominio raíz ya tiene MX + SPF de IONOS (mail existente) — para no pisarlo, conviene verificar en Resend un **subdominio** (ej. `notificaciones.quietcenterchess.com`), no el dominio pelado.
+- Falta: Andrea agrega el dominio/subdominio en Resend, copia los registros DNS que Resend le pide, y los carga en el panel de IONOS. Recién ahí se puede armar el envío del resumen (probablemente un endpoint nuevo o un hook en `api_lecciones_generar`/`aprobar` que dispare el mail al alumno asignado).
 
 ---
 
@@ -218,6 +278,7 @@ Flask Blueprint en `dashboard_routes.py`. Todo el HTML/CSS/JS está embebido en 
 - **Pagos**: historial con botón borrar.
 - **Deuda**: alumnos con clases sin pagar (agrupado por representante — pendiente mejorar).
 - **Alumnos**: CRUD.
+- **Lecciones**: generar lecciones con IA, revisar/aprobar borradores, asignarlas a alumnos. Ver sección **Biblioteca de lecciones**.
 - **Gráficos**: barras anuales + líneas de ingresos.
 
 ### Sillita (marcar/desmarcar ausente)
@@ -266,7 +327,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - Push a GitHub → Railway auto-deploya
 - A veces cambios solo en `dashboard_routes.py` no triggean deploy → agregar comentario en `bot.py` para forzarlo
 - DB SQLite en volumen montado en `/data`
-- Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN_JSON` (u otras vars de Google según instancia), `ANTHROPIC_API_KEY`, `TWILIO_*`, `DASHBOARD_PASSWORD`, `SECRET_KEY`
+- Variables de entorno críticas: `DB_PATH`, `GOOGLE_TOKEN_JSON` (u otras vars de Google según instancia), `ANTHROPIC_API_KEY`, `TWILIO_*`, `DASHBOARD_PASSWORD`, `SECRET_KEY`, `RESEND_API_KEY` + `RESEND_FROM` (mail de recordatorios y, a futuro, resumen de clase — ver **Biblioteca de lecciones**)
 - Gráfico ingresos en USD: `DOLAR_BLU_ARS`, `TASA_GBP_USD`. Opcional por instancia: `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CALENDAR_ID` (ver sección Piloto).
 
 ---
@@ -293,6 +354,7 @@ El JS está dentro de un string triple-quoted Python. Esto implica:
 - **B8**: Monto por clase según combo/suelta al cambiar cantidad; flechita step 1
 - **F1**: Instrucción "T para todos" y "varios por coma" en mensaje de borrar pagos
 - **B1**: Cobros 2–3 clases usan primer rango; aviso promo solo si monto no está en la lista
+- **Duplicados en `cargar_desde_dict`**: re-cargar el mismo JSON de lección duplicaba posiciones exactas — ahora chequea `(fen, origen)` y `(origen, resumen_clase)` antes de insertar.
 
 ### 🐛 Bugs pendientes
 
@@ -314,6 +376,8 @@ _(ninguno)_
 
 | F5 | Alumnos al día: aparecen al final en verde con botón de cobro disponible |
 | F7 | Clases canceladas: mostrar en rojo en `"ver clases"`, no desaparecer |
+| F8 | Mail de resumen de clase al alumno (ver sección **Biblioteca de lecciones → Pendiente: mail de resumen de clase**) — falta que Andrea configure el subdominio de `quietcenterchess.com` en Resend/IONOS. |
+| F9 | Traer de Lichess qué puzzles resolvió/falló cada alumno (requiere pedir scope OAuth `puzzle:read` en el login del portal) — evaluado, no iniciado. |
 
 ---
 
