@@ -124,8 +124,9 @@ def _cargar_leccion_biblioteca(leccion, conn, origen, verbose=False):
     cursor = conn.execute(
         """INSERT INTO lecciones
            (tema_principal, resumen_clase, nivel_alumno_estimado, conceptos,
-            errores_y_correcciones, temas_tag, origen, creado, puzzles_sugeridos)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+            errores_y_correcciones, temas_tag, origen, creado, puzzles_sugeridos,
+            reto_practico, patrones_pensamiento)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (
             leccion.get("tema_principal"),
             resumen,
@@ -136,11 +137,22 @@ def _cargar_leccion_biblioteca(leccion, conn, origen, verbose=False):
             origen,
             datetime.utcnow().isoformat(),
             json.dumps(puzzles, ensure_ascii=False),
+            leccion.get("reto_practico"),
+            json.dumps(leccion.get("patrones_pensamiento_detectados") or [], ensure_ascii=False),
         ),
     )
+    leccion_id = cursor.lastrowid
+
+    try:
+        from conceptos_biblioteca import vincular_conceptos_y_patrones
+        vincular_conceptos_y_patrones(conn, leccion_id, leccion)
+    except Exception as e:
+        if verbose:
+            print(f"  no se pudieron vincular conceptos/patrones ({e})")
+
     if verbose:
-        print(f"  lección guardada en la biblioteca (id {cursor.lastrowid})")
-    return cursor.lastrowid
+        print(f"  lección guardada en la biblioteca (id {leccion_id})")
+    return leccion_id
 
 
 def cargar_desde_dict(leccion, conn=None, verbose=False):

@@ -602,6 +602,8 @@ def api_alumno_lecciones_crear():
         "INSERT INTO alumno_lecciones (alumno_id, leccion_id, motivo, asignado_en) VALUES (?,?,?,datetime('now'))",
         (int(alumno_id), int(leccion_id), motivo),
     )
+    from conceptos_biblioteca import actualizar_progreso_alumno
+    actualizar_progreso_alumno(conn, int(alumno_id), int(leccion_id))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})

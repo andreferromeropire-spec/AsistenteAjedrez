@@ -116,6 +116,20 @@ Reglas:
   Preferí etiquetas que ya uses en otra lección si el concepto es el mismo
   (pensá en una taxonomía chica y reusable, no en tags únicos por clase).
 - Si algo no está claro en el transcript, usá null en vez de inventar.
+- Para cada concepto, indicá "confianza": "confirmado" si el concepto se
+  nombra o se trabaja explícitamente en el diálogo, o "inferido" si lo
+  dedujiste vos por contexto ajedrecístico sin que la clase lo diga tal cual.
+- "patrones_pensamiento_detectados" son hábitos de razonamiento (no
+  conceptos de ajedrez) que la profesora reforzó, con o sin que haya un
+  error de por medio — a diferencia de "errores_y_correcciones" (que
+  siempre parte de una equivocación real), un patrón de pensamiento puede
+  aparecer solo porque el alumno lo hizo BIEN y la profesora lo remarcó.
+  Ejemplos: "identificar la amenaza antes de mover", "no descartar una
+  jugada sin calcularla", "verificar todas las respuestas del rival".
+- "reto_practico" es UNA acción concreta y chica para la próxima partida
+  del alumno, basada en algo puntual de la clase — no un resumen general.
+  Ejemplo: "antes de una jugada táctica, enumerá todos los jaques
+  posibles". Usá null si la clase no da pie a un reto claro.
 - Para cada posición clave, además del texto libre en "momento", indicá
   "jugada_hasta_indice": la cantidad de jugadas (medias-jugadas, no de
   movimientos completos) de "jugadas_confirmadas_por_transcript" que hay que
@@ -133,7 +147,7 @@ después, sin bloques de código:
   "resumen_clase": "2-3 líneas en español, qué se trabajó y por qué",
   "nivel_alumno_estimado": "principiante" | "intermedio" | "avanzado" | null,
   "conceptos": [
-    {"nombre": "...", "explicacion_dada": "cómo lo explicó la profesora, en sus palabras"}
+    {"nombre": "...", "explicacion_dada": "cómo lo explicó la profesora, en sus palabras", "confianza": "confirmado" | "inferido"}
   ],
   "partida_analizada": {
     "identificada": "nombre/jugadores/año si se reconoce, o null",
@@ -152,6 +166,10 @@ después, sin bloques de código:
   "errores_y_correcciones": [
     {"error": "...", "correccion": "...", "principio_general": "..."}
   ],
+  "patrones_pensamiento_detectados": [
+    {"principio": "...", "contexto": "en qué momento de la clase se vio esto", "confianza": "confirmado" | "inferido"}
+  ],
+  "reto_practico": "string corto o null",
   "temas_tag": ["...", "..."]
 }"""
 

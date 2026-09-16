@@ -259,6 +259,121 @@ def crear_tablas():
     except Exception:
         pass  # Ya existe, ignorar
 
+    try:
+        cursor.execute("ALTER TABLE lecciones ADD COLUMN clase_id INTEGER REFERENCES clases(id)")
+    except Exception:
+        pass  # Ya existe, ignorar
+
+    try:
+        cursor.execute("ALTER TABLE lecciones ADD COLUMN reto_practico TEXT")
+    except Exception:
+        pass  # Ya existe, ignorar
+
+    try:
+        cursor.execute("ALTER TABLE lecciones ADD COLUMN patrones_pensamiento TEXT")
+    except Exception:
+        pass  # Ya existe, ignorar
+
+    # Diario de aprendizaje: biblioteca global de conceptos ajedrecísticos,
+    # reutilizable entre lecciones y alumnos (ver docs/learning-journal-plan.md).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conceptos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
+            descripcion_corta TEXT,
+            explicacion_pedagogica TEXT,
+            ejemplo TEXT,
+            fen_ejemplo TEXT,
+            errores_frecuentes TEXT,
+            lichess_themes TEXT,
+            nivel TEXT,
+            estado TEXT DEFAULT 'borrador',
+            creado TEXT
+        )
+    """)
+
+    # Biblioteca global de patrones de pensamiento (hábitos de razonamiento,
+    # separados de los conceptos ajedrecísticos a propósito).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patrones_pensamiento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
+            descripcion TEXT,
+            ejemplo TEXT,
+            estado TEXT DEFAULT 'borrador',
+            creado TEXT
+        )
+    """)
+
+    # Qué conceptos/patrones apareció en qué lección puntual, con la
+    # redacción específica de esa clase (la explicación canónica reutilizable
+    # vive en `conceptos`/`patrones_pensamiento`, no acá).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leccion_conceptos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            leccion_id INTEGER NOT NULL,
+            concepto_id INTEGER NOT NULL,
+            nota TEXT,
+            confianza TEXT,
+            FOREIGN KEY (leccion_id) REFERENCES lecciones(id),
+            FOREIGN KEY (concepto_id) REFERENCES conceptos(id),
+            UNIQUE(leccion_id, concepto_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leccion_patrones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            leccion_id INTEGER NOT NULL,
+            patron_id INTEGER NOT NULL,
+            nota TEXT,
+            confianza TEXT,
+            FOREIGN KEY (leccion_id) REFERENCES lecciones(id),
+            FOREIGN KEY (patron_id) REFERENCES patrones_pensamiento(id),
+            UNIQUE(leccion_id, patron_id)
+        )
+    """)
+
+    # Relación personal de un alumno con un concepto/patrón: cuántas veces lo
+    # trabajó, cuándo por primera/última vez, y qué tan afianzado está
+    # (por repetición — ver docs/learning-journal-plan.md §4 para la lógica).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alumno_conceptos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            concepto_id INTEGER NOT NULL,
+            veces_trabajado INTEGER DEFAULT 0,
+            primera_leccion_id INTEGER,
+            primera_vez_en TEXT,
+            ultima_leccion_id INTEGER,
+            ultima_vez_en TEXT,
+            estado_dominio TEXT DEFAULT 'necesita_trabajo',
+            actualizado TEXT,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
+            FOREIGN KEY (concepto_id) REFERENCES conceptos(id),
+            UNIQUE(alumno_id, concepto_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alumno_patrones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            patron_id INTEGER NOT NULL,
+            veces_visto INTEGER DEFAULT 0,
+            primera_leccion_id INTEGER,
+            primera_vez_en TEXT,
+            ultima_leccion_id INTEGER,
+            ultima_vez_en TEXT,
+            actualizado TEXT,
+            FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
+            FOREIGN KEY (patron_id) REFERENCES patrones_pensamiento(id),
+            UNIQUE(alumno_id, patron_id)
+        )
+    """)
+
     # Intentos de Position Check: análisis escrito del alumno + feedback
     # estructurado de la IA. feedback_ia_json guarda { factores_identificados,
     # factores_omitidos, preguntas_seguimiento, ... } para poder minar
