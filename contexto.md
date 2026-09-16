@@ -400,6 +400,8 @@ _(ninguno)_
 | F7 | Clases canceladas: mostrar en rojo en `"ver clases"`, no desaparecer |
 | F8 | Mail de resumen de clase al alumno (ver sección **Biblioteca de lecciones → Pendiente: mail de resumen de clase**) — falta que Andrea configure el subdominio de `quietcenterchess.com` en Resend/IONOS. |
 | F9 | Traer de Lichess qué puzzles resolvió/falló cada alumno (requiere pedir scope OAuth `puzzle:read` en el login del portal) — evaluado, no iniciado. |
+| F10 | Diario de aprendizaje: conectar resultados reales de `/portal/practicar/concepto/<id>` (correcto/incorrecto por puzzle) al `estado_dominio` de un concepto, en vez de calcularlo solo por repetición (`veces_trabajado`). Ver `docs/learning-journal-implementation.md`. |
+| F11 | Diario de aprendizaje: UI en el dashboard para elegir una `clase` puntual del calendario al generar una lección (setear `lecciones.clase_id`, columna ya existe en el schema pero no se usa). |
 
 ---
 
