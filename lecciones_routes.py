@@ -121,22 +121,41 @@ def lecciones_detalle(leccion_id):
         conn.commit()
     conn.close()
 
-    conceptos = json.loads(leccion["conceptos"] or "[]")
     errores = json.loads(leccion["errores_y_correcciones"] or "[]")
     temas = [t for t in (leccion["temas_tag"] or "").split(",") if t]
 
+    conn2 = get_connection()
+    conceptos_vinculados = conn2.execute(
+        """SELECT c.id, c.nombre, c.explicacion_pedagogica, c.ejemplo, lc.nota
+           FROM leccion_conceptos lc JOIN conceptos c ON c.id = lc.concepto_id
+           WHERE lc.leccion_id = ?""",
+        (leccion_id,),
+    ).fetchall()
+    patrones_vinculados = conn2.execute(
+        """SELECT p.nombre, lp.nota
+           FROM leccion_patrones lp JOIN patrones_pensamiento p ON p.id = lp.patron_id
+           WHERE lp.leccion_id = ?""",
+        (leccion_id,),
+    ).fetchall()
+    conn2.close()
+
     bloques_conceptos = "".join(
         f"""
-        <div class="next-class" style="align-items:flex-start">
-          <div class="next-class__icon">♟</div>
-          <div>
-            <div class="next-class__eyebrow">{_escape(c.get('nombre'))}</div>
-            <div class="next-class__value" style="font-weight:400;font-size:0.92rem">{_escape(c.get('explicacion_dada'))}</div>
-          </div>
-        </div>
+        <details class="card" style="margin-bottom:0.6rem;padding:0.9rem 1.1rem">
+          <summary style="cursor:pointer;font-weight:600">{_escape(c['nombre'])}</summary>
+          <p style="font-size:0.9rem;margin:0.6rem 0 0">{_escape(c['nota'])}</p>
+          {f'<p style="font-size:0.85rem;color:var(--text-dim);margin-top:0.5rem">{_escape(c["explicacion_pedagogica"])}</p>' if c['explicacion_pedagogica'] else ''}
+          {f'<p style="font-size:0.85rem;color:var(--text-dim);font-style:italic;margin-top:0.4rem">{_escape(c["ejemplo"])}</p>' if c['ejemplo'] else ''}
+          <a href="/portal/conceptos/{c['id']}" class="btn btn-sm" style="margin-top:0.6rem;display:inline-block">Ver este concepto</a>
+        </details>
         """
-        for c in conceptos
+        for c in conceptos_vinculados
     ) or '<p style="font-size:0.9rem;color:var(--text-dim)">Sin conceptos registrados.</p>'
+
+    bloques_patrones = "".join(
+        f'<li style="margin-bottom:0.4rem">{_escape(p["nota"] or p["nombre"])}</li>'
+        for p in patrones_vinculados
+    )
 
     bloques_errores = "".join(
         f"""
@@ -178,17 +197,44 @@ def lecciones_detalle(leccion_id):
         else ""
     )
 
+    reto = leccion["reto_practico"]
+    reto_html = (
+        f"""
+        <div class="next-class" style="margin-top:1.2rem">
+          <div class="next-class__icon">🎯</div>
+          <div>
+            <div class="next-class__eyebrow">Tu reto</div>
+            <div class="next-class__value" style="font-weight:400;font-size:0.95rem">{_escape(reto)}</div>
+          </div>
+        </div>
+        """
+        if reto
+        else ""
+    )
+
+    boton_practicar = (
+        f'<a href="/portal/practicar/concepto/{conceptos_vinculados[0]["id"]}" class="btn">Practicar</a>'
+        if conceptos_vinculados
+        else ""
+    )
+
     contenido = f"""
 <div class="card">
-  <span class="eyebrow">Lección</span>
+  <span class="eyebrow">Hoy trabajaste</span>
   <div class="hero-greet">
     <h2>{_escape(leccion['tema_principal']) or 'Lección'}</h2>
   </div>
   {motivo_html}
-  <p style="font-size:0.95rem;margin:0.6rem 0 1.1rem">{_escape(leccion['resumen_clase'])}</p>
 
-  <h3 style="margin-top:1.4rem">Conceptos</h3>
+  <h3 style="margin-top:1.2rem">Idea principal</h3>
+  <p style="font-size:0.95rem;margin:0.4rem 0 1.1rem">{_escape(leccion['resumen_clase'])}</p>
+
+  <h3 style="margin-top:1.4rem">Lo que aprendiste</h3>
   {bloques_conceptos}
+
+  {"<h3 style='margin-top:1.4rem'>Tu forma de pensar</h3><ul style='margin:0.4rem 0 0 1.1rem;font-size:0.9rem'>" + bloques_patrones + "</ul>" if bloques_patrones else ""}
+
+  {reto_html}
 
   {"<h3 style='margin-top:1.4rem'>Errores y correcciones</h3>" + bloques_errores if errores else ""}
 
@@ -196,7 +242,8 @@ def lecciones_detalle(leccion_id):
 
   {"<h3 style='margin-top:1.4rem'>Practicá</h3><div class='practicar-links'>" + bloques_puzzles + "</div>" if puzzles else ""}
 
-  <div class="btn-row" style="margin-top:1.2rem">
+  <div class="btn-row" style="margin-top:1.2rem;display:flex;gap:0.6rem;flex-wrap:wrap">
+    {boton_practicar}
     <a href="/portal/lecciones" class="btn btn-sm">← Volver a mis lecciones</a>
   </div>
 </div>

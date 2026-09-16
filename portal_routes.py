@@ -391,10 +391,31 @@ def portal_home():
                     }
                 )
 
+        ultima_leccion_row = conn.execute(
+            """SELECT l.id, l.tema_principal, l.reto_practico
+               FROM alumno_lecciones al JOIN lecciones l ON l.id = al.leccion_id
+               WHERE al.alumno_id = ?
+               ORDER BY al.asignado_en DESC LIMIT 1""",
+            (aid,),
+        ).fetchone()
+        ultima_leccion = None
+        if ultima_leccion_row:
+            primer_concepto = conn.execute(
+                "SELECT concepto_id FROM leccion_conceptos WHERE leccion_id = ? LIMIT 1",
+                (ultima_leccion_row["id"],),
+            ).fetchone()
+            ultima_leccion = {
+                "id": ultima_leccion_row["id"],
+                "tema_principal": ultima_leccion_row["tema_principal"] or "",
+                "reto_practico": ultima_leccion_row["reto_practico"] or "",
+                "concepto_id": primer_concepto["concepto_id"] if primer_concepto else None,
+            }
+
         resumen.append(
             {
                 "id": aid,
                 "nombre": info_alumno["nombre"] if info_alumno else "",
+                "ultima_leccion": ultima_leccion,
                 "proxima_clase": {
                     "fecha": proxima["fecha"],
                     "hora": proxima["hora"] or "",
@@ -1018,6 +1039,13 @@ PORTAL_HOME_CONTENT = """
             <span class="practicar-row__desc">Lo que vimos en clase, para repasar.</span>
           </span>
         </a>
+        <a class="practicar-row" href="/portal/conceptos">
+          <span class="practicar-row__icon">🧠</span>
+          <span class="practicar-row__body">
+            <span class="practicar-row__title">Mis conceptos</span>
+            <span class="practicar-row__desc">Lo que fuiste aprendiendo, con tu progreso.</span>
+          </span>
+        </a>
       </div>
     </div>
     <div class="card side-card" id="recordatorios-card">
@@ -1290,6 +1318,35 @@ PORTAL_HOME_CONTENT = """
     bloque.appendChild(cabecera);
     if (pagoAccion) { bloque.appendChild(pagoAccion); }
     bloque.appendChild(nextBanner);
+    if (r.ultima_leccion) {
+      var aprendBanner = document.createElement('div');
+      aprendBanner.className = 'next-class';
+      var apIcon = document.createElement('div'); apIcon.className = 'next-class__icon'; apIcon.textContent = '🧠';
+      var apBody = document.createElement('div');
+      var apEye = document.createElement('div'); apEye.className = 'next-class__eyebrow'; apEye.textContent = 'Tu aprendizaje';
+      var apVal = document.createElement('div'); apVal.className = 'next-class__value';
+      apVal.textContent = r.ultima_leccion.tema_principal;
+      apBody.appendChild(apEye);
+      apBody.appendChild(apVal);
+      if (r.ultima_leccion.reto_practico) {
+        var apFoco = document.createElement('div');
+        apFoco.style.fontSize = '0.85rem';
+        apFoco.style.color = 'var(--text-dim)';
+        apFoco.style.marginTop = '0.25rem';
+        apFoco.textContent = 'Tu foco: ' + r.ultima_leccion.reto_practico;
+        apBody.appendChild(apFoco);
+      }
+      aprendBanner.appendChild(apIcon);
+      aprendBanner.appendChild(apBody);
+      if (r.ultima_leccion.concepto_id) {
+        var apBtn = document.createElement('a');
+        apBtn.className = 'next-class__chip';
+        apBtn.href = '/portal/practicar/concepto/' + r.ultima_leccion.concepto_id;
+        apBtn.textContent = 'Practicar';
+        aprendBanner.appendChild(apBtn);
+      }
+      bloque.appendChild(aprendBanner);
+    }
     bloque.appendChild(metrics);
     bloque.appendChild(lista);
     bloque.appendChild(histContainer);

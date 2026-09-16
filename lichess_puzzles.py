@@ -56,16 +56,7 @@ def _temas_lichess(temas_tag):
     return resultado or None
 
 
-def sugerir_puzzles(temas_tag, nivel_alumno_estimado, n=5):
-    """Devuelve hasta n puzzles reales de Lichess como lista de dicts
-    {puzzle_id, fen, moves, rating, themes, lichess_url}. Si no hay match
-    de temas, devuelve puzzles del rango de elo sin filtrar por tema."""
-    themes = _temas_lichess(temas_tag)
-    elo_min, elo_max = NIVEL_A_ELO.get(nivel_alumno_estimado, (0, 9999))
-
-    df = load_puzzles(str(DEFAULT_PUZZLE_CSV))
-    encontrados = filter_puzzles(df, themes, elo_min, elo_max, n=n, max_per_theme=2)
-
+def _formatear(encontrados):
     return [
         {
             "puzzle_id": p["PuzzleId"],
@@ -77,3 +68,30 @@ def sugerir_puzzles(temas_tag, nivel_alumno_estimado, n=5):
         }
         for p in encontrados
     ]
+
+
+def sugerir_puzzles(temas_tag, nivel_alumno_estimado, n=5):
+    """Devuelve hasta n puzzles reales de Lichess como lista de dicts
+    {puzzle_id, fen, moves, rating, themes, lichess_url}. Si no hay match
+    de temas, devuelve puzzles del rango de elo sin filtrar por tema."""
+    themes = _temas_lichess(temas_tag)
+    elo_min, elo_max = NIVEL_A_ELO.get(nivel_alumno_estimado, (0, 9999))
+
+    df = load_puzzles(str(DEFAULT_PUZZLE_CSV))
+    encontrados = filter_puzzles(df, themes, elo_min, elo_max, n=n, max_per_theme=2)
+    return _formatear(encontrados)
+
+
+def sugerir_puzzles_por_lichess_themes(lichess_themes, nivel_alumno_estimado, n=5):
+    """Como sugerir_puzzles(), pero toma directamente una lista (o string
+    coma-separado) de Themes de Lichess — usado para practicar un CONCEPTO
+    puntual (conceptos.lichess_themes), que ya está en ese vocabulario y no
+    necesita pasar por el mapeo de temas_tag en español."""
+    if isinstance(lichess_themes, str):
+        lichess_themes = [t.strip() for t in lichess_themes.split(",") if t.strip()]
+    themes = lichess_themes or None
+    elo_min, elo_max = NIVEL_A_ELO.get(nivel_alumno_estimado, (0, 9999))
+
+    df = load_puzzles(str(DEFAULT_PUZZLE_CSV))
+    encontrados = filter_puzzles(df, themes, elo_min, elo_max, n=n, max_per_theme=2)
+    return _formatear(encontrados)

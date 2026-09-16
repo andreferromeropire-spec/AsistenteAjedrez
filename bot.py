@@ -16,6 +16,7 @@ from trainer_routes import trainer_bp
 from demo_routes import demo_bp
 from position_check_routes import position_check_bp
 from lecciones_routes import lecciones_bp
+from conceptos_routes import conceptos_bp
 from apscheduler.schedulers.background import BackgroundScheduler
 from notificaciones_portal import enviar_recordatorios_pendientes
 
@@ -31,6 +32,7 @@ app.register_blueprint(trainer_bp)
 app.register_blueprint(demo_bp)
 app.register_blueprint(position_check_bp)
 app.register_blueprint(lecciones_bp)
+app.register_blueprint(conceptos_bp)
 
 # Scheduler para recordatorios del portal
 try:

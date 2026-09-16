@@ -75,7 +75,11 @@ def vincular_conceptos_y_patrones(conn, leccion_id, leccion):
     for c in leccion.get("conceptos") or []:
         concepto_id = _buscar_o_crear(
             conn, "conceptos", c.get("nombre"),
-            {"descripcion_corta": c.get("explicacion_dada"), "estado": "borrador"},
+            {
+                "descripcion_corta": c.get("explicacion_dada"),
+                "estado": "borrador",
+                "nivel": leccion.get("nivel_alumno_estimado"),
+            },
         )
         if concepto_id is None:
             continue
